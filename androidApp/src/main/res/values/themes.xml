@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.MatoLiveBus" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/lime</item>
+        <item name="android:navigationBarColor">@color/warm_white</item>
+        <item name="android:statusBarColor">@color/warm_white</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

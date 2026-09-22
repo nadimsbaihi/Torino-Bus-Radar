@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+.kotlin/
+.idea/
+local.properties
+build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+node_modules/
+dist/
+.agents/
+.codex/
+.openai/
+__pycache__/

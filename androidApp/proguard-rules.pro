@@ -1,0 +1,2 @@
+-keep class com.google.transit.realtime.** { *; }
+-dontwarn org.osmdroid.**

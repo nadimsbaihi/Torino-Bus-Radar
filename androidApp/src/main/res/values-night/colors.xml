@@ -1,0 +1,13 @@
+<resources>
+    <color name="ink">#F0F4F2</color>
+    <color name="muted">#B8C3BE</color>
+    <color name="warm_white">#121817</color>
+    <color name="card">#1B2422</color>
+    <color name="line">#374440</color>
+    <color name="lime">#C7EF54</color>
+    <color name="deep_green">#669B8A</color>
+    <color name="live_green">#C7EF54</color>
+    <color name="route_orange">#FF8A65</color>
+    <color name="train_blue">#7CB8FF</color>
+    <color name="warning">#FF9B80</color>
+</resources>
