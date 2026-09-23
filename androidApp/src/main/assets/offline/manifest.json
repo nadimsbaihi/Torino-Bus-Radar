@@ -1,0 +1,35 @@
+{
+  "name": "Torino and nearby suburbs",
+  "source": "https://download.bbbike.org/osm/bbbike/Turin/",
+  "attribution": "\u00a9 OpenStreetMap contributors",
+  "license": "https://opendatacommons.org/licenses/odbl/1-0/",
+  "bounds": {
+    "minlat": 44.941,
+    "minlon": 7.43,
+    "maxlat": 45.21,
+    "maxlon": 7.929
+  },
+  "places": 159370,
+  "files": {
+    "torino.map": {
+      "bytes": 15090177,
+      "sha256": "4fabdc83c25ac350e382f4bd72bcfae965a55385cdf88987720a3e0f9d30eb44"
+    },
+    "places.sqlite": {
+      "bytes": 33980416,
+      "sha256": "34f54d2a34836356f92e03cd6eea501039f9b538a6bec99236937f05fbc8f140"
+    },
+    "walk_graph.bin": {
+      "bytes": 17182188,
+      "sha256": "03149a96347426fa149f1b6966750edba11526a29f5567384741aeb6ffd572ae"
+    }
+  },
+  "walkGraph": {
+    "nodes": 457542,
+    "arcs": 1003916
+  },
+  "sourceSha256": {
+    "Turin.osm.gz": "b9d8bfc2191685fa60388df83c6b6faa0324590707f5cf889cc75355a8260994",
+    "Turin.osm.mapsforge-osm.zip": "e19cbcce0f4dddfdb21a7a75d40e92ef0cabe06cb37b410e859ea191ebb9f9b6"
+  }
+}

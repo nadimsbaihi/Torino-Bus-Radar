@@ -20,6 +20,8 @@ android {
         buildConfig = true
     }
 
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -38,6 +40,8 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.10.0")
@@ -47,4 +51,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.transit:gtfs-realtime-bindings:0.0.4")
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("org.osmdroid:osmdroid-mapsforge:6.1.20")
 }

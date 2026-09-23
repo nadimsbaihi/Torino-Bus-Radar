@@ -6,6 +6,8 @@ import org.json.JSONObject
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 data class TrainStop(
     val id: String,
@@ -33,28 +35,34 @@ data class ScheduledTrainJourney(
 )
 
 class TrainIndex private constructor(private val trips: List<TrainTrip>) {
-    fun planScheduledJourney(
+    suspend fun planScheduledJourney(
         latitude: Double,
         longitude: Double,
         destinationLatitude: Double,
         destinationLongitude: Double,
-        now: LocalDateTime = LocalDateTime.now()
+        now: LocalDateTime = LocalDateTime.now(),
+        walkFromOrigin: ((Double, Double) -> Float)? = null,
+        walkFromDestination: ((Double, Double) -> Float)? = null
     ): ScheduledTrainJourney? {
+        val context = currentCoroutineContext()
         val serviceDate = now.format(DATE)
         val nowSeconds = now.hour * 3600 + now.minute * 60 + now.second
         return trips.asSequence()
             .filter { serviceDate in it.activeDates }
             .mapNotNull { trip ->
+                context.ensureActive()
                 trip.stops.indices.asSequence().flatMap { boardIndex ->
                     val board = trip.stops[boardIndex]
-                    val walkMetres = distance(latitude, longitude, board)
+                    val walkMetres = walkFromOrigin?.invoke(board.latitude, board.longitude)
+                        ?: distance(latitude, longitude, board)
                     val walkSeconds = walkMetres / WALKING_SPEED
                     if (walkMetres > MAX_STATION_WALK || board.departureSeconds < nowSeconds + walkSeconds + BOARDING_MARGIN) {
                         emptySequence()
                     } else {
                         (boardIndex + 1 until trip.stops.size).asSequence().map { exitIndex ->
                             val exit = trip.stops[exitIndex]
-                            val destinationWalk = distance(destinationLatitude, destinationLongitude, exit)
+                            val destinationWalk = walkFromDestination?.invoke(exit.latitude, exit.longitude)
+                                ?: distance(destinationLatitude, destinationLongitude, exit)
                             val total = (exit.arrivalSeconds - nowSeconds) +
                                 destinationWalk / WALKING_SPEED
                             ScheduledTrainJourney(

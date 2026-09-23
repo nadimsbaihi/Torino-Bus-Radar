@@ -15,6 +15,7 @@
         android:contentDescription="@string/map_description" />
 
     <LinearLayout
+        android:id="@+id/topControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
@@ -24,11 +25,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@color/warm_white"
-            android:elevation="8dp"
+            android:elevation="0dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="18dp"
-            android:paddingVertical="12dp">
+            android:paddingVertical="6dp">
 
             <TextView
                 android:layout_width="0dp"
@@ -37,33 +38,36 @@
                 android:fontFamily="sans-serif-black"
                 android:text="@string/app_name"
                 android:textColor="@color/ink"
-                android:textSize="19sp" />
+                android:textSize="15sp" />
 
             <TextView
                 android:id="@+id/liveStatus"
+                android:layout_marginStart="12dp"
+                android:maxWidth="210dp"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_status"
-                android:paddingHorizontal="11dp"
-                android:paddingVertical="7dp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="5dp"
                 android:text="@string/connecting"
-                android:textColor="@color/warm_white"
-                android:textSize="10sp"
+                android:textColor="@color/ink"
+                android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="14dp"
+            android:layout_marginHorizontal="12dp"
             android:layout_marginTop="10dp"
-            app:cardBackgroundColor="@color/warm_white"
-            app:cardCornerRadius="28dp"
-            app:cardElevation="10dp">
+            app:cardBackgroundColor="@color/card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="3dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
+                android:layout_height="wrap_content"
+                android:minHeight="64dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:paddingStart="12dp"
@@ -73,254 +77,197 @@
                     android:id="@+id/destinationLayout"
                     style="@style/Widget.Material3.TextInputLayout.FilledBox"
                     android:layout_width="0dp"
-                    android:layout_height="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:hint="@string/destination"
                     app:boxBackgroundColor="@android:color/transparent"
+                    app:endIconMode="clear_text"
                     app:boxStrokeWidth="0dp"
                     app:boxStrokeWidthFocused="0dp">
 
                     <AutoCompleteTextView
                         android:id="@+id/destinationInput"
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="56dp"
                         android:background="@android:color/transparent"
                         android:imeOptions="actionSearch"
                         android:inputType="textPostalAddress"
                         android:maxLines="1"
+                        android:singleLine="true"
+                        android:textSize="16sp"
                         android:paddingStart="4dp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/findRouteButton"
                     android:layout_width="48dp"
-                    android:layout_height="44dp"
+                    android:layout_height="48dp"
                     android:contentDescription="@string/find_direct_route"
                     android:insetLeft="0dp"
                     android:insetRight="0dp"
                     android:minWidth="0dp"
                     android:text=""
-                    app:cornerRadius="22dp"
+                    app:cornerRadius="12dp"
                     app:icon="@drawable/ic_search"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconTint="@color/warm_white" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
-    </LinearLayout>
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/locationButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="18dp"
-        android:contentDescription="@string/use_my_location"
-        app:backgroundTint="@color/warm_white"
-        app:fabSize="mini"
-        app:srcCompat="@drawable/ic_my_location"
-        app:tint="@color/deep_green" />
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/plannerSheet"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_margin="12dp"
-        app:behavior_fitToContents="true"
-        app:behavior_hideable="false"
-        app:behavior_peekHeight="132dp"
-        app:cardBackgroundColor="@color/warm_white"
-        app:cardCornerRadius="24dp"
-        app:cardElevation="12dp"
-        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
-        app:strokeColor="@color/line"
-        app:strokeWidth="1dp">
-
-        <LinearLayout
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/searchProgress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
+            android:layout_marginHorizontal="28dp"
+            android:indeterminate="true"
+            android:visibility="gone"
+            android:contentDescription="@string/planning_journey" />
 
-            <View
-                android:layout_width="42dp"
-                android:layout_height="4dp"
-                android:layout_gravity="center_horizontal"
-                android:layout_marginBottom="10dp"
-                android:background="@color/line" />
+        <TextView
+            android:id="@+id/mapStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:background="@color/warm_white"
+            android:padding="8dp"
+            android:text="@string/offline_map_loading"
+            android:textColor="@color/ink" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/find_your_bus"
-                android:textColor="@color/ink"
-                android:textSize="25sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/vehicleCount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:text="@string/searching_for_vehicles"
-                android:textColor="@color/muted"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/sharedDirections"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_shared"
-                android:padding="9dp"
-                android:textColor="@color/ink"
-                android:textSize="12sp"
-                android:visibility="gone" />
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/journeyCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            app:cardBackgroundColor="@color/card"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="3dp">
 
             <LinearLayout
-                android:id="@+id/travelModeChoices"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="horizontal"
-                android:visibility="gone">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/walkButton"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_height="44dp"
-                    android:layout_marginEnd="4dp"
-                    android:layout_weight="1"
-                    android:text="@string/walk_there"
-                    android:textAllCaps="false"
-                    app:cornerRadius="12dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/busAnywayButton"
-                    android:layout_width="0dp"
-                    android:layout_height="44dp"
-                    android:layout_marginStart="4dp"
-                    android:layout_weight="1"
-                    android:text="@string/lazy_bus_option"
-                    android:textAllCaps="false"
-                    app:backgroundTint="@color/deep_green"
-                    app:cornerRadius="12dp" />
-            </LinearLayout>
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:hint="@string/gtt_route">
-
-                <AutoCompleteTextView
-                    android:id="@+id/routeInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="none"
-                    android:textColor="@color/ink"
-                    android:textStyle="bold" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:hint="@string/going_towards">
-
-                <AutoCompleteTextView
-                    android:id="@+id/directionInput"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="none"
-                    android:textColor="@color/ink"
-                    android:textStyle="bold" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/closestCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                app:cardBackgroundColor="@color/card"
-                app:cardCornerRadius="14dp"
-                app:strokeColor="@color/line"
-                app:strokeWidth="1dp">
+                android:orientation="vertical"
+                android:padding="12dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="13dp">
+                    android:orientation="horizontal">
 
                     <TextView
-                        android:id="@+id/closestRoute"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:background="@drawable/bg_route"
-                        android:gravity="center"
-                        android:textColor="@color/ink"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <LinearLayout
+                        android:id="@+id/journeyTitle"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="12dp"
                         android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/closest_live_vehicle"
-                            android:textColor="@color/ink"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/closestDistance"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="3dp"
-                            android:textColor="@color/muted"
-                            android:textSize="12sp" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/closestEta"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@color/route_orange"
-                        android:textSize="16sp"
+                        android:text="@string/your_journey"
+                        android:textColor="@color/deep_green"
+                        android:textSize="18sp"
                         android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/closeJourneyButton"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:contentDescription="@string/close_journey"
+                        android:text="×"
+                        android:textSize="24sp" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/refreshButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="12dp"
-                android:text="@string/refresh_live_positions"
-                android:textAllCaps="false"
-                android:textStyle="bold"
-                app:backgroundTint="@color/deep_green"
-                app:cornerRadius="12dp" />
+                <TextView
+                    android:id="@+id/sharedDirections"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:maxLines="6"
+                    android:scrollbars="vertical"
+                    android:paddingBottom="8dp"
+                    android:lineSpacingExtra="4dp"
+                    android:accessibilityLiveRegion="polite"
+                    android:textColor="@color/ink"
+                    android:textSize="15sp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/alertButton"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="7dp"
-                android:text="@string/alert_me"
-                android:textAllCaps="false"
-                android:textStyle="bold"
-                app:cornerRadius="12dp" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/locationSettingsButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:visibility="gone"
+                    android:text="@string/turn_on_location" />
+
+                <LinearLayout
+                    android:id="@+id/travelModeChoices"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/walkButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:text="@string/walk_there" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/busAnywayButton"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:text="@string/lazy_bus_option" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/boardStopDirectionsButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone"
+                    android:text="@string/walk_to_boarding_stop" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/alertButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:minHeight="0dp"
+                    android:visibility="gone"
+                    android:text="@string/alert_me" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|bottom"
+        android:layout_margin="8dp"
+        android:background="@color/warm_white"
+        android:padding="4dp"
+        android:text="@string/map_attribution"
+        android:textColor="@color/ink"
+        android:textSize="12sp" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/locationButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|bottom"
+        android:layout_marginBottom="24dp"
+        android:layout_marginEnd="18dp"
+        android:contentDescription="@string/use_my_location"
+        app:backgroundTint="@color/warm_white"
+        app:fabSize="normal"
+        app:srcCompat="@drawable/ic_my_location"
+        app:tint="@color/deep_green" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

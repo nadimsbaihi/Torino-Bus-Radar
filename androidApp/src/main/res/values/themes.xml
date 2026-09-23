@@ -1,7 +1,12 @@
 <resources>
-    <style name="Theme.MatoLiveBus" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.MatoLiveBus" parent="Theme.Material3.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">@color/lime</item>
+        <item name="android:colorAccent">@color/deep_green</item>
+        <item name="colorPrimary">@color/deep_green</item>
+        <item name="colorOnPrimary">@color/card</item>
+        <item name="colorSecondary">@color/deep_green</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="colorOnSurface">@color/ink</item>
         <item name="android:navigationBarColor">@color/warm_white</item>
         <item name="android:statusBarColor">@color/warm_white</item>
         <item name="android:windowLightStatusBar">true</item>

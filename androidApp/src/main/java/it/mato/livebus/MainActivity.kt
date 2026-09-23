@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
@@ -15,24 +14,42 @@ import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.location.Location
-import android.location.Geocoder
+import android.location.LocationManager
+import android.provider.Settings
+import androidx.core.location.LocationManagerCompat
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
+import android.annotation.SuppressLint
+import androidx.core.widget.doAfterTextChanged
+import android.text.TextUtils
+import android.text.method.ScrollingMovementMethod
+import com.google.android.gms.location.CurrentLocationRequest
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.currentCoroutineContext
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.ArrayAdapter
-import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.Insets
+import androidx.core.view.doOnLayout
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.StyleSpan
+import android.graphics.Typeface
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.location.LocationServices
-import com.google.android.material.bottomsheet.BottomSheetBehavior
 import it.mato.livebus.databinding.ActivityMainBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -44,11 +61,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.mapsforge.map.android.rendertheme.AssetsRenderTheme
+import org.osmdroid.mapsforge.MapsForgeTileSource
+import org.osmdroid.mapsforge.MapsForgeTileProvider
+import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
+import android.widget.ArrayAdapter
+import android.widget.Filter
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import kotlin.math.roundToInt
-import java.util.Locale
 import kotlin.coroutines.resume
 
 class MainActivity : AppCompatActivity() {
@@ -56,8 +77,15 @@ class MainActivity : AppCompatActivity() {
     private val repository = GttRepository()
     private val transitIndex by lazy { TransitIndex.load(this) }
     private val trainIndex by lazy { TrainIndex.load(this) }
+    private val offlineCity get() = (application as MatoApplication).offlineCity
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
+    private var offlineMapSource: MapsForgeTileSource? = null
     private var currentLocation = GeoPoint(45.0703, 7.6869)
+    private var originLocation: Location? = null
+    private var locationRequest: Deferred<Location?>? = null
+    private var permissionRequest: CompletableDeferred<Boolean>? = null
+    private var planningJob: Job? = null
+    private var lastGeocodedAddress: Pair<String, Pair<Double, Double>>? = null
     private var liveVehicles: List<LiveVehicle> = emptyList()
     private var refreshJob: Job? = null
     private var selectedRoute: String? = null
@@ -67,16 +95,30 @@ class MainActivity : AppCompatActivity() {
     private var walkingMode = false
     private var directWalkingMetres = 0f
     private var directWalkingSeconds = 0f
+    private var walkingFromOrigin: WalkGraph.Distances? = null
+    private var walkingFromDestination: WalkGraph.Distances? = null
     private var directDestination: GeoPoint? = null
     private var busJourneyDescription: CharSequence? = null
     private var automaticReplanPending = false
-    private val busIconCache = mutableMapOf<Pair<Boolean, Int>, BitmapDrawable>()
+    private val busIconCache = mutableMapOf<Triple<Boolean, Int, String>, BitmapDrawable>()
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.any { it }) loadLocation()
-        else showLocationHint()
+        val granted = permissions.values.any { it }
+        permissionRequest?.complete(granted)
+        permissionRequest = null
+        if (!granted) showLocationHint()
+    }
+    private val locationSettings = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (deviceLocationEnabled()) {
+            if (binding.destinationInput.text.isNullOrBlank()) requestLocation()
+            else findDestinationRoute()
+        } else {
+            showLocationHint()
+        }
     }
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -89,17 +131,40 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         binding.root.requestFocus()
         applySystemBarInsets()
+        ViewCompat.setAccessibilityHeading(binding.journeyTitle, true)
 
         setupMap()
-        setupPlannerSheet()
-        setupRoutePicker()
+        binding.topControls.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            binding.map.setMapCenterOffset(0, (bottom - top) / 2)
+        }
         setupDestinationPicker()
-        binding.locationButton.setOnClickListener { requestLocation() }
-        binding.refreshButton.setOnClickListener { refreshNow() }
+        binding.locationButton.setOnClickListener {
+            if (deviceLocationEnabled()) requestLocation() else openLocationSettings()
+        }
+        binding.locationSettingsButton.setOnClickListener { openLocationSettings() }
         binding.findRouteButton.setOnClickListener { findDestinationRoute() }
         binding.alertButton.setOnClickListener { requestAlert() }
         binding.walkButton.setOnClickListener { selectWalkingMode() }
         binding.busAnywayButton.setOnClickListener { selectBusMode() }
+        binding.boardStopDirectionsButton.setOnClickListener {
+            val stop = journeyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+                ?: trainJourneyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+            stop?.let { openWalkingDirections(it) }
+        }
+        binding.sharedDirections.movementMethod = ScrollingMovementMethod()
+        binding.closeJourneyButton.setOnClickListener {
+            planningJob?.cancel()
+            journeyChoice = null
+            trainJourneyChoice = null
+            walkingFromOrigin = null
+            walkingFromDestination = null
+            selectedRoute = null
+            selectedPattern = null
+            directDestination = null
+            hideTravelModeChoices()
+            binding.journeyCard.visibility = View.GONE
+            renderVehicles()
+        }
         consumeSharedDirections(intent)
         requestLocation()
         startRefreshing()
@@ -116,244 +181,334 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupMap() = with(binding.map) {
         setMultiTouchControls(true)
-        setTileSource(if (isDarkMode()) DARK_TILE_SOURCE else LIGHT_TILE_SOURCE)
-        controller.setZoom(14.5)
+        setUseDataConnection(false)
+        setTilesScaledToDpi(false)
+        controller.setZoom(16.0)
         controller.setCenter(currentLocation)
-    }
-
-    private fun setupPlannerSheet() {
-        BottomSheetBehavior.from(binding.plannerSheet).apply {
-            peekHeight = (132 * resources.displayMetrics.density).roundToInt()
-            isHideable = false
-            binding.plannerSheet.post { state = BottomSheetBehavior.STATE_COLLAPSED }
+        lifecycleScope.launch {
+            try {
+                val city = withContext(Dispatchers.IO) { offlineCity }
+                val source = MapsForgeTileSource.createFromFiles(arrayOf(city.mapFile),
+                    AssetsRenderTheme(assets, "offline/", "map-theme.xml"),
+                    city.mapCacheKey + "-simple-v3", "it")
+                offlineMapSource = source
+                val provider = MapsForgeTileProvider(SimpleRegisterReceiver(this@MainActivity), source, null)
+                setTileProvider(provider)
+                setUseDataConnection(false)
+                minZoomLevel = 11.0
+                maxZoomLevel = 20.0
+                setScrollableAreaLimitDouble(source.boundsOsmdroid)
+                binding.mapStatus.visibility = View.GONE
+                invalidate()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.e(TAG, "Offline map could not be opened", error)
+                binding.mapStatus.setText(R.string.offline_map_failed)
+            }
         }
-    }
-
-    private fun setupRoutePicker() {
-        val routes = listOf("10", "4", "13", "18", "55", "56", "58", "68")
-        val labels = listOf(getString(R.string.all_routes)) + routes
-        binding.routeInput.setAdapter(
-            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, labels)
-        )
-        binding.routeInput.setText(selectedRoute ?: getString(R.string.all_routes), false)
-        binding.routeInput.setOnItemClickListener { _, _, position, _ ->
-            selectedRoute = if (position == 0) null else routes[position - 1]
-            journeyChoice = null
-            trainJourneyChoice = null
-            hideTravelModeChoices()
-            binding.sharedDirections.visibility = View.GONE
-            setupDirectionPicker()
-            renderVehicles()
-        }
-        setupDirectionPicker()
     }
 
     private fun setupDestinationPicker() {
+        val adapter = object : ArrayAdapter<OfflinePlace>(
+            this, android.R.layout.simple_dropdown_item_1line
+        ) {
+            private val searchFilter = object : Filter() {
+                override fun performFiltering(constraint: CharSequence?): FilterResults {
+                    val query = constraint?.toString().orEmpty()
+                    val matches = if (query.length < 2) emptyList() else try {
+                        offlineCity.search(query)
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Offline destination search failed", error)
+                        emptyList()
+                    }
+                    return FilterResults().apply { values = matches; count = matches.size }
+                }
+
+                override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+                    @Suppress("UNCHECKED_CAST")
+                    val matches = results?.values as? List<OfflinePlace> ?: emptyList()
+                    setNotifyOnChange(false)
+                    clear()
+                    addAll(matches)
+                    notifyDataSetChanged()
+                }
+
+                override fun convertResultToString(resultValue: Any?) =
+                    (resultValue as? OfflinePlace)?.label.orEmpty()
+            }
+
+            override fun getFilter(): Filter = searchFilter
+        }
+        binding.destinationInput.setAdapter(adapter)
+        binding.destinationInput.threshold = 2
+        binding.destinationInput.doAfterTextChanged {
+            binding.destinationLayout.error = null
+        }
+        binding.destinationInput.setOnItemClickListener { _, _, position, _ ->
+            adapter.getItem(position)?.let { place ->
+                lastGeocodedAddress = place.name to (place.latitude to place.longitude)
+                binding.destinationInput.setText(place.name, false)
+                showDestination(place)
+            }
+        }
         binding.destinationInput.setOnEditorActionListener { _, _, _ ->
             findDestinationRoute()
             true
         }
     }
 
-    private fun setupDirectionPicker(preferredPatternId: String? = null) {
-        val route = selectedRoute
-        val routePatterns = if (route == null) emptyList() else transitIndex.patternsForRoute(route)
-        val options = routePatterns
-            .groupBy { it.directionId to it.headsign }
-            .map { (_, variants) ->
-                variants.firstOrNull { it.id == preferredPatternId } ?: variants.first()
-            }
-        val labels = listOf(getString(R.string.all_directions)) + options.map { it.headsign }
-        binding.directionInput.setAdapter(
-            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, labels)
-        )
-        val preferred = options.firstOrNull { it.id == preferredPatternId }
-        selectedPattern = preferred
-        binding.directionInput.setText(
-            preferred?.headsign ?: getString(R.string.all_directions),
-            false
-        )
-        binding.directionInput.setOnItemClickListener { _, _, position, _ ->
-            selectedPattern = if (position == 0) null else options[position - 1]
-            journeyChoice = null
-            trainJourneyChoice = null
-            hideTravelModeChoices()
-            renderVehicles()
-        }
+    private fun showDestination(place: OfflinePlace) {
+        directDestination = GeoPoint(place.latitude, place.longitude)
+        binding.map.overlays.removeAll { it is Marker || it is Polyline }
+        addYouMarker()
+        addExactDestinationMarker(place.latitude, place.longitude)
+        binding.map.controller.setZoom(16.0)
+        binding.map.controller.animateTo(directDestination)
+        binding.map.invalidate()
+        findDestinationRoute()
     }
 
     private fun findDestinationRoute() {
-        val destination = binding.destinationInput.text.toString()
-        if (destination.isBlank()) return
+        val destination = binding.destinationInput.text.toString().trim()
+        if (destination.isBlank()) {
+            binding.destinationLayout.error = getString(R.string.enter_destination)
+            binding.destinationInput.requestFocus()
+            getSystemService(InputMethodManager::class.java)
+                .showSoftInput(binding.destinationInput, InputMethodManager.SHOW_IMPLICIT)
+            return
+        }
         currentFocus?.let {
             getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(it.windowToken, 0)
             it.clearFocus()
         }
-        binding.findRouteButton.isEnabled = false
-        lifecycleScope.launch {
-            val address = geocode(destination)
-            val freshVehicleResult = runCatching { repository.vehicles() }
-                .onSuccess {
-                    liveVehicles = it
-                    binding.liveStatus.text = getString(R.string.live_updated)
-                    binding.liveStatus.setTextColor(getColor(R.color.live_green))
-                    renderVehicles()
-                }
-                .onFailure {
-                    Log.e(TAG, "Unable to get fresh positions for journey planning", it)
-                }
-            val journeyVehicles = freshVehicleResult.getOrElse { liveVehicles }
-            val busChoice = address?.let {
-                withContext(Dispatchers.Default) {
-                    transitIndex.planLiveJourney(
-                        currentLocation.latitude,
-                        currentLocation.longitude,
-                        it.first,
-                        it.second,
-                        journeyVehicles
-                    )
-                }
-            }
-            val trainChoice = address?.let {
-                withContext(Dispatchers.Default) {
-                    trainIndex.planScheduledJourney(
-                        currentLocation.latitude,
-                        currentLocation.longitude,
-                        it.first,
-                        it.second
-                    )
-                }
-            }
-            binding.findRouteButton.isEnabled = true
-            automaticReplanPending = false
-            if (address == null) {
-                showJourneyMessage(getString(R.string.address_not_found))
-                return@launch
-            }
-            if (journeyVehicles.isEmpty() && trainChoice == null) {
-                showJourneyMessage(
-                    getString(
-                        if (freshVehicleResult.isSuccess) R.string.no_live_vehicles_now
-                        else R.string.journey_feed_unavailable
-                    )
-                )
-                return@launch
-            }
-            if (busChoice == null && trainChoice == null) {
-                showJourneyMessage(getString(R.string.no_direct_route))
-                return@launch
-            }
-            binding.destinationLayout.error = null
-            saveLastDestination(destination.trim())
-            val useTrain = trainChoice != null &&
-                (busChoice == null || trainChoice.estimatedTotalSeconds < busChoice.estimatedTotalSeconds)
-            journeyChoice = if (useTrain) null else busChoice
-            trainJourneyChoice = if (useTrain) trainChoice else null
-            val transitSeconds = trainJourneyChoice?.estimatedTotalSeconds
-                ?: journeyChoice!!.estimatedTotalSeconds
-            walkingMode = false
-            directDestination = GeoPoint(address.first, address.second)
-            directWalkingMetres = directWalkingDistance(address.first, address.second)
-            directWalkingSeconds = directWalkingMetres / WALKING_METRES_PER_SECOND
-            val choice = journeyChoice
-            if (choice != null) {
-                selectedRoute = choice.pattern.route
-                binding.routeInput.setText(selectedRoute, false)
-                setupDirectionPicker(choice.pattern.id)
-            } else {
-                selectedRoute = null
-                selectedPattern = null
-                binding.routeInput.setText(getString(R.string.all_routes), false)
-                setupDirectionPicker()
-            }
-            busJourneyDescription = trainJourneyChoice?.let { train ->
-                getString(
-                    R.string.train_journey_found,
-                    train.category,
-                    train.number,
-                    train.headsign,
-                    TransitIndex.cleanStopName(train.boardAt.name),
-                    formatTime(train.departureSeconds),
-                    TransitIndex.cleanStopName(train.destination.name),
-                    formatTime(train.arrivalSeconds),
-                    train.walkingMetres.roundToInt(),
-                    train.destinationWalkMetres.roundToInt()
-                )
-            } ?: run {
-                val bus = requireNotNull(choice)
-                bus.secondLeg?.let { second ->
-                    getString(
-                        R.string.transfer_journey_found,
-                        bus.pattern.route,
-                        bus.pattern.headsign,
-                        bus.vehicleDistanceMetres.roundToInt(),
-                        TransitIndex.cleanStopName(bus.boardAt.name),
-                        TransitIndex.cleanStopName(bus.transferAt?.name ?: second.boardAt.name),
-                        bus.walkingMetres.roundToInt(),
-                        (bus.boardingEtaSeconds / 60f).roundToInt().coerceAtLeast(1)
-                    )
-                } ?: getString(
-                    R.string.journey_found,
-                    bus.pattern.route,
-                    bus.pattern.headsign,
-                    bus.vehicleDistanceMetres.roundToInt(),
-                    TransitIndex.cleanStopName(bus.boardAt.name),
-                    bus.walkingMetres.roundToInt(),
-                    (bus.boardingEtaSeconds / 60f).roundToInt().coerceAtLeast(1),
-                    bus.stopCount,
-                    TransitIndex.cleanStopName(bus.destination.name),
-                    bus.destinationWalkMetres.roundToInt()
-                )
-            }
-            binding.sharedDirections.text = busJourneyDescription
-            binding.sharedDirections.visibility = View.VISIBLE
-            if (directWalkingSeconds < transitSeconds) {
-                binding.sharedDirections.text = getString(
-                    R.string.walking_is_faster,
-                    minutes(directWalkingSeconds),
-                    directWalkingMetres.roundToInt(),
-                    minutes(transitSeconds)
-                )
-                binding.travelModeChoices.visibility = View.VISIBLE
-            } else {
-                hideTravelModeChoices()
-            }
-            showJourneySheet()
+        planningJob?.cancel()
+        planningJob = lifecycleScope.launch {
+            val started = SystemClock.elapsedRealtime()
+            binding.findRouteButton.isEnabled = false
+            binding.searchProgress.visibility = View.VISIBLE
+            journeyChoice = null
+            trainJourneyChoice = null
+            walkingFromOrigin = null
+            walkingFromDestination = null
+            selectedRoute = null
+            selectedPattern = null
+            directDestination = lastGeocodedAddress?.takeIf { it.first == destination }?.second
+                ?.let { GeoPoint(it.first, it.second) }
+            showJourneyMessage(getString(R.string.finding_address))
+            binding.journeyTitle.setText(R.string.planning_journey)
             renderVehicles()
-            frameCurrentJourney()
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private suspend fun geocode(query: String): Pair<Double, Double>? {
-        if (!Geocoder.isPresent()) return null
-        val geocoder = Geocoder(this, Locale.ITALY)
-        return if (Build.VERSION.SDK_INT >= 33) {
-            geocodeAsync(geocoder, query) ?: query
-                .takeUnless { it.contains("Torino", ignoreCase = true) }
-                ?.let { geocodeAsync(geocoder, "$it, Torino") }
-        } else {
-            withContext(Dispatchers.IO) {
-                geocoder.getFromLocationName(query, 1)?.firstOrNull()?.let {
-                    it.latitude to it.longitude
-                } ?: query
-                    .takeUnless { it.contains("Torino", ignoreCase = true) }
-                    ?.let { fallback ->
-                        geocoder.getFromLocationName("$fallback, Torino", 1)
-                            ?.firstOrNull()
-                            ?.let { it.latitude to it.longitude }
+            try {
+                coroutineScope {
+                    val originTask = async { timed("location") { obtainLocation() } }
+                    val addressTask = async { timed("geocode") { geocode(destination) } }
+                    val vehiclesTask = async {
+                        timed("vehicles") {
+                            try {
+                                Result.success(repository.vehicles())
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                Result.failure<List<LiveVehicle>>(error)
+                            }
+                        }
                     }
+                    val address = addressTask.await()
+                    if (address == null) {
+                        originTask.cancel()
+                        vehiclesTask.cancel()
+                        showJourneyMessage(getString(R.string.address_not_found))
+                        binding.destinationInput.showDropDown()
+                        return@coroutineScope
+                    }
+                    directDestination = GeoPoint(address.first, address.second)
+                    renderVehicles()
+                    binding.map.controller.animateTo(directDestination)
+                    val origin = originTask.await()
+                    if (origin == null) {
+                        vehiclesTask.cancel()
+                        showLocationHint()
+                        return@coroutineScope
+                    }
+                    // One origin snapshot is used for both planners and their walking legs.
+                    currentLocation = GeoPoint(origin.latitude, origin.longitude)
+                    val walkingTask = async(Dispatchers.Default) {
+                        timed("walking") {
+                            val city = offlineCity
+                            city.walkingDistancesFrom(origin.latitude, origin.longitude) to
+                                city.walkingDistancesFrom(address.first, address.second)
+                        }
+                    }
+                    val trainTask = async(Dispatchers.Default) {
+                        timed("trains") {
+                            val (fromOrigin, fromDestination) = walkingTask.await()
+                            trainIndex.planScheduledJourney(
+                                origin.latitude, origin.longitude, address.first, address.second,
+                                walkFromOrigin = fromOrigin::estimatedMetresTo,
+                                walkFromDestination = fromDestination::estimatedMetresTo
+                            )
+                        }
+                    }
+                    val vehicleResult = vehiclesTask.await()
+                    val journeyVehicles = vehicleResult.getOrDefault(emptyList())
+                    liveVehicles = journeyVehicles
+                    if (vehicleResult.isSuccess) updateLiveStatus()
+                    else binding.liveStatus.setText(R.string.feed_unavailable)
+                    var shown = false
+                    var hasMatchedVehicles = false
+                    val (fromOrigin, fromDestination) = walkingTask.await()
+                    walkingFromOrigin = fromOrigin
+                    walkingFromDestination = fromDestination
+                    val busChoice = withContext(Dispatchers.Default) {
+                        timed("buses") {
+                            hasMatchedVehicles = journeyVehicles.any { transitIndex.matchDirection(it) != null }
+                            transitIndex.planLiveJourney(
+                                origin.latitude, origin.longitude, address.first, address.second,
+                                journeyVehicles,
+                                walkFromOrigin = fromOrigin::estimatedMetresTo,
+                                walkFromDestination = fromDestination::estimatedMetresTo,
+                                walkBetweenStops = { startLat, startLon, endLat, endLon ->
+                                    offlineCity.shortWalkMetres(startLat, startLon, endLat, endLon)
+                                        ?: Float.POSITIVE_INFINITY
+                                },
+                                onDirectJourney = { direct ->
+                                    withContext(Dispatchers.Main) {
+                                        val trainChoice = trainTask.await()
+                                        if (direct != null || trainChoice != null) {
+                                            displayJourney(destination, address, direct, trainChoice, frame = true)
+                                            binding.sharedDirections.append("\n" + getString(R.string.checking_transfers))
+                                            shown = true
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    val trainChoice = trainTask.await()
+                    if (busChoice == null && trainChoice == null) {
+                        showJourneyMessage(getString(
+                            if (vehicleResult.isFailure) R.string.journey_feed_unavailable
+                            else if (liveVehicles.isEmpty()) R.string.no_live_vehicles_now
+                            else if (!hasMatchedVehicles) R.string.live_directions_unavailable
+                            else R.string.no_direct_route
+                        ))
+                    } else {
+                        val changed = busChoice != journeyChoice && trainJourneyChoice == null
+                        displayJourney(destination, address, busChoice, trainChoice, frame = !shown || changed)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.e(TAG, "Journey planning failed", error)
+                showJourneyMessage(getString(R.string.journey_failed))
+            } finally {
+                if (currentCoroutineContext()[Job] == planningJob) {
+                    binding.findRouteButton.isEnabled = true
+                    binding.searchProgress.visibility = View.GONE
+                    automaticReplanPending = false
+                }
+                Log.d(TAG, "Journey total: ${SystemClock.elapsedRealtime() - started} ms")
             }
         }
     }
 
-    private suspend fun geocodeAsync(
-        geocoder: Geocoder,
-        query: String
-    ): Pair<Double, Double>? = suspendCancellableCoroutine { continuation ->
-        geocoder.getFromLocationName(query, 1) { results ->
-            continuation.resume(results.firstOrNull()?.let { it.latitude to it.longitude })
+    private suspend fun <T> timed(label: String, block: suspend () -> T): T {
+        val started = SystemClock.elapsedRealtime()
+        try {
+            return block()
+        } finally {
+            Log.d(TAG, "$label: ${SystemClock.elapsedRealtime() - started} ms")
         }
+    }
+
+    private fun displayJourney(
+        destination: String,
+        address: Pair<Double, Double>,
+        busChoice: JourneyChoice?,
+        trainChoice: ScheduledTrainJourney?,
+        frame: Boolean
+    ) {
+        binding.destinationLayout.error = null
+        binding.locationSettingsButton.visibility = View.GONE
+        saveLastDestination(destination.trim())
+        val useTrain = trainChoice != null &&
+            (busChoice == null || trainChoice.estimatedTotalSeconds < busChoice.estimatedTotalSeconds)
+        journeyChoice = if (useTrain) null else busChoice
+        trainJourneyChoice = if (useTrain) trainChoice else null
+        val transitSeconds = trainJourneyChoice?.estimatedTotalSeconds
+            ?: journeyChoice!!.estimatedTotalSeconds
+        walkingMode = false
+        directDestination = GeoPoint(address.first, address.second)
+        directWalkingMetres = directWalkingDistance(address.first, address.second)
+        directWalkingSeconds = directWalkingMetres / WALKING_METRES_PER_SECOND
+        val choice = journeyChoice
+        selectedRoute = choice?.pattern?.route
+        selectedPattern = choice?.pattern
+        busJourneyDescription = trainJourneyChoice?.let { train ->
+            getString(
+                R.string.train_journey_found,
+                train.category,
+                train.number,
+                train.headsign,
+                TransitIndex.cleanStopName(train.boardAt.name),
+                formatTime(train.departureSeconds),
+                TransitIndex.cleanStopName(train.destination.name),
+                formatTime(train.arrivalSeconds),
+                train.walkingMetres.roundToInt(),
+                train.destinationWalkMetres.roundToInt()
+            )
+        } ?: run {
+            val bus = requireNotNull(choice)
+            val lines = bus.pattern.route + (bus.secondLeg?.let { " → " + it.pattern.route } ?: "")
+            val exit = bus.transferAt ?: bus.destination
+            val description = getString(R.string.journey_compact,
+                lines, minutes(bus.boardingEtaSeconds), bus.walkingMetres.roundToInt(),
+                TransitIndex.cleanStopName(bus.boardAt.name), TransitIndex.cleanStopName(exit.name)) +
+                if (bus.secondLeg != null) "\n" + getString(R.string.journey_transfer_compact,
+                    bus.secondLeg.pattern.route, TransitIndex.cleanStopName(bus.secondLeg.exitAt.name))
+                else "\n" + getString(R.string.journey_last_walk, bus.destinationWalkMetres.roundToInt())
+            val age = maxOf(bus.vehicle.ageSeconds, bus.secondLeg?.vehicle?.ageSeconds ?: 0)
+            val note = listOfNotNull(
+                if (bus.directionEstimated) getString(R.string.direction_estimated_short) else null,
+                if (age > 120) getString(R.string.bus_position_age, (age + 59) / 60) else null
+            ).joinToString(" · ")
+            SpannableString(description + if (note.isEmpty()) "" else "\n$note").apply {
+                setSpan(StyleSpan(Typeface.BOLD), 0, description.indexOf('\n'), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
+        binding.walkButton.text = getString(R.string.walk_option, minutes(directWalkingSeconds))
+        binding.walkButton.contentDescription = getString(R.string.walk_there) + ", " +
+            getString(R.string.walk_summary, minutes(directWalkingSeconds))
+        binding.busAnywayButton.text = getString(R.string.transit_option, minutes(transitSeconds))
+        binding.travelModeChoices.visibility = View.VISIBLE
+        binding.boardStopDirectionsButton.visibility = View.VISIBLE
+        binding.sharedDirections.text = busJourneyDescription
+        binding.sharedDirections.visibility = View.VISIBLE
+        if (directWalkingSeconds < transitSeconds) {
+            binding.sharedDirections.text = getString(
+                R.string.walking_is_faster,
+                minutes(directWalkingSeconds),
+                directWalkingMetres.roundToInt(),
+                minutes(transitSeconds)
+            )
+        }
+        binding.alertButton.visibility = if (choice != null) View.VISIBLE else View.GONE
+        if ((originLocation?.accuracy ?: 0f) > 200f) {
+            binding.sharedDirections.append("\n" + getString(R.string.location_approximate))
+        }
+        binding.journeyCard.visibility = View.VISIBLE
+        renderVehicles()
+        if (frame) frameCurrentJourney()
+    }
+
+    private suspend fun geocode(query: String): Pair<Double, Double>? {
+        lastGeocodedAddress?.takeIf { it.first == query }?.let { return it.second }
+        val matches = withContext(Dispatchers.IO) { offlineCity.search(query) }
+        val place = matches.firstOrNull { it.exactMatch } ?: matches.singleOrNull()
+        if (place == null) return null
+        return (place.latitude to place.longitude).also { lastGeocodedAddress = query to it }
     }
 
     private fun startRefreshing() {
@@ -366,18 +521,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun refreshNow() {
-        refreshJob?.cancel()
-        startRefreshing()
-    }
-
     private suspend fun fetchVehicles() {
         binding.liveStatus.text = getString(R.string.connecting)
         runCatching { repository.vehicles() }
             .onSuccess {
                 liveVehicles = it
-                binding.liveStatus.text = getString(R.string.live_updated)
-                binding.liveStatus.setTextColor(getColor(R.color.live_green))
+                updateLiveStatus()
                 if (activeBusNeedsReplan(it)) {
                     requestAutomaticReplan()
                 } else {
@@ -387,16 +536,29 @@ class MainActivity : AppCompatActivity() {
             .onFailure {
                 if (it is CancellationException) return
                 Log.e(TAG, "Unable to refresh GTT live positions", it)
+                liveVehicles = emptyList()
+                renderVehicles()
                 binding.liveStatus.text = getString(R.string.feed_unavailable)
                 binding.liveStatus.setTextColor(getColor(R.color.warning))
             }
     }
 
+    private fun updateLiveStatus() {
+        val oldest = liveVehicles.maxOfOrNull { it.ageSeconds } ?: 0
+        binding.liveStatus.text = when {
+            liveVehicles.isEmpty() -> getString(R.string.no_bus_positions)
+            oldest > 120 -> getString(R.string.delayed_bus_positions, liveVehicles.size, (oldest + 59) / 60)
+            else -> getString(R.string.live_bus_count, liveVehicles.size)
+        }
+        binding.liveStatus.setTextColor(getColor(
+            if (liveVehicles.isEmpty() || oldest > 120) R.color.warning else R.color.live_green))
+    }
+
     private fun activeBusNeedsReplan(vehicles: List<LiveVehicle>): Boolean {
         val journey = journeyChoice ?: return false
-        if (walkingMode || automaticReplanPending) return false
+        if (walkingMode || automaticReplanPending || planningJob?.isActive == true) return false
         val vehicle = vehicles.firstOrNull { it.id == journey.vehicle.id } ?: return true
-        val pattern = transitIndex.exactTripPattern(vehicle)
+        val pattern = transitIndex.matchDirection(vehicle)
         return pattern == null || pattern.id != journey.pattern.id ||
             !transitIndex.isStopIndexAhead(vehicle, pattern, journey.boardStopIndex)
     }
@@ -412,87 +574,65 @@ class MainActivity : AppCompatActivity() {
     private fun renderVehicles() {
         binding.map.overlays.removeAll { it is Marker || it is Polyline }
         drawJourneyLine()
+        if (journeyChoice == null && trainJourneyChoice == null) {
+            directDestination?.let { addExactDestinationMarker(it.latitude, it.longitude) }
+        }
         addYouMarker()
 
-        if (trainJourneyChoice != null) {
-            binding.closestCard.visibility = View.GONE
-            binding.vehicleCount.text = getString(R.string.scheduled_train_no_live_vehicles)
-            binding.map.invalidate()
-            return
+        val journeyMarkers = binding.map.overlays.filterIsInstance<Marker>()
+        val selectedIds = setOfNotNull(journeyChoice?.vehicle?.id, journeyChoice?.secondLeg?.vehicle?.id)
+        val markers = when {
+            walkingMode || trainJourneyChoice != null -> emptyList()
+            journeyChoice != null -> liveVehicles.filter { it.id in selectedIds }
+            selectedRoute != null -> liveVehicles.filter { normalizeRoute(it.routeId) == selectedRoute }
+            else -> liveVehicles
         }
 
-        val matches = liveVehicles
-            .filter { vehicle ->
-                selectedRoute?.let { normalizeRoute(vehicle.routeId) == it } ?: true
-            }
-            .filter { vehicle ->
-                selectedPattern?.let { selected ->
-                    transitIndex.matchDirection(vehicle)?.let { actual ->
-                        actual.directionId == selected.directionId &&
-                            actual.headsign == selected.headsign
-                    } == true
-                } ?: true
-            }
-            .filter { vehicle ->
-                journeyChoice?.let { journey ->
-                    val pattern = transitIndex.exactTripPattern(vehicle)
-                    pattern?.id == journey.pattern.id &&
-                        transitIndex.isStopIndexAhead(vehicle, pattern, journey.boardStopIndex)
-                } ?: true
-            }
-            .sortedBy { distanceTo(it) }
-
-        val isLocalOverview = selectedRoute == null && selectedPattern == null
-        val markers = if (isLocalOverview) matches.take(MAX_OVERVIEW_VEHICLES) else matches
-
-        markers.forEachIndexed { index, vehicle ->
+        markers.forEach { vehicle ->
             val vehicleRoute = normalizeRoute(vehicle.routeId)
             val marker = Marker(binding.map).apply {
                 position = GeoPoint(vehicle.latitude, vehicle.longitude)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                title = selectedPattern?.let {
-                    "${getString(R.string.vehicle_title, vehicleRoute)} → ${it.headsign}"
-                } ?: getString(R.string.vehicle_title, vehicleRoute)
-                snippet = getString(R.string.distance_away, distanceTo(vehicle).roundToInt())
-                icon = busDirectionMarker(index == 0, vehicle.bearing)
+                title = getString(R.string.vehicle_title, vehicleRoute)
+                snippet = getString(R.string.distance_away, distanceTo(vehicle).roundToInt()) +
+                    " · " + getString(R.string.bus_position_age, (vehicle.ageSeconds + 59) / 60)
+                alpha = if (vehicle.ageSeconds > 120) 0.65f else 1f
+                icon = busDirectionMarker(vehicle.id in selectedIds, vehicle.bearing, vehicleRoute)
+                setOnMarkerClickListener { clickedMarker, mapView ->
+                    val pattern = transitIndex.matchDirection(vehicle)
+                    val direction = if (pattern == null) {
+                        getString(R.string.bus_direction_unavailable)
+                    } else {
+                        getString(R.string.bus_destination, pattern.headsign) +
+                            if (vehicle.tripId !in pattern.tripIds) {
+                                " · " + getString(R.string.direction_estimated_short)
+                            } else ""
+                    }
+                    clickedMarker.subDescription = TextUtils.htmlEncode(direction)
+                    clickedMarker.showInfoWindow()
+                    mapView.controller.animateTo(clickedMarker.position)
+                    true
+                }
             }
             binding.map.overlays.add(marker)
         }
-
-        val nearest = matches.firstOrNull()
-        binding.closestCard.visibility = if (nearest == null) View.GONE else View.VISIBLE
-        nearest?.let {
-            val metres = distanceTo(it).roundToInt()
-            binding.closestRoute.text = normalizeRoute(it.routeId)
-            binding.closestDistance.text = getString(R.string.distance_away, metres)
-            binding.closestEta.text = getString(R.string.estimated_minutes, (metres / 220).coerceAtLeast(1))
-        }
-        binding.vehicleCount.text = selectedRoute?.let { route ->
-            resources.getQuantityString(
-                R.plurals.live_vehicle_count, matches.size, matches.size, route
-            )
-        } ?: if (matches.size > markers.size) {
-            getString(R.string.live_vehicle_overview_count, markers.size, matches.size)
-        } else {
-            resources.getQuantityString(
-                R.plurals.live_vehicle_all_count, matches.size, matches.size
-            )
-        }
+        binding.map.overlays.removeAll(journeyMarkers.toSet())
+        binding.map.overlays.addAll(journeyMarkers)
         binding.map.invalidate()
     }
 
     private fun drawJourneyLine() {
-        trainJourneyChoice?.let { train ->
-            drawTrainJourneyLine(train)
-            return
-        }
-        val choice = journeyChoice ?: return
         if (walkingMode) {
             val destination = directDestination ?: return
             addWalkingConnector(currentLocation, destination)
             addExactDestinationMarker(destination.latitude, destination.longitude)
             return
         }
+        trainJourneyChoice?.let { train ->
+            drawTrainJourneyLine(train)
+            return
+        }
+        val choice = journeyChoice ?: return
         val points = journeyPoints(choice)
         addWalkingConnector(
             currentLocation,
@@ -533,6 +673,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val secondPoints = secondLegPoints(choice)
+        if (secondPoints.size >= 2) {
+            choice.secondLeg?.let { leg ->
+                choice.transferAt?.let { transfer ->
+                    addWalkingConnector(GeoPoint(transfer.latitude, transfer.longitude),
+                        GeoPoint(leg.boardAt.latitude, leg.boardAt.longitude))
+                }
+            }
+            for ((colour, width) in listOf(Color.WHITE to 6f, getColor(R.color.deep_green) to 3.5f)) {
+                binding.map.overlays.add(Polyline(binding.map).apply {
+                    setPoints(secondPoints)
+                    outlinePaint.color = colour
+                    outlinePaint.strokeWidth = width * resources.displayMetrics.density
+                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                    outlinePaint.strokeJoin = Paint.Join.ROUND
+                })
+            }
+        }
+
         addJourneyStopMarker(
             choice.destination,
             getString(R.string.destination_stop),
@@ -570,7 +729,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addWalkingConnector(from: GeoPoint, to: GeoPoint) {
-        addWalkingPath(listOf(from, to))
+        walkingPath(from, to)?.takeIf { it.size >= 2 }?.let(::addWalkingPath)
+    }
+
+    private fun walkingPath(from: GeoPoint, to: GeoPoint): List<GeoPoint>? {
+        val route = when {
+            from.latitude == currentLocation.latitude &&
+                from.longitude == currentLocation.longitude ->
+                walkingFromOrigin?.routeTo(to.latitude, to.longitude)
+            to.latitude == directDestination?.latitude &&
+                to.longitude == directDestination?.longitude ->
+                walkingFromDestination?.routeTo(from.latitude, from.longitude)
+                    ?.let { it.copy(points = it.points.asReversed()) }
+            else -> offlineCity.shortWalkRoute(from.latitude, from.longitude,
+                to.latitude, to.longitude)
+        } ?: return null
+        return route.points.map { GeoPoint(it.latitude, it.longitude) }
     }
 
     private fun addWalkingPath(points: List<GeoPoint>) {
@@ -599,6 +773,14 @@ class MainActivity : AppCompatActivity() {
         val end = stops.indexOfFirst { it.id == endStop.id }
         if (start < 0 || end < start) return emptyList()
         return stops.subList(start, end + 1).map { GeoPoint(it.latitude, it.longitude) }
+    }
+
+    private fun secondLegPoints(choice: JourneyChoice): List<GeoPoint> {
+        val leg = choice.secondLeg ?: return emptyList()
+        val start = leg.pattern.stops.indexOfFirst { it.id == leg.boardAt.id }
+        if (start < 0) return emptyList()
+        val end = (start + leg.stopCount).coerceAtMost(leg.pattern.stops.lastIndex)
+        return leg.pattern.stops.subList(start, end + 1).map { GeoPoint(it.latitude, it.longitude) }
     }
 
     private fun addJourneyStopMarker(
@@ -641,55 +823,57 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun frameJourney(choice: JourneyChoice) {
-        if (walkingMode) {
-            val destination = directDestination ?: return
-            binding.map.post {
-                binding.map.zoomToBoundingBox(
-                    BoundingBox.fromGeoPoints(listOf(currentLocation, destination)),
-                    true,
-                    180
-                )
-            }
-            return
-        }
-        val points = journeyPoints(choice) + listOf(
-            currentLocation,
-            GeoPoint(choice.destination.latitude, choice.destination.longitude),
-            GeoPoint(choice.finalLatitude, choice.finalLongitude)
-        )
-        if (points.size < 2) return
-        binding.map.post {
-            binding.map.zoomToBoundingBox(BoundingBox.fromGeoPoints(points), true, 180)
-        }
-    }
-
     private fun frameCurrentJourney() {
-        trainJourneyChoice?.let { train ->
-            val points = train.stops.subList(train.boardIndex, train.destinationIndex + 1)
-                .map { GeoPoint(it.latitude, it.longitude) } + listOf(currentLocation) +
-                listOfNotNull(directDestination)
-            binding.map.post {
-                binding.map.zoomToBoundingBox(BoundingBox.fromGeoPoints(points), true, 180)
-            }
-            return
+        val destination = directDestination ?: return
+        val walkingPoints = if (walkingMode) {
+            walkingPath(currentLocation, destination).orEmpty()
+        } else {
+            trainJourneyChoice?.let { train ->
+                walkingPath(currentLocation, GeoPoint(train.boardAt.latitude, train.boardAt.longitude)).orEmpty() +
+                    walkingPath(GeoPoint(train.destination.latitude, train.destination.longitude), destination).orEmpty()
+            } ?: journeyChoice?.let { choice ->
+                walkingPath(currentLocation, GeoPoint(choice.boardAt.latitude, choice.boardAt.longitude)).orEmpty() +
+                    walkingPath(GeoPoint(choice.destination.latitude, choice.destination.longitude), destination).orEmpty() +
+                    (choice.secondLeg?.let { leg ->
+                        choice.transferAt?.let { transfer ->
+                            walkingPath(GeoPoint(transfer.latitude, transfer.longitude),
+                                GeoPoint(leg.boardAt.latitude, leg.boardAt.longitude))
+                        }
+                    }.orEmpty())
+            }.orEmpty()
         }
-        journeyChoice?.let(::frameJourney)
-    }
-
-    private fun showJourneySheet() {
-        BottomSheetBehavior.from(binding.plannerSheet).apply {
-            peekHeight = (230 * resources.displayMetrics.density).roundToInt()
-            state = BottomSheetBehavior.STATE_COLLAPSED
+        val transitPoints = if (walkingMode) emptyList() else {
+            trainJourneyChoice?.let { train ->
+                train.stops.subList(train.boardIndex, train.destinationIndex + 1)
+                    .map { GeoPoint(it.latitude, it.longitude) }
+            } ?: journeyChoice?.let { choice ->
+                journeyPoints(choice) + secondLegPoints(choice)
+            }.orEmpty()
+        }
+        val points = transitPoints + walkingPoints + listOf(currentLocation, destination)
+        binding.topControls.doOnLayout {
+            binding.map.controller.stopAnimation(false)
+            val padding = (32 * resources.displayMetrics.density).roundToInt()
+            val top = binding.topControls.height
+            val box = BoundingBox.fromGeoPoints(points)
+            val width = (binding.map.width - 2 * padding).coerceAtLeast(1)
+            val height = (binding.map.height - top - 2 * padding).coerceAtLeast(1)
+            val zoom = org.osmdroid.views.MapView.getTileSystem().getBoundingBoxZoom(box, width, height)
+                .coerceIn(binding.map.minZoomLevel, 18.0)
+            binding.map.setMapCenterOffset(0, top / 2)
+            binding.map.controller.setZoom(kotlin.math.floor(zoom))
+            binding.map.controller.setCenter(box.centerWithDateLine)
         }
     }
 
     private fun showJourneyMessage(message: String) {
         hideTravelModeChoices()
+        binding.journeyTitle.setText(R.string.your_journey)
+        binding.locationSettingsButton.visibility = View.GONE
         binding.destinationLayout.error = null
         binding.sharedDirections.text = message
         binding.sharedDirections.visibility = View.VISIBLE
-        showJourneySheet()
+        binding.journeyCard.visibility = View.VISIBLE
     }
 
     private fun requestAlert() {
@@ -713,6 +897,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun enableAlert() {
+        if (!hasLocationPermission()) {
+            requestLocation()
+            return
+        }
+        planningJob?.cancel()
         val pattern = selectedPattern ?: return
         val stop = journeyChoice?.boardAt ?: pattern.stops.minByOrNull {
             val result = FloatArray(1)
@@ -750,30 +939,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addYouMarker() {
+        val location = originLocation ?: return
         binding.map.overlays.add(Marker(binding.map).apply {
-            position = currentLocation
+            position = GeoPoint(location.latitude, location.longitude)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             title = getString(R.string.you_are_here)
             icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_my_location)
         })
     }
 
-    private fun busDirectionMarker(closest: Boolean, bearing: Float?): BitmapDrawable {
+    private fun busDirectionMarker(closest: Boolean, bearing: Float?, route: String): BitmapDrawable {
         val bearingBucket = bearing?.let {
             (((it + 11.25f) / 22.5f).toInt() % 16)
         } ?: -1
-        return busIconCache.getOrPut(closest to bearingBucket) {
+        return busIconCache.getOrPut(Triple(closest, bearingBucket, route)) {
             createBusDirectionMarker(
                 closest,
-                bearingBucket.takeIf { it >= 0 }?.times(22.5f)
+                bearingBucket.takeIf { it >= 0 }?.times(22.5f), route
             )
         }
     }
 
-    private fun createBusDirectionMarker(closest: Boolean, bearing: Float?): BitmapDrawable {
+    private fun createBusDirectionMarker(closest: Boolean, bearing: Float?, route: String): BitmapDrawable {
         val density = resources.displayMetrics.density
-        val busDiameter = (if (closest) 28f else 24f) * density
-        val arrowDiameter = (if (closest) 12f else 10f) * density
+        val busDiameter = (if (closest) 30f else 21f) * density
+        val arrowDiameter = (if (closest) 8f else 5f) * density
         val busRadius = busDiameter / 2f
         val arrowRadius = arrowDiameter / 2f
         val gap = 2f * density
@@ -786,24 +976,19 @@ class MainActivity : AppCompatActivity() {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         paint.style = Paint.Style.FILL
-        paint.color = color
+        paint.color = if (closest) color else Color.WHITE
         canvas.drawCircle(center, center, busRadius, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 2f * density
-        paint.color = Color.WHITE
+        paint.color = if (closest) Color.WHITE else color
         canvas.drawCircle(center, center, busRadius - paint.strokeWidth / 2f, paint)
 
-        val busInset = 5f * density
-        val bus = ContextCompat.getDrawable(this, R.drawable.ic_bus_notification)!!
-            .mutate()
-            .also { DrawableCompat.setTint(it, Color.WHITE) }
-        bus.setBounds(
-            (center - busRadius + busInset).roundToInt(),
-            (center - busRadius + busInset).roundToInt(),
-            (center + busRadius - busInset).roundToInt(),
-            (center + busRadius - busInset).roundToInt()
-        )
-        bus.draw(canvas)
+        paint.style = Paint.Style.FILL
+        paint.color = if (closest) Color.WHITE else color
+        paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        paint.textSize = (if (closest) 12f else if (route.length > 2) 8f else 10f) * density
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText(route, center, center - (paint.ascent() + paint.descent()) / 2, paint)
 
         bearing?.let {
             val angle = Math.toRadians(it.toDouble() - 90.0)
@@ -854,42 +1039,100 @@ class MainActivity : AppCompatActivity() {
         return output[0]
     }
 
-    private fun requestLocation() {
-        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-        if (fine == PackageManager.PERMISSION_GRANTED) loadLocation()
-        else locationPermission.launch(
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-        )
+    private fun deviceLocationEnabled() =
+        LocationManagerCompat.isLocationEnabled(getSystemService(LocationManager::class.java))
+
+    private fun openLocationSettings() {
+        locationSettings.launch(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
     }
 
-    private fun loadLocation() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED) return
-        binding.locationButton.isEnabled = false
-        locationClient.lastLocation
-            .addOnSuccessListener { location ->
-                location?.let {
-                    currentLocation = GeoPoint(it.latitude, it.longitude)
+    private fun hasLocationPermission() =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun requestLocation() {
+        lifecycleScope.launch {
+            binding.locationButton.isEnabled = false
+            try {
+                val location = obtainLocation()
+                if (location == null) {
+                    showLocationHint()
+                } else if (planningJob?.isActive != true) {
+                    currentLocation = GeoPoint(location.latitude, location.longitude)
+                    binding.map.controller.setZoom(16.0)
                     binding.map.controller.animateTo(currentLocation)
                     renderVehicles()
-                } ?: showLocationHint()
+                }
+            } finally {
+                binding.locationButton.isEnabled = true
             }
-            .addOnCompleteListener { binding.locationButton.isEnabled = true }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun obtainLocation(): Location? {
+        if (!deviceLocationEnabled()) {
+            Log.i(TAG, "Device location is switched off")
+            return null
+        }
+        if (!hasLocationPermission()) {
+            val pending = permissionRequest ?: CompletableDeferred<Boolean>().also {
+                permissionRequest = it
+                locationPermission.launch(arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION
+                ))
+            }
+            if (!pending.await()) return null
+        }
+        originLocation?.takeIf {
+            SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos in 0..30_000_000_000L
+        }?.let { return it }
+        val pending = locationRequest?.takeIf { it.isActive } ?: lifecycleScope.async {
+            val location = withTimeoutOrNull(12_000) {
+                suspendCancellableCoroutine<Location?> { continuation ->
+                    val cancellation = CancellationTokenSource()
+                    continuation.invokeOnCancellation { cancellation.cancel() }
+                    val request = CurrentLocationRequest.Builder()
+                        .setMaxUpdateAgeMillis(30_000)
+                        .setDurationMillis(10_000)
+                        .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+                        .build()
+                    locationClient.getCurrentLocation(request, cancellation.token)
+                        .addOnSuccessListener { if (continuation.isActive) continuation.resume(it) }
+                        .addOnFailureListener { if (continuation.isActive) continuation.resume(null) }
+                }
+            }
+            location?.takeIf {
+                it.hasAccuracy() && it.latitude.isFinite() && it.longitude.isFinite() &&
+                    SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos in 0..30_000_000_000L
+            }?.also { originLocation = it }
+        }.also { locationRequest = it }
+        return pending.await()
     }
 
     private fun showLocationHint() {
-        binding.liveStatus.text = getString(R.string.location_hint)
+        val enabled = deviceLocationEnabled()
+        showJourneyMessage(getString(
+            if (!enabled) R.string.device_location_off
+            else if (!hasLocationPermission()) R.string.location_permission_required
+            else R.string.location_unavailable
+        ))
+        binding.locationSettingsButton.visibility = if (enabled) View.GONE else View.VISIBLE
     }
 
     private fun consumeSharedDirections(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return
         val shared = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
         val route = ROUTE_PATTERN.find(shared)?.groupValues?.get(1) ?: return
+        planningJob?.cancel()
+        journeyChoice = null
+        trainJourneyChoice = null
+        directDestination = null
         selectedRoute = route
-        binding.routeInput.setText(route, false)
-        setupDirectionPicker()
-        binding.sharedDirections.text = getString(R.string.shared_route_found, route)
-        binding.sharedDirections.visibility = View.VISIBLE
+        selectedPattern = null
+        showJourneyMessage(getString(R.string.shared_route_found, route))
         renderVehicles()
     }
 
@@ -907,12 +1150,7 @@ class MainActivity : AppCompatActivity() {
         hideTravelModeChoices()
         binding.sharedDirections.text = getString(R.string.replanning_from_here)
         binding.sharedDirections.visibility = View.VISIBLE
-        lifecycleScope.launch {
-            loadLocation()
-            delay(1_000)
-            fetchVehicles()
-            findDestinationRoute()
-        }
+        findDestinationRoute()
     }
 
     private fun saveLastDestination(destination: String) {
@@ -927,14 +1165,11 @@ class MainActivity : AppCompatActivity() {
             .getString(LAST_DESTINATION, null)
             ?.takeIf { it.isNotBlank() }
             ?: return
-        binding.destinationInput.setText(destination)
+        binding.destinationInput.setText(destination.substringBefore(" · "))
         binding.sharedDirections.text = getString(R.string.restoring_journey)
         binding.sharedDirections.visibility = View.VISIBLE
-        showJourneySheet()
-        lifecycleScope.launch {
-            delay(1_500)
-            findDestinationRoute()
-        }
+        binding.journeyCard.visibility = View.VISIBLE
+        findDestinationRoute()
     }
 
     private fun normalizeRoute(route: String) =
@@ -942,7 +1177,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectWalkingMode() {
         if (journeyChoice == null && trainJourneyChoice == null) return
+        planningJob?.cancel()
         walkingMode = true
+        binding.boardStopDirectionsButton.visibility = View.GONE
+        binding.journeyTitle.text = getString(R.string.walk_summary, minutes(directWalkingSeconds))
         binding.sharedDirections.text = getString(
             R.string.walking_selected,
             directWalkingMetres.roundToInt(),
@@ -951,12 +1189,17 @@ class MainActivity : AppCompatActivity() {
         binding.alertButton.visibility = View.GONE
         renderVehicles()
         frameCurrentJourney()
-        openWalkingDirections()
+        directDestination?.let { openWalkingDirections(it) }
     }
 
     private fun selectBusMode() {
         if (journeyChoice == null && trainJourneyChoice == null) return
+        planningJob?.cancel()
         walkingMode = false
+        binding.boardStopDirectionsButton.visibility = View.VISIBLE
+        val transitSeconds = trainJourneyChoice?.estimatedTotalSeconds
+            ?: journeyChoice!!.estimatedTotalSeconds
+        binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
         binding.sharedDirections.text = busJourneyDescription
         binding.alertButton.visibility = if (trainJourneyChoice == null) View.VISIBLE else View.GONE
         renderVehicles()
@@ -966,10 +1209,12 @@ class MainActivity : AppCompatActivity() {
     private fun hideTravelModeChoices() {
         walkingMode = false
         binding.travelModeChoices.visibility = View.GONE
-        binding.alertButton.visibility = View.VISIBLE
+        binding.boardStopDirectionsButton.visibility = View.GONE
+        binding.alertButton.visibility = View.GONE
     }
 
     private fun directWalkingDistance(latitude: Double, longitude: Double): Float {
+        walkingFromOrigin?.let { return it.estimatedMetresTo(latitude, longitude) }
         val result = FloatArray(1)
         Location.distanceBetween(
             currentLocation.latitude,
@@ -982,8 +1227,7 @@ class MainActivity : AppCompatActivity() {
         return result[0] * WALKING_STREET_FACTOR
     }
 
-    private fun openWalkingDirections() {
-        val destination = directDestination ?: return
+    private fun openWalkingDirections(destination: GeoPoint) {
         val navigation = Uri.parse(
             "google.navigation:q=${destination.latitude},${destination.longitude}&mode=w"
         )
@@ -1014,14 +1258,11 @@ class MainActivity : AppCompatActivity() {
     private fun applySystemBarInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
             val bars: Insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            val keyboard = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
             windowInsets
         }
     }
-
-    private fun isDarkMode() =
-        resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
 
     override fun onResume() {
         super.onResume()
@@ -1033,6 +1274,13 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onDestroy() {
+        binding.map.onDetach()
+        offlineMapSource?.dispose()
+        offlineMapSource = null
+        super.onDestroy()
+    }
+
     private companion object {
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"
@@ -1040,17 +1288,6 @@ class MainActivity : AppCompatActivity() {
         const val WALKING_METRES_PER_SECOND = 1.35f
         const val WALKING_STREET_FACTOR = 1.2f
         const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"
-        const val MAX_OVERVIEW_VEHICLES = 35
-        val LIGHT_TILE_SOURCE = XYTileSource(
-            "CartoLight", 0, 20, 256, ".png",
-            arrayOf("https://a.basemaps.cartocdn.com/light_all/", "https://b.basemaps.cartocdn.com/light_all/", "https://c.basemaps.cartocdn.com/light_all/"),
-            "© OpenStreetMap contributors © CARTO"
-        )
-        val DARK_TILE_SOURCE = XYTileSource(
-            "CartoDark", 0, 20, 256, ".png",
-            arrayOf("https://a.basemaps.cartocdn.com/dark_all/", "https://b.basemaps.cartocdn.com/dark_all/", "https://c.basemaps.cartocdn.com/dark_all/"),
-            "© OpenStreetMap contributors © CARTO"
-        )
         val ROUTE_PATTERN = Regex("""(?i)(?:bus|linea|line|route)\s*#?\s*(\d{1,3})""")
     }
 }

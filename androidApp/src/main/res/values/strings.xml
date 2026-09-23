@@ -1,7 +1,23 @@
 <resources>
+    <string name="your_journey">Your journey</string>
+    <string name="planning_journey">Finding your journey…</string>
+    <string name="transit_summary">Transit · ~%1$d min total</string>
+    <string name="walk_summary">Walk · ~%1$d min</string>
+    <string name="walk_option">Walk · %1$d min ↗</string>
+    <string name="transit_option">Transit · %1$d min</string>
+    <string name="enter_destination">Enter a place or address in Torino</string>
+    <string name="journey_compact">Bus %1$s · arrives in ~%2$d min\nWalk ~%3$d m to %4$s\nGet off at %5$s</string>
+    <string name="journey_transfer_compact">Then %1$s to %2$s</string>
+    <string name="journey_last_walk">Then walk ~%1$d m to destination</string>
+    <string name="direction_estimated_short">Estimated direction</string>
     <string name="app_name">MATO · live bus</string>
     <string name="map_description">Map of live GTT vehicle positions</string>
     <string name="connecting">CONNECTING</string>
+    <string name="live_bus_count">● %1$d live buses</string>
+    <string name="no_bus_positions">No recent bus positions</string>
+    <string name="delayed_bus_positions">%1$d buses · up to %2$d min old</string>
+    <string name="bus_position_age">Position %1$d min ago</string>
+    <string name="delayed_bus_journey">Bus positions are up to %1$d minutes old. Arrival estimates account for this delay, but the bus may have moved differently.</string>
     <string name="live_updated">● LIVE · UPDATED NOW</string>
     <string name="feed_unavailable">GTT FEED UNAVAILABLE · RETRYING</string>
     <string name="location_hint">Enable location to find the closest bus</string>
@@ -10,21 +26,23 @@
     <string name="searching_for_vehicles">Searching official GTT live positions…</string>
     <string name="gtt_route">Optional map route filter</string>
     <string name="all_routes">All routes</string>
-    <string name="destination">Final address or place</string>
+    <string name="destination">Where to?</string>
     <string name="find_direct_route">Find the best live bus</string>
     <string name="search">Go</string>
     <string name="searching_short">…</string>
     <string name="finding_address">Finding address and live buses…</string>
-    <string name="address_not_found">Address not found. Add a street number or “Torino”.</string>
+    <string name="address_not_found">Choose a matching place from the suggestions. Offline search covers Torino and nearby suburbs.</string>
     <string name="going_towards">Bus direction</string>
     <string name="all_directions">All directions</string>
-    <string name="no_direct_route">No nearby live bus currently has this destination ahead.</string>
+    <string name="live_directions_unavailable">Live buses are visible, but their routes or directions could not be matched. Try again shortly.</string>
+    <string name="estimated_bus_direction">Bus direction estimated from live position and available heading. Check the destination shown on the bus.</string>
+    <string name="no_direct_route">No catchable bus found among the live routes we could match. Try again shortly.</string>
     <string name="train_journey_found">Scheduled %1$s %2$s → %3$s · walk %8$d m to %4$s · departs %5$s · get off at %6$s at %7$s · then walk %9$d m. Timetable data: Regione Piemonte.</string>
     <string name="board_train_here">Board train here</string>
     <string name="exit_train_here">Exit train here</string>
     <string name="train_alert_unavailable">Train monitoring is not available yet: this is a scheduled Trenitalia journey, not a live-position feed.</string>
     <string name="journey_feed_unavailable">Live GTT positions are unavailable right now. Check your connection and try again.</string>
-    <string name="no_live_vehicles_now">GTT is reporting no active buses right now. This may be outside service hours; try again later.</string>
+    <string name="no_live_vehicles_now">No recent GTT bus positions are available. The feed may be delayed or service may be inactive; try again shortly.</string>
     <string name="journey_found">Route %1$s → %2$s · live bus %3$d m away · walk %5$d m to %4$s; bus expected there in ~%6$d min · %7$d stops · exit at %8$s, %9$d m from destination</string>
     <string name="transfer_journey_found">Take %1$s → %2$s (live bus %3$d m away) · walk %6$d m to %4$s; bus expected there in ~%7$d min · get off near %5$s · MATO will replan there using current live buses.</string>
     <string name="replanning_from_here">Checkpoint reached · refreshing your location and all live buses…</string>
@@ -33,7 +51,8 @@
     <string name="walking_is_faster">Walking is faster: about %1$d min for roughly %2$d m. The best bus journey is about %3$d min.</string>
     <string name="walking_selected">Opening the actual walking route in Maps · MATO estimate: roughly %1$d m · about %2$d min.</string>
     <string name="walk_there">Walk in Maps</string>
-    <string name="lazy_bus_option">ur a lazy bum</string>
+    <string name="walk_to_boarding_stop">Walk to boarding stop in Google Maps</string>
+    <string name="lazy_bus_option">Take transit</string>
     <string name="board_here">Board here</string>
     <string name="exit_here">Exit here</string>
     <string name="intermediate_destination">Intermediate destination</string>
@@ -41,7 +60,7 @@
     <string name="final_destination">Final destination</string>
     <string name="closest_live_vehicle">Closest live vehicle</string>
     <string name="refresh_live_positions">Refresh live positions</string>
-    <string name="alert_me">Alert me when this bus approaches</string>
+    <string name="alert_me">Notify me</string>
     <string name="stop_alert">Stop approach alert</string>
     <string name="alert_enabled">Alert active · notify within 700 m</string>
     <string name="alert_requires_direction">Choose a destination or bus direction first.</string>
@@ -58,6 +77,8 @@
     <string name="new_journey_detail">New best option: route %1$s from %2$s.</string>
     <string name="recalculating_until_available">No catchable journey is available yet. MATO will retry with all routes every 30 seconds.</string>
     <string name="vehicle_title">Route %1$s</string>
+    <string name="bus_destination">Towards %1$s</string>
+    <string name="bus_direction_unavailable">Direction unavailable</string>
     <string name="distance_away">%1$d m away</string>
     <string name="estimated_minutes">~%1$d min</string>
     <string name="you_are_here">You are here</string>
@@ -72,4 +93,15 @@
         <item quantity="one">%1$d live GTT vehicle across all routes</item>
         <item quantity="other">%1$d live GTT vehicles across all routes</item>
     </plurals>
+    <string name="close_journey">Close journey</string>
+    <string name="location_unavailable">Could not get a position yet. Try near a window or outdoors, then tap the location button again.</string>
+    <string name="location_approximate">Approximate location · walking estimates may vary.</string>
+    <string name="journey_failed">Could not plan this journey. Please try again.</string>
+    <string name="checking_transfers">Checking connections…</string>
+    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <string name="device_location_off">Device location is switched off. Turn it on to plan a journey from your position.</string>
+    <string name="turn_on_location">Turn on location</string>
+    <string name="location_permission_required">Allow MATO to access your location. Tap the location button to try again.</string>
+    <string name="offline_map_loading">Opening offline Torino map…</string>
+    <string name="offline_map_failed">Could not open the offline map. Please restart the app.</string>
 </resources>

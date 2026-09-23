@@ -10,6 +10,12 @@ import android.content.pm.PackageManager
 import android.Manifest
 import android.location.Location
 import android.os.Build
+import android.os.SystemClock
+import android.annotation.SuppressLint
+import com.google.android.gms.location.CurrentLocationRequest
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.withTimeoutOrNull
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -162,12 +168,21 @@ class BusAlertService : Service() {
         val finalLatitude = alert.finalLatitude ?: return null
         val finalLongitude = alert.finalLongitude ?: return null
         val location = lastKnownLocation() ?: return null
+        val city = (application as MatoApplication).offlineCity
+        val fromOrigin = city.walkingDistancesFrom(location.latitude, location.longitude)
+        val fromDestination = city.walkingDistancesFrom(finalLatitude, finalLongitude)
         val choice = transitIndex.planLiveJourney(
             location.latitude,
             location.longitude,
             finalLatitude,
             finalLongitude,
-            vehicles.filterNot { it.id in passedVehicles }
+            vehicles.filterNot { it.id in passedVehicles },
+            walkFromOrigin = fromOrigin::estimatedMetresTo,
+            walkFromDestination = fromDestination::estimatedMetresTo,
+            walkBetweenStops = { startLat, startLon, endLat, endLon ->
+                city.shortWalkMetres(startLat, startLon, endLat, endLon)
+                    ?: Float.POSITIVE_INFINITY
+            }
         ) ?: return null
         val updated = BusAlert(
             route = choice.pattern.route,
@@ -196,30 +211,42 @@ class BusAlertService : Service() {
         return updated
     }
 
+    @SuppressLint("MissingPermission")
     private suspend fun lastKnownLocation(): Location? {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) !=
-            PackageManager.PERMISSION_GRANTED
-        ) return null
-        return suspendCancellableCoroutine<Location?> { continuation ->
-            locationClient.lastLocation
-                .addOnSuccessListener { continuation.resume(it) }
-                .addOnFailureListener { continuation.resume(null) }
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (fine != PackageManager.PERMISSION_GRANTED && coarse != PackageManager.PERMISSION_GRANTED) return null
+        return withTimeoutOrNull(12_000) {
+            suspendCancellableCoroutine<Location?> { continuation ->
+                val cancellation = CancellationTokenSource()
+                continuation.invokeOnCancellation { cancellation.cancel() }
+                val request = CurrentLocationRequest.Builder()
+                    .setMaxUpdateAgeMillis(30_000)
+                    .setDurationMillis(10_000)
+                    .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+                    .build()
+                locationClient.getCurrentLocation(request, cancellation.token)
+                    .addOnSuccessListener { location ->
+                        if (continuation.isActive) continuation.resume(location?.takeIf {
+                            SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos in 0..30_000_000_000L
+                        })
+                    }
+                    .addOnFailureListener { if (continuation.isActive) continuation.resume(null) }
+            }
         }
     }
 
     private suspend fun checkTransferArrival(alert: BusAlert) {
         val transferLat = alert.transferLatitude ?: return
         val transferLon = alert.transferLongitude ?: return
-        if (transferNotified ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) !=
-            PackageManager.PERMISSION_GRANTED
-        ) return
+        if (transferNotified) return
         val location = lastKnownLocation() ?: return
         val result = FloatArray(1)
         Location.distanceBetween(
             location.latitude, location.longitude, transferLat, transferLon, result
         )
-        if (result[0] <= TRANSFER_RADIUS_METRES) {
+        if (location.hasAccuracy() && location.accuracy <= TRANSFER_RADIUS_METRES &&
+            result[0] <= TRANSFER_RADIUS_METRES) {
             transferNotified = true
             notifyReplan(alert)
         }
