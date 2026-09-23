@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MatoLiveBus"
+rootProject.name = "TorinoBusRadar"
 include(":androidApp")

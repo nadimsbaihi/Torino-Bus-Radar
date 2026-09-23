@@ -8,7 +8,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "it.mato.livebus"
+        applicationId = "it.torinobusradar.app"
         minSdk = 26
         targetSdk = 35
         versionCode = providers.environmentVariable("MATO_VERSION_CODE").orNull?.toInt() ?: 1
@@ -23,6 +23,9 @@ android {
     testOptions { unitTests.isIncludeAndroidResources = true }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(

@@ -57,7 +57,7 @@ class GttRepository {
     private suspend fun fetchVehicles(): List<LiveVehicle> {
         val request = Request.Builder()
             .url(VEHICLE_POSITIONS_URL)
-            .header("User-Agent", "MATO-Live-Bus-Android/0.1")
+            .header("User-Agent", "Torino-Bus-Radar-Android/0.1")
             .build()
 
         Log.d(TAG, "Requesting GTT vehicle positions")

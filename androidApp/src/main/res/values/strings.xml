@@ -10,7 +10,7 @@
     <string name="journey_transfer_compact">Then %1$s to %2$s</string>
     <string name="journey_last_walk">Then walk ~%1$d m to destination</string>
     <string name="direction_estimated_short">Estimated direction</string>
-    <string name="app_name">MATO · live bus</string>
+    <string name="app_name">Torino Bus Radar</string>
     <string name="map_description">Map of live GTT vehicle positions</string>
     <string name="connecting">CONNECTING</string>
     <string name="live_bus_count">● %1$d live buses</string>
@@ -44,12 +44,12 @@
     <string name="journey_feed_unavailable">Live GTT positions are unavailable right now. Check your connection and try again.</string>
     <string name="no_live_vehicles_now">No recent GTT bus positions are available. The feed may be delayed or service may be inactive; try again shortly.</string>
     <string name="journey_found">Route %1$s → %2$s · live bus %3$d m away · walk %5$d m to %4$s; bus expected there in ~%6$d min · %7$d stops · exit at %8$s, %9$d m from destination</string>
-    <string name="transfer_journey_found">Take %1$s → %2$s (live bus %3$d m away) · walk %6$d m to %4$s; bus expected there in ~%7$d min · get off near %5$s · MATO will replan there using current live buses.</string>
+    <string name="transfer_journey_found">Take %1$s → %2$s (live bus %3$d m away) · walk %6$d m to %4$s; bus expected there in ~%7$d min · get off near %5$s · the app will replan there using current live buses.</string>
     <string name="replanning_from_here">Checkpoint reached · refreshing your location and all live buses…</string>
     <string name="bus_passed_replanning">That bus is no longer catchable · recalculating the whole journey with current live vehicles…</string>
     <string name="restoring_journey">Restoring your destination and recalculating the best live journey…</string>
     <string name="walking_is_faster">Walking is faster: about %1$d min for roughly %2$d m. The best bus journey is about %3$d min.</string>
-    <string name="walking_selected">Opening the actual walking route in Maps · MATO estimate: roughly %1$d m · about %2$d min.</string>
+    <string name="walking_selected">Opening the actual walking route in Maps · local estimate: roughly %1$d m · about %2$d min.</string>
     <string name="walk_there">Walk in Maps</string>
     <string name="walk_to_boarding_stop">Walk to boarding stop in Google Maps</string>
     <string name="lazy_bus_option">Take transit</string>
@@ -75,7 +75,7 @@
     <string name="selected_bus_passed">Your selected bus passed the stop</string>
     <string name="journey_recalculated">Journey recalculated</string>
     <string name="new_journey_detail">New best option: route %1$s from %2$s.</string>
-    <string name="recalculating_until_available">No catchable journey is available yet. MATO will retry with all routes every 30 seconds.</string>
+    <string name="recalculating_until_available">No catchable journey is available yet. The app will retry with all routes every 30 seconds.</string>
     <string name="vehicle_title">Route %1$s</string>
     <string name="bus_destination">Towards %1$s</string>
     <string name="bus_direction_unavailable">Direction unavailable</string>
@@ -101,7 +101,7 @@
     <string name="map_attribution">© OpenStreetMap contributors</string>
     <string name="device_location_off">Device location is switched off. Turn it on to plan a journey from your position.</string>
     <string name="turn_on_location">Turn on location</string>
-    <string name="location_permission_required">Allow MATO to access your location. Tap the location button to try again.</string>
+    <string name="location_permission_required">Allow Torino Bus Radar to access your location. Tap the location button to try again.</string>
     <string name="offline_map_loading">Opening offline Torino map…</string>
     <string name="offline_map_failed">Could not open the offline map. Please restart the app.</string>
 </resources>

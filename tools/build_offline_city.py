@@ -192,7 +192,7 @@ def build(source, output):
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     (output / 'NOTICE.txt').write_text(source_note + '\nSearch database and pedestrian graph derived from the same BBBike OSM extract.\n'
                                     'Database licensed under ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/\n'
-                                    'Builder: tools/build_offline_city.py in the MATO Live Bus source.\n')
+                                    'Builder: tools/build_offline_city.py in the Torino Bus Radar source.\n')
     print(json.dumps(manifest, indent=2))
 
 

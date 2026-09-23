@@ -1,4 +1,4 @@
-# MATO Live Bus for Android
+# Torino Bus Radar for Android
 
 Native Android app for finding the nearest live GTT vehicle in Torino.
 
@@ -66,7 +66,7 @@ Debug logs under
 
 ## Pedestrian routing
 
-MATO uses a local estimate to decide whether walking is likely faster. Choosing
+Torino Bus Radar uses a local estimate to decide whether walking is likely faster. Choosing
 “Walk in Maps” sends the destination coordinates to Google Maps in
 walking-navigation mode, where the actual pedestrian streets and live Maps
 directions are calculated. If the Google Maps app is unavailable, the same
