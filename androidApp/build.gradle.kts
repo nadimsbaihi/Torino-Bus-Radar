@@ -11,8 +11,8 @@ android {
         applicationId = "it.mato.livebus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.environmentVariable("MATO_VERSION_CODE").orNull?.toInt() ?: 1
+        versionName = providers.environmentVariable("MATO_VERSION_NAME").orNull ?: "0.1.0"
     }
 
     buildFeatures {

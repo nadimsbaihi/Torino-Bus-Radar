@@ -14,3 +14,4 @@ dist/
 .codex/
 .openai/
 __pycache__/
+.signing/

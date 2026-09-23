@@ -40,6 +40,15 @@ run the `androidApp` configuration on a device or emulator running Android 8+.
 ./gradlew :androidApp:assembleDebug
 ```
 
+## Releases
+
+Push a version tag such as `v0.1.0` to build a signed APK and attach it to a
+GitHub Release. The workflow uses the repository Actions secrets
+`ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD`. Keep a secure backup
+of the release keystore and password: future APK updates must use the same key.
+The tag sets the APK version name, and the workflow run number sets its version
+code.
+
 ## Validation
 
 ```sh
