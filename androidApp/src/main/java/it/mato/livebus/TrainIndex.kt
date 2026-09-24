@@ -112,7 +112,7 @@ class TrainIndex private constructor(private val trips: List<TrainTrip>) {
 
     companion object {
         private const val WALKING_SPEED = 1.2f
-        private const val BOARDING_MARGIN = 180f
+        private const val BOARDING_MARGIN = 120f
         private val DATE = DateTimeFormatter.BASIC_ISO_DATE
 
         fun load(context: Context): TrainIndex {

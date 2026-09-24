@@ -23,6 +23,8 @@ Native Android app for finding the nearest live GTT vehicle in Torino.
 - shows direct options while checking connections and reuses recently fetched positions
 - compares scheduled Trenitalia Piemonte regional trains with live GTT journeys,
   including catchable bus-to-train and train-to-bus connections
+- requires reaching a train station two minutes before departure for boarding;
+  buses use their live stop arrival estimate without a boarding buffer
 - offers saved search presets to include or exclude trains and to favor less
   walking, a balance, or faster trips with more walking; changing a preset
   recalculates the current destination
