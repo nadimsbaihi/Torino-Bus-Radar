@@ -122,31 +122,92 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <LinearLayout
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingHorizontal="18dp">
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginTop="6dp"
+            app:cardBackgroundColor="@color/card"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="2dp"
+            app:strokeColor="@color/line"
+            app:strokeWidth="1dp">
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/includeTrainsSwitch"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:checked="true"
-                android:text="@string/include_trains" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="8dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/walkingPresetButton"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="@string/walking_preset_balanced" />
-        </LinearLayout>
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:labelFor="@id/includeTrainsSwitch"
+                        android:letterSpacing="0.08"
+                        android:text="@string/trains_label"
+                        android:textColor="@color/muted"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/includeTrainsSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:checked="true"
+                        android:contentDescription="@string/include_trains"
+                        android:text="@string/include_label"
+                        android:textColor="@color/ink"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="48dp"
+                    android:layout_marginHorizontal="10dp"
+                    android:background="@color/line" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:labelFor="@id/walkingPresetButton"
+                        android:letterSpacing="0.08"
+                        android:text="@string/walking_label"
+                        android:textColor="@color/muted"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/walkingPresetButton"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="6dp"
+                        android:text="@string/walking_preset_balanced"
+                        android:textAllCaps="false"
+                        android:textColor="@color/deep_green"
+                        android:textSize="14sp"
+                        app:cornerRadius="10dp"
+                        app:strokeColor="@color/line" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/searchProgress"

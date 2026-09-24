@@ -5,10 +5,13 @@
     <string name="walk_summary">Walk · ~%1$d min</string>
     <string name="walk_option">Walk · %1$d min ↗</string>
     <string name="transit_option">Transit · %1$d min</string>
-    <string name="include_trains">Trains</string>
-    <string name="walking_preset_less">Walk: Less ▾</string>
-    <string name="walking_preset_balanced">Walk: Balanced ▾</string>
-    <string name="walking_preset_more">Walk: More ▾</string>
+    <string name="trains_label">TRAINS</string>
+    <string name="include_label">Include</string>
+    <string name="include_trains">Include trains in journeys</string>
+    <string name="walking_label">WALKING</string>
+    <string name="walking_preset_less">Less ▾</string>
+    <string name="walking_preset_balanced">Balanced ▾</string>
+    <string name="walking_preset_more">More ▾</string>
     <string name="walking_option_less">Less walking</string>
     <string name="walking_option_balanced">Balanced</string>
     <string name="walking_option_more">More walking, faster trips</string>
