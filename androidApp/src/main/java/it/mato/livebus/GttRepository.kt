@@ -39,8 +39,8 @@ class GttRepository {
         .callTimeout(Duration.ofSeconds(8))
         .build()
 
-    suspend fun vehicles(): List<LiveVehicle> = refreshLock.withLock {
-        cachedVehicles?.takeIf { SystemClock.elapsedRealtime() - fetchedAtMillis < 15_000 }
+    suspend fun vehicles(forceRefresh: Boolean = false): List<LiveVehicle> = refreshLock.withLock {
+        cachedVehicles?.takeIf { !forceRefresh && SystemClock.elapsedRealtime() - fetchedAtMillis < 15_000 }
             ?.let { return@withLock freshVehicles(it) }
         val vehicles = withContext(Dispatchers.IO) { fetchVehicles() }
         cachedVehicles = vehicles

@@ -13,13 +13,15 @@
     <string name="app_name">Torino Bus Radar</string>
     <string name="map_description">Map of live GTT vehicle positions</string>
     <string name="connecting">CONNECTING</string>
+    <string name="retry_gtt_connection">Retry GTT connection</string>
+    <string name="live_status_retry">%1$s. Retry GTT connection</string>
     <string name="live_bus_count">● %1$d live buses</string>
     <string name="no_bus_positions">No recent bus positions</string>
     <string name="delayed_bus_positions">%1$d buses · up to %2$d min old</string>
     <string name="bus_position_age">Position %1$d min ago</string>
     <string name="delayed_bus_journey">Bus positions are up to %1$d minutes old. Arrival estimates account for this delay, but the bus may have moved differently.</string>
     <string name="live_updated">● LIVE · UPDATED NOW</string>
-    <string name="feed_unavailable">GTT FEED UNAVAILABLE · RETRYING</string>
+    <string name="feed_unavailable">GTT UNAVAILABLE · RETRY</string>
     <string name="location_hint">Enable location to find the closest bus</string>
     <string name="use_my_location">Use my location</string>
     <string name="find_your_bus">Find your live bus.</string>

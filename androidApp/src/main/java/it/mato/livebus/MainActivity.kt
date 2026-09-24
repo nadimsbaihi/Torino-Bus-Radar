@@ -143,6 +143,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.locationSettingsButton.setOnClickListener { openLocationSettings() }
         binding.findRouteButton.setOnClickListener { findDestinationRoute() }
+        binding.liveStatus.setOnClickListener { startRefreshing(forceRefresh = true) }
         binding.alertButton.setOnClickListener { requestAlert() }
         binding.walkButton.setOnClickListener { selectWalkingMode() }
         binding.busAnywayButton.setOnClickListener { selectBusMode() }
@@ -353,7 +354,7 @@ class MainActivity : AppCompatActivity() {
                     val journeyVehicles = vehicleResult.getOrDefault(emptyList())
                     liveVehicles = journeyVehicles
                     if (vehicleResult.isSuccess) updateLiveStatus()
-                    else binding.liveStatus.setText(R.string.feed_unavailable)
+                    else setLiveStatus(getString(R.string.feed_unavailable), R.color.warning)
                     var shown = false
                     var hasMatchedVehicles = false
                     val (fromOrigin, fromDestination) = walkingTask.await()
@@ -511,19 +512,21 @@ class MainActivity : AppCompatActivity() {
         return (place.latitude to place.longitude).also { lastGeocodedAddress = query to it }
     }
 
-    private fun startRefreshing() {
+    private fun startRefreshing(forceRefresh: Boolean = false) {
         refreshJob?.cancel()
         refreshJob = lifecycleScope.launch {
+            var forceNextFetch = forceRefresh
             while (isActive) {
-                fetchVehicles()
+                fetchVehicles(forceNextFetch)
+                forceNextFetch = false
                 delay(15_000)
             }
         }
     }
 
-    private suspend fun fetchVehicles() {
-        binding.liveStatus.text = getString(R.string.connecting)
-        runCatching { repository.vehicles() }
+    private suspend fun fetchVehicles(forceRefresh: Boolean) {
+        setLiveStatus(getString(R.string.connecting), R.color.ink)
+        runCatching { repository.vehicles(forceRefresh) }
             .onSuccess {
                 liveVehicles = it
                 updateLiveStatus()
@@ -538,20 +541,25 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Unable to refresh GTT live positions", it)
                 liveVehicles = emptyList()
                 renderVehicles()
-                binding.liveStatus.text = getString(R.string.feed_unavailable)
-                binding.liveStatus.setTextColor(getColor(R.color.warning))
+                setLiveStatus(getString(R.string.feed_unavailable), R.color.warning)
             }
     }
 
     private fun updateLiveStatus() {
         val oldest = liveVehicles.maxOfOrNull { it.ageSeconds } ?: 0
-        binding.liveStatus.text = when {
+        val status = when {
             liveVehicles.isEmpty() -> getString(R.string.no_bus_positions)
             oldest > 120 -> getString(R.string.delayed_bus_positions, liveVehicles.size, (oldest + 59) / 60)
             else -> getString(R.string.live_bus_count, liveVehicles.size)
         }
-        binding.liveStatus.setTextColor(getColor(
-            if (liveVehicles.isEmpty() || oldest > 120) R.color.warning else R.color.live_green))
+        setLiveStatus(status,
+            if (liveVehicles.isEmpty() || oldest > 120) R.color.warning else R.color.live_green)
+    }
+
+    private fun setLiveStatus(status: String, color: Int) {
+        binding.liveStatus.text = status
+        binding.liveStatus.setTextColor(getColor(color))
+        binding.liveStatus.contentDescription = getString(R.string.live_status_retry, status)
     }
 
     private fun activeBusNeedsReplan(vehicles: List<LiveVehicle>): Boolean {

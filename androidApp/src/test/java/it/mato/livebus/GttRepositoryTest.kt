@@ -43,6 +43,17 @@ class GttRepositoryTest {
         assertEquals(2, calls.get())
     }
 
+    @Test fun manualRetryBypassesRecentCache() = runBlocking {
+        val calls = AtomicInteger()
+        val repository = repository(calls)
+        repository.vehicles()
+        repository.vehicles()
+        assertEquals(1, calls.get())
+
+        repository.vehicles(forceRefresh = true)
+        assertEquals(2, calls.get())
+    }
+
     private fun repository(calls: AtomicInteger, failAfterFirst: Boolean = false): GttRepository {
         val now = System.currentTimeMillis() / 1000
         val feed = GtfsRealtime.FeedMessage.newBuilder().setHeader(
