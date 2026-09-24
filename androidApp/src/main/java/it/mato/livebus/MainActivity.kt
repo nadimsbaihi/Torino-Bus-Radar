@@ -71,12 +71,14 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import kotlin.math.roundToInt
 import kotlin.coroutines.resume
+import java.time.LocalDateTime
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val repository = GttRepository()
     private val transitIndex by lazy { TransitIndex.load(this) }
     private val trainIndex by lazy { TrainIndex.load(this) }
+    private val journeyPlanner by lazy { JourneyPlanner(transitIndex, trainIndex) }
     private val offlineCity get() = (application as MatoApplication).offlineCity
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var offlineMapSource: MapsForgeTileSource? = null
@@ -92,6 +94,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedPattern: TransitPattern? = null
     private var journeyChoice: JourneyChoice? = null
     private var trainJourneyChoice: ScheduledTrainJourney? = null
+    private var mixedJourneyChoice: MixedJourney? = null
     private var walkingMode = false
     private var directWalkingMetres = 0f
     private var directWalkingSeconds = 0f
@@ -148,8 +151,12 @@ class MainActivity : AppCompatActivity() {
         binding.walkButton.setOnClickListener { selectWalkingMode() }
         binding.busAnywayButton.setOnClickListener { selectBusMode() }
         binding.boardStopDirectionsButton.setOnClickListener {
-            val stop = journeyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
-                ?: trainJourneyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+            val stop = if (mixedJourneyChoice?.busFirst == false) {
+                trainJourneyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+            } else {
+                journeyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+                    ?: trainJourneyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+            }
             stop?.let { openWalkingDirections(it) }
         }
         binding.sharedDirections.movementMethod = ScrollingMovementMethod()
@@ -157,6 +164,7 @@ class MainActivity : AppCompatActivity() {
             planningJob?.cancel()
             journeyChoice = null
             trainJourneyChoice = null
+            mixedJourneyChoice = null
             walkingFromOrigin = null
             walkingFromDestination = null
             selectedRoute = null
@@ -290,6 +298,7 @@ class MainActivity : AppCompatActivity() {
             binding.searchProgress.visibility = View.VISIBLE
             journeyChoice = null
             trainJourneyChoice = null
+            mixedJourneyChoice = null
             walkingFromOrigin = null
             walkingFromDestination = null
             selectedRoute = null
@@ -340,11 +349,13 @@ class MainActivity : AppCompatActivity() {
                                 city.walkingDistancesFrom(address.first, address.second)
                         }
                     }
+                    val planningTime = LocalDateTime.now()
                     val trainTask = async(Dispatchers.Default) {
                         timed("trains") {
                             val (fromOrigin, fromDestination) = walkingTask.await()
                             trainIndex.planScheduledJourney(
                                 origin.latitude, origin.longitude, address.first, address.second,
+                                now = planningTime,
                                 walkFromOrigin = fromOrigin::estimatedMetresTo,
                                 walkFromDestination = fromDestination::estimatedMetresTo
                             )
@@ -386,7 +397,19 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     val trainChoice = trainTask.await()
-                    if (busChoice == null && trainChoice == null) {
+                    val mixedChoice = withContext(Dispatchers.Default) {
+                        timed("bus-train connections") {
+                            journeyPlanner.planMixedJourney(origin.latitude, origin.longitude,
+                                address.first, address.second, journeyVehicles, planningTime,
+                                fromOrigin::estimatedMetresTo,
+                                fromDestination::estimatedMetresTo,
+                                walkBetweenStops = { fromLat, fromLon, toLat, toLon ->
+                                    offlineCity.shortWalkMetres(fromLat, fromLon, toLat, toLon)
+                                        ?: Float.POSITIVE_INFINITY
+                                })
+                        }
+                    }
+                    if (busChoice == null && trainChoice == null && mixedChoice == null) {
                         showJourneyMessage(getString(
                             if (vehicleResult.isFailure) R.string.journey_feed_unavailable
                             else if (liveVehicles.isEmpty()) R.string.no_live_vehicles_now
@@ -394,8 +417,10 @@ class MainActivity : AppCompatActivity() {
                             else R.string.no_direct_route
                         ))
                     } else {
-                        val changed = busChoice != journeyChoice && trainJourneyChoice == null
-                        displayJourney(destination, address, busChoice, trainChoice, frame = !shown || changed)
+                        val changed = mixedChoice != mixedJourneyChoice ||
+                            (busChoice != journeyChoice && trainJourneyChoice == null)
+                        displayJourney(destination, address, busChoice, trainChoice,
+                            mixedChoice, frame = !shown || changed)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -429,15 +454,29 @@ class MainActivity : AppCompatActivity() {
         busChoice: JourneyChoice?,
         trainChoice: ScheduledTrainJourney?,
         frame: Boolean
+    ) = displayJourney(destination, address, busChoice, trainChoice, null, frame)
+
+    private fun displayJourney(
+        destination: String,
+        address: Pair<Double, Double>,
+        busChoice: JourneyChoice?,
+        trainChoice: ScheduledTrainJourney?,
+        mixedChoice: MixedJourney?,
+        frame: Boolean
     ) {
         binding.destinationLayout.error = null
         binding.locationSettingsButton.visibility = View.GONE
         saveLastDestination(destination.trim())
-        val useTrain = trainChoice != null &&
-            (busChoice == null || trainChoice.estimatedTotalSeconds < busChoice.estimatedTotalSeconds)
-        journeyChoice = if (useTrain) null else busChoice
-        trainJourneyChoice = if (useTrain) trainChoice else null
-        val transitSeconds = trainJourneyChoice?.estimatedTotalSeconds
+        val busScore = busChoice?.estimatedTotalSeconds ?: Float.POSITIVE_INFINITY
+        val trainScore = trainChoice?.estimatedTotalSeconds ?: Float.POSITIVE_INFINITY
+        val mixedScore = mixedChoice?.estimatedTotalSeconds ?: Float.POSITIVE_INFINITY
+        val useMixed = mixedChoice != null && mixedScore < minOf(busScore, trainScore)
+        val useTrain = !useMixed && trainChoice != null && trainScore < busScore
+        mixedJourneyChoice = if (useMixed) mixedChoice else null
+        journeyChoice = if (useMixed) mixedChoice?.bus else if (useTrain) null else busChoice
+        trainJourneyChoice = if (useMixed) mixedChoice?.train else if (useTrain) trainChoice else null
+        val transitSeconds = mixedJourneyChoice?.estimatedTotalSeconds
+            ?: trainJourneyChoice?.estimatedTotalSeconds
             ?: journeyChoice!!.estimatedTotalSeconds
         walkingMode = false
         directDestination = GeoPoint(address.first, address.second)
@@ -446,7 +485,26 @@ class MainActivity : AppCompatActivity() {
         val choice = journeyChoice
         selectedRoute = choice?.pattern?.route
         selectedPattern = choice?.pattern
-        busJourneyDescription = trainJourneyChoice?.let { train ->
+        busJourneyDescription = mixedJourneyChoice?.let { mixed ->
+            val bus = mixed.bus
+            val train = mixed.train
+            if (mixed.busFirst) getString(R.string.bus_then_train_journey,
+                bus.pattern.route,
+                TransitIndex.cleanStopName(bus.boardAt.name),
+                TransitIndex.cleanStopName(bus.destination.name),
+                bus.destinationWalkMetres.roundToInt(),
+                TransitIndex.cleanStopName(train.boardAt.name),
+                train.category, train.number, formatTime(train.departureSeconds),
+                TransitIndex.cleanStopName(train.destination.name), formatTime(train.arrivalSeconds),
+                train.destinationWalkMetres.roundToInt())
+            else getString(R.string.train_then_bus_journey,
+                train.category, train.number,
+                TransitIndex.cleanStopName(train.boardAt.name), formatTime(train.departureSeconds),
+                TransitIndex.cleanStopName(train.destination.name), formatTime(train.arrivalSeconds),
+                bus.walkingMetres.roundToInt(), TransitIndex.cleanStopName(bus.boardAt.name),
+                bus.pattern.route, TransitIndex.cleanStopName(bus.destination.name),
+                bus.destinationWalkMetres.roundToInt())
+        } ?: trainJourneyChoice?.let { train ->
             getString(
                 R.string.train_journey_found,
                 train.category,
@@ -495,7 +553,7 @@ class MainActivity : AppCompatActivity() {
                 minutes(transitSeconds)
             )
         }
-        binding.alertButton.visibility = if (choice != null) View.VISIBLE else View.GONE
+        binding.alertButton.visibility = if (choice != null && trainJourneyChoice == null) View.VISIBLE else View.GONE
         if ((originLocation?.accuracy ?: 0f) > 200f) {
             binding.sharedDirections.append("\n" + getString(R.string.location_approximate))
         }
@@ -564,7 +622,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun activeBusNeedsReplan(vehicles: List<LiveVehicle>): Boolean {
         val journey = journeyChoice ?: return false
-        if (walkingMode || automaticReplanPending || planningJob?.isActive == true) return false
+        if (walkingMode || mixedJourneyChoice?.busFirst == false ||
+            automaticReplanPending || planningJob?.isActive == true) return false
         val vehicle = vehicles.firstOrNull { it.id == journey.vehicle.id } ?: return true
         val pattern = transitIndex.matchDirection(vehicle)
         return pattern == null || pattern.id != journey.pattern.id ||
@@ -590,7 +649,7 @@ class MainActivity : AppCompatActivity() {
         val journeyMarkers = binding.map.overlays.filterIsInstance<Marker>()
         val selectedIds = setOfNotNull(journeyChoice?.vehicle?.id, journeyChoice?.secondLeg?.vehicle?.id)
         val markers = when {
-            walkingMode || trainJourneyChoice != null -> emptyList()
+            walkingMode || (trainJourneyChoice != null && mixedJourneyChoice == null) -> emptyList()
             journeyChoice != null -> liveVehicles.filter { it.id in selectedIds }
             selectedRoute != null -> liveVehicles.filter { normalizeRoute(it.routeId) == selectedRoute }
             else -> liveVehicles
@@ -636,19 +695,39 @@ class MainActivity : AppCompatActivity() {
             addExactDestinationMarker(destination.latitude, destination.longitude)
             return
         }
+        mixedJourneyChoice?.let { mixed ->
+            val station = if (mixed.busFirst) mixed.train.boardAt else mixed.train.destination
+            val stationPoint = GeoPoint(station.latitude, station.longitude)
+            val destination = directDestination ?: stationPoint
+            if (mixed.busFirst) {
+                drawBusJourneyLine(mixed.bus, currentLocation, stationPoint, false)
+                drawTrainJourneyLine(mixed.train, stationPoint, destination, true)
+            } else {
+                drawTrainJourneyLine(mixed.train, currentLocation, stationPoint, false)
+                drawBusJourneyLine(mixed.bus, stationPoint, destination, true)
+            }
+            return
+        }
         trainJourneyChoice?.let { train ->
-            drawTrainJourneyLine(train)
+            drawTrainJourneyLine(train, currentLocation,
+                directDestination ?: GeoPoint(train.destination.latitude, train.destination.longitude), true)
             return
         }
         val choice = journeyChoice ?: return
+        drawBusJourneyLine(choice, currentLocation,
+            GeoPoint(choice.finalLatitude, choice.finalLongitude), true)
+    }
+
+    private fun drawBusJourneyLine(choice: JourneyChoice, origin: GeoPoint,
+                                   destination: GeoPoint, showFinalDestination: Boolean) {
         val points = journeyPoints(choice)
         addWalkingConnector(
-            currentLocation,
+            origin,
             GeoPoint(choice.boardAt.latitude, choice.boardAt.longitude)
         )
         addWalkingConnector(
             GeoPoint(choice.destination.latitude, choice.destination.longitude),
-            GeoPoint(choice.finalLatitude, choice.finalLongitude)
+            destination
         )
         if (points.size >= 2) {
             // A white casing keeps the route leg readable over streets and labels.
@@ -706,16 +785,17 @@ class MainActivity : AppCompatActivity() {
             getColor(R.color.deep_green),
             sizeDp = 18
         )
-        addExactDestinationMarker(choice.finalLatitude, choice.finalLongitude)
+        if (showFinalDestination) addExactDestinationMarker(destination.latitude, destination.longitude)
     }
 
-    private fun drawTrainJourneyLine(train: ScheduledTrainJourney) {
+    private fun drawTrainJourneyLine(train: ScheduledTrainJourney, origin: GeoPoint,
+                                     destination: GeoPoint, showFinalDestination: Boolean) {
         val points = train.stops.subList(train.boardIndex, train.destinationIndex + 1)
             .map { GeoPoint(it.latitude, it.longitude) }
-        addWalkingConnector(currentLocation, GeoPoint(train.boardAt.latitude, train.boardAt.longitude))
+        addWalkingConnector(origin, GeoPoint(train.boardAt.latitude, train.boardAt.longitude))
         addWalkingConnector(
             GeoPoint(train.destination.latitude, train.destination.longitude),
-            directDestination ?: GeoPoint(train.destination.latitude, train.destination.longitude)
+            destination
         )
         if (points.size >= 2) {
             binding.map.overlays.add(Polyline(binding.map).apply {
@@ -733,7 +813,7 @@ class MainActivity : AppCompatActivity() {
         }
         addJourneyStopMarker(train.boardAt.asTransitStop(), getString(R.string.board_train_here), getColor(R.color.train_blue))
         addJourneyStopMarker(train.destination.asTransitStop(), getString(R.string.exit_train_here), getColor(R.color.train_blue), 18)
-        directDestination?.let { addExactDestinationMarker(it.latitude, it.longitude) }
+        if (showFinalDestination) addExactDestinationMarker(destination.latitude, destination.longitude)
     }
 
     private fun addWalkingConnector(from: GeoPoint, to: GeoPoint) {
@@ -835,6 +915,8 @@ class MainActivity : AppCompatActivity() {
         val destination = directDestination ?: return
         val walkingPoints = if (walkingMode) {
             walkingPath(currentLocation, destination).orEmpty()
+        } else if (mixedJourneyChoice != null) {
+            emptyList()
         } else {
             trainJourneyChoice?.let { train ->
                 walkingPath(currentLocation, GeoPoint(train.boardAt.latitude, train.boardAt.longitude)).orEmpty() +
@@ -851,7 +933,11 @@ class MainActivity : AppCompatActivity() {
             }.orEmpty()
         }
         val transitPoints = if (walkingMode) emptyList() else {
-            trainJourneyChoice?.let { train ->
+            mixedJourneyChoice?.let { mixed ->
+                journeyPoints(mixed.bus) +
+                    mixed.train.stops.subList(mixed.train.boardIndex, mixed.train.destinationIndex + 1)
+                        .map { GeoPoint(it.latitude, it.longitude) }
+            } ?: trainJourneyChoice?.let { train ->
                 train.stops.subList(train.boardIndex, train.destinationIndex + 1)
                     .map { GeoPoint(it.latitude, it.longitude) }
             } ?: journeyChoice?.let { choice ->
@@ -1137,6 +1223,7 @@ class MainActivity : AppCompatActivity() {
         planningJob?.cancel()
         journeyChoice = null
         trainJourneyChoice = null
+        mixedJourneyChoice = null
         directDestination = null
         selectedRoute = route
         selectedPattern = null
@@ -1155,6 +1242,8 @@ class MainActivity : AppCompatActivity() {
         stopService(Intent(this, BusAlertService::class.java))
         binding.destinationInput.setText(finalAddress)
         journeyChoice = null
+        trainJourneyChoice = null
+        mixedJourneyChoice = null
         hideTravelModeChoices()
         binding.sharedDirections.text = getString(R.string.replanning_from_here)
         binding.sharedDirections.visibility = View.VISIBLE
@@ -1205,7 +1294,8 @@ class MainActivity : AppCompatActivity() {
         planningJob?.cancel()
         walkingMode = false
         binding.boardStopDirectionsButton.visibility = View.VISIBLE
-        val transitSeconds = trainJourneyChoice?.estimatedTotalSeconds
+        val transitSeconds = mixedJourneyChoice?.estimatedTotalSeconds
+            ?: trainJourneyChoice?.estimatedTotalSeconds
             ?: journeyChoice!!.estimatedTotalSeconds
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
         binding.sharedDirections.text = busJourneyDescription

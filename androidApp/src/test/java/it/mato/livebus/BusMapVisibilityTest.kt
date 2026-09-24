@@ -163,6 +163,47 @@ class BusMapVisibilityTest {
         binding.map.onDetach()
     }
 
+    @Test fun mixedJourneyShowsBothLegsAndOnlyItsLiveBus() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val board = TransitStop("bus-board", "Bus board", 45.0703, 7.6869)
+        val station = TransitStop("station", "Station", 45.061113, 7.677577)
+        val trainEnd = TrainStop("train-end", "Train end", 45.026779, 7.657283, 34620, 34740)
+        val trainStart = TrainStop("station", "Station", station.latitude, station.longitude, 34200, 34200)
+        val pattern = TransitPattern("route", "60U", "60", "Station", "0", emptySet(), listOf(board, station))
+        val vehicle = LiveVehicle("selected", "60U", null, board.latitude, board.longitude,
+            null, System.currentTimeMillis() / 1000)
+        val bus = JourneyChoice(pattern, vehicle, board, 0, station, 0f, 0f, 1, 0f,
+            station.latitude, station.longitude, estimatedTotalSeconds = 300f)
+        val train = ScheduledTrainJourney("2121", "REGIONALE", "Lingotto", trainStart, trainEnd,
+            listOf(trainStart, trainEnd), 0, 1, 0f, 0f, 600f, 34200, 34620)
+        val mixed = MixedJourney(bus, train, true, 900f)
+        set(activity, "liveVehicles", listOf(vehicle, vehicle.copy(id = "unrelated", routeId = "56U")))
+        MainActivity::class.java.getDeclaredMethod("displayJourney",
+            String::class.java, Pair::class.java, JourneyChoice::class.java,
+            ScheduledTrainJourney::class.java, MixedJourney::class.java,
+            Boolean::class.javaPrimitiveType).apply {
+            isAccessible = true
+            invoke(activity, "Destination", trainEnd.latitude to trainEnd.longitude,
+                bus.copy(estimatedTotalSeconds = 1_500f),
+                train.copy(estimatedTotalSeconds = 1_800f), mixed, false)
+        }
+
+        assertTrue(binding.sharedDirections.text.contains("Live bus 60"))
+        assertTrue(binding.sharedDirections.text.contains("scheduled REGIONALE 2121"))
+        assertEquals(android.view.View.GONE, binding.alertButton.visibility)
+        assertEquals(1, binding.map.overlays.filterIsInstance<Marker>()
+            .count { it.title == activity.getString(R.string.vehicle_title, "60") })
+        assertFalse(binding.map.overlays.filterIsInstance<Marker>()
+            .any { it.title == activity.getString(R.string.vehicle_title, "56") })
+        assertTrue(binding.map.overlays.filterIsInstance<Polyline>().any { line ->
+            line.actualPoints.any { it.latitude == trainEnd.latitude && it.longitude == trainEnd.longitude }
+        })
+        binding.map.onDetach()
+    }
+
     private fun set(activity: MainActivity, name: String, value: Any?) {
         MainActivity::class.java.getDeclaredField(name).apply {
             isAccessible = true

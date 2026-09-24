@@ -21,7 +21,8 @@ Native Android app for finding the nearest live GTT vehicle in Torino.
 - measures walking legs over a bundled pedestrian street graph, including the
   walk to the boarding stop and between transfer stops
 - shows direct options while checking connections and reuses recently fetched positions
-- compares scheduled Trenitalia Piemonte regional trains with live GTT journeys
+- compares scheduled Trenitalia Piemonte regional trains with live GTT journeys,
+  including catchable bus-to-train and train-to-bus connections
 - refreshes live positions every 15 seconds
 - compares the full bus ETA with a walking estimate and opens real walking
   navigation in Google Maps
@@ -120,4 +121,5 @@ rebuilding the APK updates the city snapshot; no automatic map download is used.
 
 Trenitalia regional trains are sourced from Regione Piemonte's published GTFS
 timetable. They are scheduled results only; this app does not claim that train
-positions or delays are live.
+positions or delays are live. Mixed journeys use current GTT bus positions to
+estimate connections, so a later bus leg may change before the train arrives.

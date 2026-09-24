@@ -40,6 +40,8 @@
     <string name="estimated_bus_direction">Bus direction estimated from live position and available heading. Check the destination shown on the bus.</string>
     <string name="no_direct_route">No catchable bus found among the live routes we could match. Try again shortly.</string>
     <string name="train_journey_found">Scheduled %1$s %2$s → %3$s · walk %8$d m to %4$s · departs %5$s · get off at %6$s at %7$s · then walk %9$d m. Timetable data: Regione Piemonte.</string>
+    <string name="bus_then_train_journey">Live bus %1$s from %2$s to %3$s · walk %4$d m to %5$s · scheduled %6$s %7$s departs %8$s · get off at %9$s at %10$s · then walk %11$d m. Train times: Regione Piemonte timetable.</string>
+    <string name="train_then_bus_journey">Scheduled %1$s %2$s from %3$s at %4$s to %5$s at %6$s · walk %7$d m to %8$s · live bus %9$s to %10$s · then walk %11$d m. Train times: Regione Piemonte timetable.</string>
     <string name="board_train_here">Board train here</string>
     <string name="exit_train_here">Exit train here</string>
     <string name="train_alert_unavailable">Train monitoring is not available yet: this is a scheduled Trenitalia journey, not a live-position feed.</string>

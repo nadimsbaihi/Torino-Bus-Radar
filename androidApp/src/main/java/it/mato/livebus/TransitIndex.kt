@@ -45,6 +45,7 @@ data class JourneyChoice(
     val transferAt: TransitStop? = null,
     val transferWalkMetres: Float = 0f
 ) {
+    val totalWalkingMetres: Float get() = walkingMetres + transferWalkMetres + destinationWalkMetres
     val directionEstimated: Boolean get() = vehicle.tripId !in pattern.tripIds ||
         secondLeg?.let { it.vehicle.tripId !in it.pattern.tripIds } == true
 }
@@ -115,7 +116,11 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         onDirectJourney: (suspend (JourneyChoice?) -> Unit)? = null,
         walkFromOrigin: ((Double, Double) -> Float)? = null,
         walkFromDestination: ((Double, Double) -> Float)? = null,
-        walkBetweenStops: ((Double, Double, Double, Double) -> Float)? = null
+        walkBetweenStops: ((Double, Double, Double, Double) -> Float)? = null,
+        earliestStartSeconds: Float = 0f,
+        maxDestinationWalkMetres: Float = Float.POSITIVE_INFINITY,
+        directOnly: Boolean = false,
+        walkingPreference: WalkingPreference = WalkingPreference.MORE
     ): JourneyChoice? {
         data class Tracked(
             val vehicle: LiveVehicle,
@@ -156,7 +161,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 context.ensureActive()
                 val destinationStop = pattern.stops[destinationIndex]
                 val remainingWalk = destinationDistance(destinationStop)
-                if (remainingWalk >= initialDistance) return@mapNotNull null
+                if (remainingWalk >= initialDistance ||
+                    remainingWalk > maxDestinationWalkMetres) return@mapNotNull null
                 val destinationCandidate = Triple(destinationIndex, destinationStop, remainingWalk)
                 val boarding = pattern.stops.indices
                     .drop(progressIndex + 1)
@@ -167,19 +173,22 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                         val walkSeconds = walkMetres / BOARDING_WALK_METRES_PER_SECOND
                         val busSeconds = busSecondsToStop(vehicle, pattern, progressIndex, index)
                         if (destinationCandidate.third >= destinationDistance(stop) ||
-                            walkSeconds + BOARDING_MARGIN_SECONDS > busSeconds) null
+                            earliestStartSeconds + walkSeconds + BOARDING_MARGIN_SECONDS > busSeconds) null
                         else BoardingCandidate(index, stop, walkMetres, walkSeconds, busSeconds)
                     }
                     .minByOrNull { candidate ->
                         val rideSeconds = routeDistance(pattern, candidate.index, destinationIndex) /
                             BUS_METRES_PER_SECOND
-                        maxOf(candidate.walkSeconds, candidate.busSeconds) +
-                            rideSeconds +
-                            (destinationIndex - candidate.index) * DWELL_SECONDS_PER_STOP
+                        walkingPreference.score(
+                            maxOf(earliestStartSeconds + candidate.walkSeconds, candidate.busSeconds) +
+                                rideSeconds +
+                                (destinationIndex - candidate.index) * DWELL_SECONDS_PER_STOP,
+                            candidate.walkMetres
+                        )
                     } ?: return@mapNotNull null
                 val rideSeconds = routeDistance(pattern, boarding.index, destinationIndex) /
                     BUS_METRES_PER_SECOND
-                val totalSeconds = maxOf(boarding.walkSeconds, boarding.busSeconds) +
+                val totalSeconds = maxOf(earliestStartSeconds + boarding.walkSeconds, boarding.busSeconds) +
                     rideSeconds +
                     (destinationIndex - boarding.index) * DWELL_SECONDS_PER_STOP +
                     destinationCandidate.third / WALKING_METRES_PER_SECOND
@@ -205,9 +214,10 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             }
         }
 
-        var best = direct.minByOrNull(::journeyScore)
+        var best = direct.minByOrNull { journeyScore(it, walkingPreference) }
         onDirectJourney?.invoke(best)
         context.ensureActive()
+        if (directOnly) return best
 
         // Index only boarding occurrences that each live vehicle has yet to reach.
         val vehiclesByStop = mutableMapOf<String, MutableList<Pair<Tracked, Int>>>()
@@ -252,7 +262,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 val firstArrival = boarding.busSeconds +
                     routeDistance(pattern, boarding.index, exitIndex) / BUS_METRES_PER_SECOND +
                     (exitIndex - boarding.index) * DWELL_SECONDS_PER_STOP
-                if (best != null && firstArrival >= best.estimatedTotalSeconds) continue
+                if (walkingPreference == WalkingPreference.MORE && best != null &&
+                    firstArrival >= best.estimatedTotalSeconds) continue
                 for ((stopId, transferWalk) in transferStops[pattern.stops[exitIndex].id].orEmpty()) {
                     for ((second, secondBoardIndex) in vehiclesByStop[stopId].orEmpty()) {
                         context.ensureActive()
@@ -278,8 +289,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             routeDistance(second.pattern, secondBoardIndex, destinationIndex) / BUS_METRES_PER_SECOND +
                             (destinationIndex - secondBoardIndex) * DWELL_SECONDS_PER_STOP +
                             destinationWalk / WALKING_METRES_PER_SECOND
-                        if (best != null && total >= best.estimatedTotalSeconds) continue
-                        best = JourneyChoice(
+                        val candidate = JourneyChoice(
                             pattern = pattern,
                             vehicle = first.vehicle,
                             boardAt = boarding.stop,
@@ -300,6 +310,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             transferAt = pattern.stops[exitIndex],
                             transferWalkMetres = streetTransferWalk
                         )
+                        if (best == null || journeyScore(candidate, walkingPreference) <
+                            journeyScore(best, walkingPreference)) best = candidate
                     }
                 }
             }
@@ -307,8 +319,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         return best
     }
 
-    private fun journeyScore(choice: JourneyChoice): Float {
-        if (choice.estimatedTotalSeconds > 0f) return choice.estimatedTotalSeconds
+    private fun journeyScore(choice: JourneyChoice, walkingPreference: WalkingPreference): Float {
+        if (choice.estimatedTotalSeconds > 0f) return walkingPreference.score(
+            choice.estimatedTotalSeconds, choice.totalWalkingMetres)
         val transferPenalty = if (choice.secondLeg == null) 0f else 650f
         val secondBusPenalty = choice.secondLeg?.let {
             distance(
