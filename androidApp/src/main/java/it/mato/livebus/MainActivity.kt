@@ -67,6 +67,7 @@ import org.osmdroid.mapsforge.MapsForgeTileProvider
 import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
 import android.widget.ArrayAdapter
 import android.widget.Filter
+import android.widget.PopupMenu
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import kotlin.math.roundToInt
@@ -103,6 +104,8 @@ class MainActivity : AppCompatActivity() {
     private var directDestination: GeoPoint? = null
     private var busJourneyDescription: CharSequence? = null
     private var automaticReplanPending = false
+    private var includeTrains = true
+    private var walkingPreference = WalkingPreference.BALANCED
     private val busIconCache = mutableMapOf<Triple<Boolean, Int, String>, BitmapDrawable>()
 
     private val locationPermission = registerForActivityResult(
@@ -141,6 +144,7 @@ class MainActivity : AppCompatActivity() {
             binding.map.setMapCenterOffset(0, (bottom - top) / 2)
         }
         setupDestinationPicker()
+        setupSearchPresets()
         binding.locationButton.setOnClickListener {
             if (deviceLocationEnabled()) requestLocation() else openLocationSettings()
         }
@@ -278,8 +282,64 @@ class MainActivity : AppCompatActivity() {
         findDestinationRoute()
     }
 
+    private fun setupSearchPresets() {
+        val preferences = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
+        includeTrains = preferences.getBoolean(INCLUDE_TRAINS, true)
+        walkingPreference = WalkingPreference.entries.firstOrNull {
+            it.name == preferences.getString(WALKING_PREFERENCE, null)
+        } ?: WalkingPreference.BALANCED
+        binding.includeTrainsSwitch.isChecked = includeTrains
+        updateWalkingPresetButton()
+        binding.includeTrainsSwitch.setOnCheckedChangeListener { _, checked ->
+            includeTrains = checked
+            preferences.edit().putBoolean(INCLUDE_TRAINS, checked).apply()
+            replanForPreset()
+        }
+        binding.walkingPresetButton.setOnClickListener { anchor ->
+            PopupMenu(this, anchor).apply {
+                WalkingPreference.entries.forEach { option ->
+                    menu.add(1, option.ordinal + 1, option.ordinal, getString(when (option) {
+                        WalkingPreference.LESS -> R.string.walking_option_less
+                        WalkingPreference.BALANCED -> R.string.walking_option_balanced
+                        WalkingPreference.MORE -> R.string.walking_option_more
+                    })).apply {
+                        isCheckable = true
+                        isChecked = option == walkingPreference
+                    }
+                }
+                menu.setGroupCheckable(1, true, true)
+                setOnMenuItemClickListener { item ->
+                    val selected = WalkingPreference.entries[item.itemId - 1]
+                    if (selected != walkingPreference) {
+                        walkingPreference = selected
+                        preferences.edit().putString(WALKING_PREFERENCE, selected.name).apply()
+                        updateWalkingPresetButton()
+                        replanForPreset()
+                    }
+                    true
+                }
+                show()
+            }
+        }
+    }
+
+    private fun updateWalkingPresetButton() {
+        binding.walkingPresetButton.setText(when (walkingPreference) {
+            WalkingPreference.LESS -> R.string.walking_preset_less
+            WalkingPreference.BALANCED -> R.string.walking_preset_balanced
+            WalkingPreference.MORE -> R.string.walking_preset_more
+        })
+    }
+
+    private fun replanForPreset() {
+        if (!binding.destinationInput.text.isNullOrBlank() &&
+            (directDestination != null || planningJob?.isActive == true)) findDestinationRoute()
+    }
+
     private fun findDestinationRoute() {
         val destination = binding.destinationInput.text.toString().trim()
+        val searchTrains = includeTrains
+        val preference = walkingPreference
         if (destination.isBlank()) {
             binding.destinationLayout.error = getString(R.string.enter_destination)
             binding.destinationInput.requestFocus()
@@ -350,17 +410,18 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     val planningTime = LocalDateTime.now()
-                    val trainTask = async(Dispatchers.Default) {
+                    val trainTask = if (searchTrains) async(Dispatchers.Default) {
                         timed("trains") {
                             val (fromOrigin, fromDestination) = walkingTask.await()
                             trainIndex.planScheduledJourney(
                                 origin.latitude, origin.longitude, address.first, address.second,
                                 now = planningTime,
                                 walkFromOrigin = fromOrigin::estimatedMetresTo,
-                                walkFromDestination = fromDestination::estimatedMetresTo
+                                walkFromDestination = fromDestination::estimatedMetresTo,
+                                walkingPreference = preference
                             )
                         }
-                    }
+                    } else null
                     val vehicleResult = vehiclesTask.await()
                     val journeyVehicles = vehicleResult.getOrDefault(emptyList())
                     liveVehicles = journeyVehicles
@@ -383,9 +444,10 @@ class MainActivity : AppCompatActivity() {
                                     offlineCity.shortWalkMetres(startLat, startLon, endLat, endLon)
                                         ?: Float.POSITIVE_INFINITY
                                 },
+                                walkingPreference = preference,
                                 onDirectJourney = { direct ->
                                     withContext(Dispatchers.Main) {
-                                        val trainChoice = trainTask.await()
+                                        val trainChoice = trainTask?.await()
                                         if (direct != null || trainChoice != null) {
                                             displayJourney(destination, address, direct, trainChoice, frame = true)
                                             binding.sharedDirections.append("\n" + getString(R.string.checking_transfers))
@@ -396,8 +458,8 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
                     }
-                    val trainChoice = trainTask.await()
-                    val mixedChoice = withContext(Dispatchers.Default) {
+                    val trainChoice = trainTask?.await()
+                    val mixedChoice = if (searchTrains) withContext(Dispatchers.Default) {
                         timed("bus-train connections") {
                             journeyPlanner.planMixedJourney(origin.latitude, origin.longitude,
                                 address.first, address.second, journeyVehicles, planningTime,
@@ -406,9 +468,10 @@ class MainActivity : AppCompatActivity() {
                                 walkBetweenStops = { fromLat, fromLon, toLat, toLon ->
                                     offlineCity.shortWalkMetres(fromLat, fromLon, toLat, toLon)
                                         ?: Float.POSITIVE_INFINITY
-                                })
+                                },
+                                walkingPreference = preference)
                         }
-                    }
+                    } else null
                     if (busChoice == null && trainChoice == null && mixedChoice == null) {
                         showJourneyMessage(getString(
                             if (vehicleResult.isFailure) R.string.journey_feed_unavailable
@@ -467,9 +530,15 @@ class MainActivity : AppCompatActivity() {
         binding.destinationLayout.error = null
         binding.locationSettingsButton.visibility = View.GONE
         saveLastDestination(destination.trim())
-        val busScore = busChoice?.estimatedTotalSeconds ?: Float.POSITIVE_INFINITY
-        val trainScore = trainChoice?.estimatedTotalSeconds ?: Float.POSITIVE_INFINITY
-        val mixedScore = mixedChoice?.estimatedTotalSeconds ?: Float.POSITIVE_INFINITY
+        val busScore = busChoice?.let {
+            walkingPreference.score(it.estimatedTotalSeconds, it.totalWalkingMetres)
+        } ?: Float.POSITIVE_INFINITY
+        val trainScore = trainChoice?.let {
+            walkingPreference.score(it.estimatedTotalSeconds, it.totalWalkingMetres)
+        } ?: Float.POSITIVE_INFINITY
+        val mixedScore = mixedChoice?.let {
+            walkingPreference.score(it.estimatedTotalSeconds, it.totalWalkingMetres)
+        } ?: Float.POSITIVE_INFINITY
         val useMixed = mixedChoice != null && mixedScore < minOf(busScore, trainScore)
         val useTrain = !useMixed && trainChoice != null && trainScore < busScore
         mixedJourneyChoice = if (useMixed) mixedChoice else null
@@ -545,7 +614,7 @@ class MainActivity : AppCompatActivity() {
         binding.boardStopDirectionsButton.visibility = View.VISIBLE
         binding.sharedDirections.text = busJourneyDescription
         binding.sharedDirections.visibility = View.VISIBLE
-        if (directWalkingSeconds < transitSeconds) {
+        if (walkingPreference != WalkingPreference.LESS && directWalkingSeconds < transitSeconds) {
             binding.sharedDirections.text = getString(
                 R.string.walking_is_faster,
                 minutes(directWalkingSeconds),
@@ -1383,6 +1452,8 @@ class MainActivity : AppCompatActivity() {
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"
         const val LAST_DESTINATION = "last_destination"
+        const val INCLUDE_TRAINS = "include_trains"
+        const val WALKING_PREFERENCE = "walking_preference"
         const val WALKING_METRES_PER_SECOND = 1.35f
         const val WALKING_STREET_FACTOR = 1.2f
         const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"

@@ -18,6 +18,27 @@ class JourneyPlannerTest {
     private val portaNuova get() = trains.stations.first { it.name == "TORINO PORTA NUOVA F.S." }
     private val lingotto get() = trains.stations.first { it.name == "TORINO LINGOTTO F.S." }
 
+    @Test fun moreWalkingAllowsAStationOutsideTheShortWalkingPreset() = runBlocking {
+        val station = portaNuova
+        val destination = lingotto
+        val originLatitude = 45.09
+        val originWalk = { lat: Double, lon: Double ->
+            distance(originLatitude, station.longitude, lat, lon)
+        }
+        val destinationWalk = { lat: Double, lon: Double ->
+            distance(destination.latitude, destination.longitude, lat, lon)
+        }
+        val now = LocalDateTime.of(2026, 9, 24, 9, 15)
+        assertNull(trains.planScheduledJourney(originLatitude, station.longitude,
+            destination.latitude, destination.longitude, now, originWalk, destinationWalk,
+            boardStopId = station.id, exitStopId = destination.id,
+            walkingPreference = WalkingPreference.LESS))
+        assertNotNull(trains.planScheduledJourney(originLatitude, station.longitude,
+            destination.latitude, destination.longitude, now, originWalk, destinationWalk,
+            boardStopId = station.id, exitStopId = destination.id,
+            walkingPreference = WalkingPreference.MORE))
+    }
+
     @Test fun liveBusCanConnectToScheduledTrain() = runBlocking {
         val station = portaNuova
         val destination = lingotto

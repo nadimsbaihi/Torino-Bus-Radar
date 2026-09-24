@@ -143,9 +143,11 @@ class TransitIndexTest {
             }
         }
         repeat(2) { iteration ->
+            val preference = if (iteration == 0) WalkingPreference.MORE else WalkingPreference.BALANCED
             val started = System.nanoTime()
-            val choice = index.planLiveJourney(45.0703, 7.6869, 45.061, 7.678, vehicles)
-            println("Bundled network run $iteration: ${(System.nanoTime() - started) / 1_000_000} ms, ${vehicles.size} vehicles")
+            val choice = index.planLiveJourney(45.0703, 7.6869, 45.061, 7.678, vehicles,
+                walkingPreference = preference)
+            println("Bundled network $preference: ${(System.nanoTime() - started) / 1_000_000} ms, ${vehicles.size} vehicles")
             assertNotNull(choice)
         }
     }
@@ -207,6 +209,28 @@ class TransitIndexTest {
         assertEquals(150f, fresh.boardingEtaSeconds - delayed.boardingEtaSeconds, 2f)
         assertNull(index(first).planLiveJourney(45.01, 7.0, 45.03, 7.0,
             listOf(bus.copy(timestampSeconds = now - 240))))
+    }
+
+    @Test fun walkingPresetCanChooseALongerTripWithLessWalking() = runBlocking {
+        val fast = pattern("fast", listOf(
+            stop("fast-start", 44.999, 7.0), stop("fast-board", 45.0, 7.0),
+            stop("fast-exit", 45.025, 7.0)
+        ))
+        val shorterWalk = pattern("shorter-walk", listOf(
+            stop("slow-start", 44.968, 7.0), stop("slow-board", 45.0, 7.0),
+            stop("slow-exit", 45.03, 7.0)
+        ))
+        val routes = index(fast, shorterWalk)
+        val vehicles = listOf(vehicle(fast, 44.999, 7.0), vehicle(shorterWalk, 44.968, 7.0))
+        val fastest = routes.planLiveJourney(45.0, 7.0, 45.03, 7.0, vehicles,
+            walkingPreference = WalkingPreference.MORE)!!
+        val lessWalking = routes.planLiveJourney(45.0, 7.0, 45.03, 7.0, vehicles,
+            walkingPreference = WalkingPreference.LESS)!!
+
+        assertEquals("fast", fastest.pattern.id)
+        assertEquals("shorter-walk", lessWalking.pattern.id)
+        assertTrue(fastest.estimatedTotalSeconds < lessWalking.estimatedTotalSeconds)
+        assertTrue(fastest.totalWalkingMetres > lessWalking.totalWalkingMetres)
     }
 
     private fun stop(id: String, lat: Double, lon: Double) = TransitStop(id, id, lat, lon)

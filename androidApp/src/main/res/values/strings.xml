@@ -5,6 +5,13 @@
     <string name="walk_summary">Walk · ~%1$d min</string>
     <string name="walk_option">Walk · %1$d min ↗</string>
     <string name="transit_option">Transit · %1$d min</string>
+    <string name="include_trains">Trains</string>
+    <string name="walking_preset_less">Walk: Less ▾</string>
+    <string name="walking_preset_balanced">Walk: Balanced ▾</string>
+    <string name="walking_preset_more">Walk: More ▾</string>
+    <string name="walking_option_less">Less walking</string>
+    <string name="walking_option_balanced">Balanced</string>
+    <string name="walking_option_more">More walking, faster trips</string>
     <string name="enter_destination">Enter a place or address in Torino</string>
     <string name="journey_compact">Bus %1$s · arrives in ~%2$d min\nWalk ~%3$d m to %4$s\nGet off at %5$s</string>
     <string name="journey_transfer_compact">Then %1$s to %2$s</string>

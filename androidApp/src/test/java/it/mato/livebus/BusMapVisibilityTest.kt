@@ -11,10 +11,41 @@ import org.osmdroid.views.overlay.Polyline
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowPopupMenu
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = MatoApplication::class)
 class BusMapVisibilityTest {
+    @Test fun searchPresetsRestoreAndSaveTrainSelection() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val preferences = activity.getSharedPreferences("active_journey", 0)
+        preferences.edit().putBoolean("include_trains", false)
+            .putString("walking_preference", WalkingPreference.LESS.name).commit()
+        MainActivity::class.java.getDeclaredMethod("setupSearchPresets").apply {
+            isAccessible = true
+            invoke(activity)
+        }
+
+        assertFalse(binding.includeTrainsSwitch.isChecked)
+        assertEquals(activity.getString(R.string.walking_preset_less),
+            binding.walkingPresetButton.text.toString())
+        binding.includeTrainsSwitch.isChecked = true
+        assertTrue(preferences.getBoolean("include_trains", false))
+        binding.walkingPresetButton.performClick()
+        val popup = ShadowPopupMenu.getLatestPopupMenu()
+        val moreWalking = popup.menu.findItem(WalkingPreference.MORE.ordinal + 1)
+        assertTrue(moreWalking.isCheckable)
+        org.robolectric.Shadows.shadowOf(popup).onMenuItemClickListener.onMenuItemClick(moreWalking)
+        assertEquals(WalkingPreference.MORE.name,
+            preferences.getString("walking_preference", null))
+        assertEquals(activity.getString(R.string.walking_preset_more),
+            binding.walkingPresetButton.text.toString())
+        binding.map.onDetach()
+    }
+
     @Test fun routeSelectionFiltersBusesAndClearingItRestoresTheFullOverview() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
         activity.setTheme(R.style.Theme_MatoLiveBus)
@@ -203,6 +234,42 @@ class BusMapVisibilityTest {
         })
         binding.map.onDetach()
     }
+
+    @Test fun walkingPresetChangesTheDisplayedJourney() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val board = TransitStop("board", "Board", 45.0703, 7.6869)
+        val busExit = TransitStop("bus-exit", "Bus exit", 45.085, 7.6869)
+        val finalStop = TrainStop("final", "Final", 45.09, 7.6869, 36_000, 36_000)
+        val trainBoard = TrainStop("train-board", "Train board", board.latitude, board.longitude,
+            35_000, 35_000)
+        val pattern = TransitPattern("bus", "60U", "60", "Final", "0", emptySet(), listOf(board, busExit))
+        val vehicle = LiveVehicle("bus", "60U", null, board.latitude, board.longitude,
+            null, System.currentTimeMillis() / 1000)
+        val bus = JourneyChoice(pattern, vehicle, board, 0, busExit, 0f, 0f, 1,
+            550f, finalStop.latitude, finalStop.longitude, estimatedTotalSeconds = 600f)
+        val train = ScheduledTrainJourney("2121", "REGIONALE", "Final", trainBoard, finalStop,
+            listOf(trainBoard, finalStop), 0, 1, 0f, 0f, 800f, 35_000, 36_000)
+        val display = MainActivity::class.java.getDeclaredMethod("displayJourney",
+            String::class.java, Pair::class.java, JourneyChoice::class.java,
+            ScheduledTrainJourney::class.java, Boolean::class.javaPrimitiveType).apply {
+            isAccessible = true
+        }
+
+        set(activity, "walkingPreference", WalkingPreference.LESS)
+        display.invoke(activity, "Final", finalStop.latitude to finalStop.longitude, bus, train, false)
+        assertEquals(train, get(activity, "trainJourneyChoice"))
+
+        set(activity, "walkingPreference", WalkingPreference.MORE)
+        display.invoke(activity, "Final", finalStop.latitude to finalStop.longitude, bus, train, false)
+        assertEquals(bus, get(activity, "journeyChoice"))
+        binding.map.onDetach()
+    }
+
+    private fun get(activity: MainActivity, name: String): Any? =
+        MainActivity::class.java.getDeclaredField(name).apply { isAccessible = true }.get(activity)
 
     private fun set(activity: MainActivity, name: String, value: Any?) {
         MainActivity::class.java.getDeclaredField(name).apply {
