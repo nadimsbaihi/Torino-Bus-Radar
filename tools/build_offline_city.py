@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build the bundled Torino map/search package from BBBike's city extracts.
 
-Usage: python3 tools/build_offline_city.py SOURCE_DIR ASSET_DIR
+Usage: python3 tools/build_offline_city.py SOURCE_DIR ASSET_DIR TRANSIT_INDEX TRAIN_INDEX
 SOURCE_DIR contains Turin.osm.gz and Turin.osm.mapsforge-osm.zip.
+TRANSIT_INDEX and TRAIN_INDEX are the bundled GTFS-derived JSON indexes.
 Only the Python standard library is required; no tile server is scraped.
 """
 import gzip
@@ -76,8 +77,9 @@ def write_walk_graph(path, nodes, ways):
     return len(node_ids), arc_count
 
 
-def build(source, output):
+def build(source, output, transit_index, train_index):
     source, output = Path(source), Path(output)
+    transit_index, train_index = Path(transit_index), Path(train_index)
     output.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(source / 'Turin.osm.mapsforge-osm.zip') as archive:
         (output / 'torino.map').write_bytes(archive.read('Turin-mapsforge-osm/Turin.map'))
@@ -102,7 +104,7 @@ def build(source, output):
     bounds = None
     count = 0
 
-    def add(tags, lat, lon, kind, name=None):
+    def add(tags, lat, lon, kind, name=None, source_label=None):
         nonlocal count
         name = name or tags.get('name') or tags.get('addr:street', '')
         street = tags.get('addr:street', '')
@@ -113,7 +115,8 @@ def build(source, output):
         if not name:
             return
         city = tags.get('addr:city', '')
-        label = ' · '.join(dict.fromkeys(part for part in [name, address, city] if part))
+        label = ' · '.join(dict.fromkeys(part for part in
+                                       [name, address, city, source_label] if part))
         key = (normalize(name), round(lat, 4), round(lon, 4), kind)
         if key in seen:
             return
@@ -169,6 +172,24 @@ def build(source, output):
                 root.clear()
     for tags, lat, lon in roads.values():
         add(tags, lat, lon, 'street')
+    source_counts = {'OpenStreetMap': count}
+    for index_path, collection, kind, label, source_name in (
+        (transit_index, 'patterns', 'bus_stop', 'GTT stop', 'GTT GTFS stops'),
+        (train_index, 'trips', 'train_station', 'Regional train station',
+         'Regione Piemonte rail GTFS stations'),
+    ):
+        seen_ids = set()
+        before = count
+        for service in json.loads(index_path.read_text(encoding='utf-8'))[collection]:
+            for stop in service['stops']:
+                if stop['id'] in seen_ids:
+                    continue
+                seen_ids.add(stop['id'])
+                lat, lon = stop['lat'], stop['lon']
+                if bounds and (bounds['minlat'] <= lat <= bounds['maxlat'] and
+                               bounds['minlon'] <= lon <= bounds['maxlon']):
+                    add({}, lat, lon, kind, stop['name'].strip(), label)
+        source_counts[source_name] = count - before
     walk_nodes, walk_arcs = write_walk_graph(output / 'walk_graph.bin', nodes, walk_ways)
     database.execute("INSERT INTO search(search) VALUES ('optimize')")
     database.commit()
@@ -182,19 +203,28 @@ def build(source, output):
         'license': 'https://opendatacommons.org/licenses/odbl/1-0/',
         'bounds': bounds,
         'places': count,
+        'searchSources': source_counts,
         'files': {name: {'bytes': (output / name).stat().st_size,
                          'sha256': hashlib.sha256((output / name).read_bytes()).hexdigest()}
                   for name in ['torino.map', 'places.sqlite', 'walk_graph.bin']},
         'walkGraph': {'nodes': walk_nodes, 'arcs': walk_arcs},
-        'sourceSha256': {name: hashlib.sha256((source / name).read_bytes()).hexdigest()
-                         for name in ['Turin.osm.gz', 'Turin.osm.mapsforge-osm.zip']},
+        'sourceSha256': {
+            **{name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+               for name in ['Turin.osm.gz', 'Turin.osm.mapsforge-osm.zip']},
+            transit_index.name: hashlib.sha256(transit_index.read_bytes()).hexdigest(),
+            train_index.name: hashlib.sha256(train_index.read_bytes()).hexdigest(),
+        },
     }
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-    (output / 'NOTICE.txt').write_text(source_note + '\nSearch database and pedestrian graph derived from the same BBBike OSM extract.\n'
-                                    'Database licensed under ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/\n'
+    (output / 'NOTICE.txt').write_text(source_note + '\nSearch database and pedestrian graph include data from the BBBike OSM extract.\n'
+                                    'OSM-derived records are under ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/\n'
+                                    'Bus stops: GTT S.p.A. - Gruppo Torinese Trasporti, https://www.gtt.to.it\n'
+                                    'GTT GTFS terms: https://www.gtt.to.it/gtt_gtfs_license.html\n'
+                                    'Regional train stations: Regione Piemonte regional rail GTFS, CC BY 4.0.\n'
+                                    'Source: https://www.dati.gov.it/node/view-dataset/dataset?id=cf9f3c52-e423-4307-b4d7-6e2978ad7a07\n'
                                     'Builder: tools/build_offline_city.py in the Torino Bus Radar source.\n')
     print(json.dumps(manifest, indent=2))
 
 
 if __name__ == '__main__':
-    build(sys.argv[1], sys.argv[2])
+    build(*sys.argv[1:])

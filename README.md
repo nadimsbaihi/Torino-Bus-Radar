@@ -11,7 +11,8 @@ Native Android app for finding the nearest live GTT vehicle in Torino.
 - displays all available buses on a simplified offline Torino map, then focuses
   on the selected journey's buses or the selected line; closing the selection
   restores all buses. The basemap has no POI icons and fewer street labels
-- searches bundled places and addresses locally, without a geocoding API
+- searches bundled places, addresses, GTT stops, and regional train stations
+  locally, without a geocoding API
 - searches live routes for direct and catchable one-transfer journeys
 - matches missing or unknown trip IDs by line, nearby route geometry and available
   heading; inferred directions are labeled and ambiguous opposite directions rejected
@@ -103,10 +104,12 @@ still opens Google Maps.
 
 The September 20, 2026 [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/)
 covers latitude 44.941–45.210 and longitude 7.430–7.929. It contains a 15.1 MB
-vector map, a 34.0 MB SQLite index with 159,370 places, addresses and streets,
-and a 17.2 MB pedestrian graph
-(decimal MB). These files are compressed in the APK and copied into private,
-non-backed-up app storage on first use. Search coverage depends on OpenStreetMap:
+vector map and a 17.2 MB pedestrian graph (decimal MB). The 34.9 MB SQLite
+search index contains 159,370 OpenStreetMap places, addresses, and streets,
+plus 4,271 GTT stops and 12 regional train stations within those bounds.
+The latter come from the bundled GTT and Regione Piemonte GTFS-derived indexes.
+These files are compressed in the APK and copied into private, non-backed-up
+app storage on first use. Search coverage depends on the bundled snapshots:
 Comala is present, but Via Chiesa della Salute number 1 is absent in this snapshot.
 The phone's location remains the journey origin.
 
@@ -116,13 +119,16 @@ To rebuild the bundled files, download `Turin.osm.mapsforge-osm.zip`,
 then run:
 
 ```sh
-python3 tools/build_offline_city.py build/offline-source androidApp/src/main/assets/offline
+python3 tools/build_offline_city.py build/offline-source androidApp/src/main/assets/offline \
+  androidApp/src/main/assets/transit_index.json \
+  androidApp/src/main/assets/trenitalia_rail_index.json
 ```
 
 The builder uses only Python's standard library. The bundled `offline/manifest.json`
-records file hashes and source metadata; `offline/NOTICE.txt` contains source
-attribution and the OpenStreetMap ODbL license link. Updating the assets and
-rebuilding the APK updates the city snapshot; no automatic map download is used.
+records file hashes and source metadata; `offline/NOTICE.txt` contains attribution
+and license links for OpenStreetMap, GTT, and Regione Piemonte. Rebuild the search
+index when either GTFS-derived index changes. Updating the assets and rebuilding
+the APK updates the city snapshot; no automatic map download is used.
 
 Trenitalia regional trains are sourced from Regione Piemonte's published GTFS
 timetable. They are scheduled results only; this app does not claim that train

@@ -54,8 +54,10 @@ class OfflineCity private constructor(
             FROM search JOIN places p ON p.id = search.rowid
             WHERE search MATCH ?
             ORDER BY exact_match DESC,
+                     CASE WHEN p.kind = 'train_station' THEN 0 ELSE 1 END,
                      CASE WHEN p.name_key LIKE ? THEN 0 ELSE 1 END,
-                     CASE p.kind WHEN 'place' THEN 0 WHEN 'address' THEN 1 ELSE 2 END,
+                     CASE p.kind WHEN 'place' THEN 0 WHEN 'address' THEN 1
+                                 WHEN 'bus_stop' THEN 2 ELSE 3 END,
                      length(p.name), length(p.label), p.id
             LIMIT 12
         """.trimIndent()

@@ -23,6 +23,23 @@ class OfflineCityTest {
         assertEquals(comala, city.search("Coma").first().copy(exactMatch = true))
     }
 
+    @Test fun gttStopsAreSearchableAsDestinations() {
+        val stop = city.search("Fermata 74 Ospedale Giovanni Bosco")
+            .first { it.kind == "bus_stop" }
+        assertTrue(stop.label.contains("GTT stop"))
+        assertEquals(45.09592, stop.latitude, 0.00001)
+        assertEquals(7.70151, stop.longitude, 0.00001)
+    }
+
+    @Test fun regionalTrainStationsAreSearchableAsDestinations() {
+        val station = city.search("Torino Lingotto F.S.")
+            .first { it.kind == "train_station" }
+        assertTrue(station.label.contains("Regional train station"))
+        assertEquals(45.026779, station.latitude, 0.00001)
+        assertEquals(7.657283, station.longitude, 0.00001)
+        assertTrue(city.search("Fossata").any { it.kind == "train_station" })
+    }
+
     @Test fun houseNumberIsNotMatchedAsPrefixOfAnotherHouseNumber() {
         // OSM doesn't contain number 1 here in this extract; don't substitute 10/11/etc.
         assertTrue(city.search("Via Chiesa della Salute 1").isEmpty())
