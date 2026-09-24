@@ -16,8 +16,8 @@ Native Android app for finding the nearest live GTT vehicle in Torino.
 - matches missing or unknown trip IDs by line, nearby route geometry and available
   heading; inferred directions are labeled and ambiguous opposite directions rejected
 - accepts rides that get closer to the destination and shows the remaining walk
-- uses optimistic boarding estimates: a brisk 2 m/s walk and no extra boarding
-  buffer, including transfers; ordinary walking estimates remain at 1.35 m/s
+- estimates walking at 1.2 m/s for boarding, transfers, trains, and the
+  remaining walk; displayed journey minutes are rounded up
 - measures walking legs over a bundled pedestrian street graph, including the
   walk to the boarding stop and between transfer stops
 - shows direct options while checking connections and reuses recently fetched positions

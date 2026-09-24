@@ -39,6 +39,21 @@ class JourneyPlannerTest {
             walkingPreference = WalkingPreference.MORE))
     }
 
+    @Test fun walkingTimeCanMakeAnUpcomingTrainUncatchable() = runBlocking {
+        val station = portaNuova
+        val destination = lingotto
+        val now = LocalDateTime.of(2026, 9, 24, 9, 24)
+        suspend fun departureAfterWalking(metres: Float) = trains.planScheduledJourney(
+            station.latitude, station.longitude, destination.latitude, destination.longitude,
+            now, walkFromOrigin = { _, _ -> metres },
+            walkFromDestination = { _, _ -> 0f },
+            boardStopId = station.id, exitStopId = destination.id
+        )?.departureSeconds
+
+        assertEquals(9 * 3600 + 30 * 60, departureAfterWalking(200f))
+        assertTrue(departureAfterWalking(220f)!! > 9 * 3600 + 30 * 60)
+    }
+
     @Test fun liveBusCanConnectToScheduledTrain() = runBlocking {
         val station = portaNuova
         val destination = lingotto

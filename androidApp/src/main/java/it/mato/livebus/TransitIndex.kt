@@ -170,7 +170,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                     .mapNotNull { index ->
                         val stop = pattern.stops[index]
                         val walkMetres = walkingDistance(stop)
-                        val walkSeconds = walkMetres / BOARDING_WALK_METRES_PER_SECOND
+                        val walkSeconds = walkMetres / WALKING_METRES_PER_SECOND
                         val busSeconds = busSecondsToStop(vehicle, pattern, progressIndex, index)
                         if (destinationCandidate.third >= destinationDistance(stop) ||
                             earliestStartSeconds + walkSeconds + BOARDING_MARGIN_SECONDS > busSeconds) null
@@ -246,7 +246,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 val boardIndex = exitIndex - 1
                 val board = pattern.stops[boardIndex]
                 val walk = walkingDistance(board)
-                val walkSeconds = walk / BOARDING_WALK_METRES_PER_SECOND
+                val walkSeconds = walk / WALKING_METRES_PER_SECOND
                 val busSeconds = busSecondsToStop(first.vehicle, pattern, first.progress, boardIndex)
                 if (walkSeconds + BOARDING_MARGIN_SECONDS <= busSeconds) {
                     val candidate = BoardingCandidate(boardIndex, board, walk, walkSeconds, busSeconds)
@@ -278,7 +278,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                         val secondArrival = busSecondsToStop(
                             second.vehicle, second.pattern, second.progress, secondBoardIndex
                         )
-                        if (firstArrival + streetTransferWalk / BOARDING_WALK_METRES_PER_SECOND +
+                        if (firstArrival + streetTransferWalk / WALKING_METRES_PER_SECOND +
                             BOARDING_MARGIN_SECONDS > secondArrival) continue
                         val destinationIndex = destinationsByPattern.getValue(second.pattern.id)[secondBoardIndex + 1]
                         val destination = second.pattern.stops[destinationIndex]
@@ -560,11 +560,10 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         }
 
         private const val MAX_TRANSFER_WALK = 350f
-        private const val WALKING_METRES_PER_SECOND = 1.35f
+        private const val WALKING_METRES_PER_SECOND = 1.2f
         private const val BUS_METRES_PER_SECOND = 6.0f
         private const val DWELL_SECONDS_PER_STOP = 18f
-        // Optimistic boarding: brisk walking and no extra arrival buffer.
-        private const val BOARDING_WALK_METRES_PER_SECOND = 2.0f
+        // Reaching a stop uses the same walking pace as the journey estimate.
         private const val BOARDING_MARGIN_SECONDS = 0f
         private const val MAX_BOARDING_HEADING_CHECK_METRES = 2_000f
         private const val MAX_FORWARD_BEARING_DIFFERENCE = 100.0

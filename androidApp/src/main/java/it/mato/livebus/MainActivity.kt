@@ -71,6 +71,7 @@ import android.widget.PopupMenu
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import kotlin.math.roundToInt
+import kotlin.math.ceil
 import kotlin.coroutines.resume
 import java.time.LocalDateTime
 
@@ -1413,7 +1414,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun minutes(seconds: Float) = (seconds / 60f).roundToInt().coerceAtLeast(1)
+    private fun minutes(seconds: Float) = ceil(seconds / 60f).toInt().coerceAtLeast(1)
 
     private fun formatTime(seconds: Int): String = "%02d:%02d".format(
         (seconds / 3600) % 24,
@@ -1454,7 +1455,7 @@ class MainActivity : AppCompatActivity() {
         const val LAST_DESTINATION = "last_destination"
         const val INCLUDE_TRAINS = "include_trains"
         const val WALKING_PREFERENCE = "walking_preference"
-        const val WALKING_METRES_PER_SECOND = 1.35f
+        const val WALKING_METRES_PER_SECOND = 1.2f
         const val WALKING_STREET_FACTOR = 1.2f
         const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"
         val ROUTE_PATTERN = Regex("""(?i)(?:bus|linea|line|route)\s*#?\s*(\d{1,3})""")

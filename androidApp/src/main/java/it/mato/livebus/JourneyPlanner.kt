@@ -22,7 +22,7 @@ enum class WalkingPreference(val extraWalkingWeight: Float, val maxStationWalkMe
     MORE(0f, 5_000f);
 
     fun score(totalSeconds: Float, walkingMetres: Float): Float =
-        totalSeconds + walkingMetres / 1.35f * extraWalkingWeight
+        totalSeconds + walkingMetres / 1.2f * extraWalkingWeight
 }
 
 /** Checks bus/train connections against live bus progress and scheduled train times. */

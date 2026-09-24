@@ -90,25 +90,46 @@ class TransitIndexTest {
         assertNull(choice)
     }
 
-    @Test fun acceptsTightConnectionWithBriskWalk() = runBlocking {
-        // About 197 m to walk, with the bus about 111 seconds away.
-        val choice = index(first).planLiveJourney(45.01, 7.0025, 45.03, 7.0,
+    @Test fun acceptsNearbyWalkToBoardingStop() = runBlocking {
+        // About 110 m to walk, with the bus about 111 seconds away.
+        val choice = index(first).planLiveJourney(45.01, 7.0014, 45.03, 7.0,
             listOf(vehicle(first, 45.004, 7.0)))
         assertNotNull(choice)
         assertEquals("board", choice!!.boardAt.id)
     }
 
+    @Test fun rejectsBoardingWalkThatNeedsAnUnrealisticallyFastPace() = runBlocking {
+        // About 197 m to walk, with the bus about 111 seconds away.
+        val choice = index(first).planLiveJourney(45.01, 7.0025, 45.03, 7.0,
+            listOf(vehicle(first, 45.004, 7.0)))
+        assertNull(choice)
+    }
+
     @Test fun streetDetourCanMakeAPreviouslyCatchableBusTooFarToWalk() = runBlocking {
         val bus = vehicle(first, 45.004, 7.0)
-        val direct = index(first).planLiveJourney(45.01, 7.0025, 45.03, 7.0,
+        val direct = index(first).planLiveJourney(45.01, 7.0014, 45.03, 7.0,
             listOf(bus))
-        val viaStreets = index(first).planLiveJourney(45.01, 7.0025, 45.03, 7.0,
+        val viaStreets = index(first).planLiveJourney(45.01, 7.0014, 45.03, 7.0,
             listOf(bus), walkFromOrigin = { lat, lon ->
                 if (lat == first.stops[1].latitude && lon == first.stops[1].longitude) 500f
                 else 1000f
             })
         assertNotNull(direct)
         assertNull(viaStreets)
+    }
+
+    @Test fun lastWalkingLegAddsRealisticTimeToJourneyEta() = runBlocking {
+        val bus = vehicle(first, 45.0, 7.0)
+        suspend fun withLastWalk(metres: Float) = index(first).planLiveJourney(
+            45.01, 7.0, 45.03, 7.0, listOf(bus),
+            walkFromDestination = { lat, lon ->
+                if (lat == first.stops.last().latitude && lon == first.stops.last().longitude)
+                    metres else 2000f
+            })!!
+
+        val atStop = withLastWalk(0f)
+        val afterWalk = withLastWalk(240f)
+        assertEquals(200f, afterWalk.estimatedTotalSeconds - atStop.estimatedTotalSeconds, 1f)
     }
 
     @Test fun acceptsBusArrivingNowWhenAlreadyAtStop() = runBlocking {
