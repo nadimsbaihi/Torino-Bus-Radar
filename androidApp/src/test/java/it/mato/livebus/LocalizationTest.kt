@@ -15,10 +15,10 @@ class LocalizationTest {
     fun italianDeviceLocaleUsesItalianStringsAndPlurals() {
         val context = RuntimeEnvironment.getApplication()
 
-        assertEquals("CAMMINARE", context.getString(R.string.walking_label))
+        assertEquals("Quanto vuoi camminare?", context.getString(R.string.walking_label))
         assertEquals("Poco ▾", context.getString(R.string.walking_preset_less))
-        assertEquals("Camminare · ~12 min", context.getString(R.string.walk_summary, 12))
-        assertEquals("Cammina · 12 min ↗", context.getString(R.string.walk_option, 12))
+        assertEquals("A piedi · ~12 min", context.getString(R.string.walk_summary, 12))
+        assertEquals("A piedi · 12 min ↗", context.getString(R.string.walk_option, 12))
         assertEquals("1 veicolo in tempo reale sulla linea 4",
             context.resources.getQuantityString(R.plurals.live_vehicle_count, 1, 1, "4"))
         assertEquals("2 veicoli in tempo reale sulla linea 4",
