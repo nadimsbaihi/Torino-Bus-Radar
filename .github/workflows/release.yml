@@ -26,10 +26,12 @@ jobs:
       - name: Set APK version from tag
         run: echo "MATO_VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      - name: Build release APK
+      - name: Validate and build release APK
         env:
           MATO_VERSION_CODE: ${{ github.run_number }}
-        run: ./gradlew :androidApp:assembleRelease --no-daemon
+        run: >-
+          ./gradlew :androidApp:testDebugUnitTest :androidApp:assembleDebug
+          :androidApp:lintDebug :androidApp:assembleRelease --no-daemon
 
       - name: Sign and verify APK
         env:

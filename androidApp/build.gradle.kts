@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = providers.environmentVariable("MATO_VERSION_CODE").orNull?.toInt() ?: 1
-        versionName = providers.environmentVariable("MATO_VERSION_NAME").orNull ?: "0.1.0"
+        versionName = providers.environmentVariable("MATO_VERSION_NAME").orNull ?: "0.1.2"
     }
 
     buildFeatures {

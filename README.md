@@ -1,122 +1,122 @@
-# Torino Bus Radar for Android
+# Torino Bus Radar
 
-Native Android app for finding the nearest live GTT vehicle in Torino.
+Find your next ride in Torino. See live GTT buses on the map, compare routes
+with walking or regional trains, and get directions to your boarding stop.
 
-## What works
+**[Download the latest APK](https://github.com/nadimsbaihi/Torino-Bus-Radar/releases/latest)**
+· Android 8.0 or newer · English and Italian
 
-- reads the official GTT GTFS-Realtime vehicle-position feed
-- obtains a recent phone location (including approximate permission) before planning
-- opens a full-screen neighborhood map, with destination search at the top
-- shows journey details in a dismissible card instead of a bottom menu
-- displays all available buses on a simplified offline Torino map, then focuses
-  on the selected journey's buses or the selected line; closing the selection
-  restores all buses. The basemap has no POI icons and fewer street labels
-- searches bundled places, addresses, GTT stops, and regional train stations
-  locally, without a geocoding API
-- searches live routes for direct and catchable one-transfer journeys
-- matches missing or unknown trip IDs by line, nearby route geometry and available
-  heading; inferred directions are labeled and ambiguous opposite directions rejected
-- accepts rides that get closer to the destination and shows the remaining walk
-- estimates walking at 1.2 m/s for boarding, transfers, trains, and the
-  remaining walk; displayed journey minutes are rounded up
-- measures walking legs over a bundled pedestrian street graph, including the
-  walk to the boarding stop and between transfer stops
-- shows direct options while checking connections and reuses recently fetched positions
-- compares scheduled Trenitalia Piemonte regional trains with live GTT journeys,
-  including catchable bus-to-train and train-to-bus connections
-- requires reaching a train station two minutes before departure for boarding;
-  buses use their live stop arrival estimate without a boarding buffer
-- offers saved search presets to include or exclude trains and to favor less
-  walking, a balance, or faster trips with more walking; changing a preset
-  recalculates the current destination
-- refreshes live positions every 15 seconds
-- compares the full bus ETA with a walking estimate and opens real walking
-  navigation in Google Maps
-- opens Google Maps walking navigation to the selected boarding stop
-- restores the last destination and replans when the app is reopened
-- appears in Android's Share sheet and detects route numbers in shared
-  directions text (for example, “Bus 10” or “Linea 10”)
-- clearly reports a GTT feed outage instead of displaying simulated vehicles
+## Get started
 
-## Build
+1. Download and install the APK from the latest release.
+2. Allow location access and search for a destination.
+3. Choose a journey, then open walking directions to your boarding stop in Google Maps.
 
-Open this directory in Android Studio, install Android SDK 35 if prompted, and
-run the `androidApp` configuration on a device or emulator running Android 8+.
+Your phone's location is the starting point. The app remembers your last
+destination and your search preferences.
+
+## Features
+
+- **Live bus map.** See GTT vehicles across the city, with positions refreshed
+  every 15 seconds. Select a journey or line to focus the map.
+- **Bus and train journeys.** Find direct trips and connections, including
+  bus-to-train and train-to-bus options.
+- **Your choice of walking.** Favor less walking, a balance, or faster trips
+  with more walking. Include or exclude regional trains.
+- **Offline search and maps.** Search bundled places, addresses, bus stops,
+  and regional stations without a connection or an API key.
+- **Walking directions.** Compare a ride with walking, then open Google Maps
+  directions to the destination or boarding stop.
+- **Shared routes.** Share directions text from another app to find a bus line
+  mentioned in it.
+
+## Coverage and live data
+
+The offline map covers Torino and nearby suburbs. Search results and walking
+estimates use the data bundled with the app, so some places or addresses may
+be missing.
+
+Live bus positions require internet and come from GTT. Delayed positions are
+marked, and the app reports feed outages. **Regional train times are scheduled,
+not live:** train delays and positions are not available. Connections are
+estimates and can change as new bus positions arrive.
+
+Walking directions open in Google Maps, or in your browser if Maps is not
+installed. Google Maps may choose a different route from the app's estimate.
+
+## Build and test
+
+Use JDK 17 and Android SDK 35. Open the project in Android Studio and run the
+`androidApp` configuration, or build from the command line:
 
 ```sh
 ./gradlew :androidApp:assembleDebug
 ```
 
-## Releases
-
-Push a version tag such as `v0.1.0` to build a signed APK and attach it to a
-GitHub Release. The workflow uses the repository Actions secrets
-`ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD`. Keep a secure backup
-of the release keystore and password: future APK updates must use the same key.
-The tag sets the APK version name, and the workflow run number sets its version
-code.
-
-## Validation
+Run the unit tests, build, and Android lint:
 
 ```sh
 ./gradlew :androidApp:testDebugUnitTest :androidApp:assembleDebug :androidApp:lintDebug
 ```
 
-The JVM tests cover location permission/freshness, offline search, pedestrian
-street routing, actual vector tile rendering, feed caching, cancellation,
-transfer timing and missing-trip direction matching, delayed-position arrival
-estimates and bus marker visibility. They use
-Robolectric; real-device location, network latency, and map interaction still
-need device testing. The rendering test writes `androidApp/build/reports/offline-map-preview.png`.
-Debug logs under
-`MatoLiveBus` report location, geocoding, feed, and planning durations separately.
+Tests use Robolectric and cover journey planning, location, offline search,
+map rendering, and feed handling. Device testing is still needed for location,
+network behavior, and map interaction.
 
-## Pedestrian routing
+<details>
+<summary>Debugging and journey estimates</summary>
 
-Torino Bus Radar uses a local estimate to decide whether walking is likely faster. Choosing
-“Walk in Maps” sends the destination coordinates to Google Maps in
-walking-navigation mode, where the actual pedestrian streets and live Maps
-directions are calculated. If the Google Maps app is unavailable, the same
-walking request opens in the browser.
+- Debug logs use the `MatoLiveBus` tag.
+- The map rendering test writes `androidApp/build/reports/offline-map-preview.png`.
+- Walking estimates follow a bundled pedestrian street graph at 1.2 m/s.
+  When no connected path is available, the app uses an approximate distance
+  and omits the walking line.
+- Train journeys allow two minutes for boarding. The maximum walk to a boarding
+  station is 1.5 km for Less walking, 2.5 km for Balanced, and 5 km for More walking.
+- Bus positions older than two minutes are faded and labeled as delayed;
+  positions older than five minutes are excluded. Arrival estimates account
+  for the age of the position.
+- When a trip ID is missing, the app can estimate direction from the line,
+  route geometry, and heading. Inferred directions are labeled.
 
-For a selected bus or train, “Walk to boarding stop in Google Maps” opens walking
-navigation to that stop. Local walking estimates follow pedestrian streets in
-the bundled OpenStreetMap extract, and the dashed walking line draws that same
-street path. Where no connected path is available, the app falls back to an
-approximate distance and omits the walking line. Google Maps may choose a
-different pedestrian route.
+</details>
 
-## Data
+## Publish a release
 
-Live positions come from GTT's public GTFS-Realtime feed:
+Push a version tag such as `v0.1.2`. [GitHub Actions](.github/workflows/release.yml)
+runs the tests and lint, builds and signs the APK, then attaches it to a GitHub
+Release. Failed validation prevents publishing.
 
-`https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx`
+The workflow requires the repository secrets `ANDROID_KEYSTORE_BASE64` and
+`ANDROID_KEYSTORE_PASSWORD`. Keep a secure backup of the signing key and
+password: future updates must use the same key. The tag sets the version name;
+the workflow run number sets the version code.
 
-Static route and stop data comes from GTT GTFS. The bundled OpenStreetMap vector
-extract is rendered locally through Mapsforge and osmdroid, with visible
-attribution. Map display and destination search require neither internet nor an
-API key. Live bus positions still require internet; downloading a map does not
-make stale positions current. Missing trip IDs can use estimated direction matching;
-positions up to five minutes old remain available, with positions over two minutes
-old shown faded and labeled as delayed. Arrival estimates subtract the position
-age; positions older than five minutes are excluded. Walking navigation
-still opens Google Maps.
+## Data and credits
 
-The September 20, 2026 [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/)
-covers latitude 44.941–45.210 and longitude 7.430–7.929. It contains a 15.1 MB
-vector map and a 17.2 MB pedestrian graph (decimal MB). The 34.9 MB SQLite
-search index contains 159,370 OpenStreetMap places, addresses, and streets,
-plus 4,271 GTT stops and 12 regional train stations within those bounds.
-The latter come from the bundled GTT and Regione Piemonte GTFS-derived indexes.
-These files are compressed in the APK and copied into private, non-backed-up
-app storage on first use. Search coverage depends on the bundled snapshots:
-Comala is present, but Via Chiesa della Salute number 1 is absent in this snapshot.
-The phone's location remains the journey origin.
+- **GTT:** live vehicle positions and static routes and stops.
+- **OpenStreetMap contributors:** the offline map, places, addresses, and walking
+  network, using a [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/).
+- **Regione Piemonte:** published GTFS timetables for Trenitalia regional trains.
+- **Mapsforge and osmdroid:** offline map rendering.
 
-To rebuild the bundled files, download `Turin.osm.mapsforge-osm.zip`,
-`Turin.osm.gz`, `Turin.poly`, and `CHECKSUM.txt` from the extract directory into
-`build/offline-source/`, verify the archives against the published checksums,
-then run:
+Source details and license links are in the bundled
+[NOTICE](androidApp/src/main/assets/offline/NOTICE.txt). The
+[manifest](androidApp/src/main/assets/offline/manifest.json) records the map
+bounds, source hashes, and file checksums.
+
+<details>
+<summary>Offline snapshot and rebuilding the data</summary>
+
+The September 20, 2026 map extract covers latitude 44.941–45.210 and longitude
+7.430–7.929. It includes a 15.1 MB vector map, a 17.2 MB walking graph, and a
+34.9 MB search database with 159,370 OpenStreetMap entries, 4,313 GTT stops, and
+12 regional train stations. Files are compressed in the APK and copied to
+private, non-backed-up storage on first use.
+
+To rebuild, download `Turin.osm.mapsforge-osm.zip`, `Turin.osm.gz`, `Turin.poly`,
+and `CHECKSUM.txt` from the extract directory into `build/offline-source/`.
+Verify the archives against the published checksums, then run:
 
 ```sh
 python3 tools/build_offline_city.py build/offline-source androidApp/src/main/assets/offline \
@@ -124,16 +124,11 @@ python3 tools/build_offline_city.py build/offline-source androidApp/src/main/ass
   androidApp/src/main/assets/trenitalia_rail_index.json
 ```
 
-The builder uses only Python's standard library. The bundled `offline/manifest.json`
-records file hashes and source metadata; `offline/NOTICE.txt` contains attribution
-and license links for OpenStreetMap, GTT, and Regione Piemonte. Rebuild the search
-index when either GTFS-derived index changes. Updating the assets and rebuilding
-the APK updates the city snapshot; no automatic map download is used.
+The builder uses only Python's standard library. Rebuild the search index when
+either GTFS-derived index changes. Ship updated assets in a new APK; the app
+does not download map updates automatically.
 
-Trenitalia regional trains are sourced from Regione Piemonte's published GTFS
-timetable. They are scheduled results only; this app does not claim that train
-positions or delays are live. Mixed journeys use current GTT bus positions to
-estimate connections, so a later bus leg may change before the train arrives.
-The walking presets also set the maximum walk to a boarding station: 1.5 km
-for Less walking, 2.5 km for Balanced, and 5 km for More walking. They rank
-available journeys by travel time with progressively less penalty for walking.
+The live GTT feed is
+`https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx`.
+
+</details>
