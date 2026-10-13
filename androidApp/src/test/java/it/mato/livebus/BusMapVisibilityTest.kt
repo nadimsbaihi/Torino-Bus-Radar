@@ -240,8 +240,27 @@ class BusMapVisibilityTest {
         // Clearing the highlight brings every bus back.
         assertEquals(2, busTitles().size)
 
-        // A highlighted bus that leaves the feed drops its course and the others return.
+        // Tapping the highlighted bus again leaves its course, even after a refresh rebuilt the marker.
         listener.onMarkerClick(marker, binding.map)
+        assertEquals("bus", get(activity, "highlightedVehicleId"))
+        render.invoke(activity)
+        val rebuilt = binding.map.overlays.filterIsInstance<Marker>()
+            .single { it.relatedObject is LiveVehicle }
+        val again = Marker::class.java.getDeclaredField("mOnMarkerClickListener")
+            .apply { isAccessible = true }.get(rebuilt) as Marker.OnMarkerClickListener
+        assertTrue(again.onMarkerClick(rebuilt, binding.map))
+        assertNull(get(activity, "highlightedVehicleId"))
+        assertTrue(courseLines().isEmpty())
+        assertEquals(2, busTitles().size)
+        // Tapping it once more highlights it afresh.
+        val fresh = binding.map.overlays.filterIsInstance<Marker>()
+            .single { it.title == activity.getString(R.string.vehicle_title, "60") }
+        (Marker::class.java.getDeclaredField("mOnMarkerClickListener")
+            .apply { isAccessible = true }.get(fresh) as Marker.OnMarkerClickListener)
+            .onMarkerClick(fresh, binding.map)
+        assertEquals("bus", get(activity, "highlightedVehicleId"))
+
+        // A highlighted bus that leaves the feed drops its course and the others return.
         set(activity, "liveVehicles", listOf(other))
         render.invoke(activity)
         assertTrue(courseLines().isEmpty())

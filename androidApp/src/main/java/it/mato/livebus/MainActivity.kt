@@ -1051,6 +1051,11 @@ class MainActivity : AppCompatActivity() {
                 relatedObject = vehicle
                 icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute)
                 setOnMarkerClickListener { clickedMarker, mapView ->
+                    // Tapping the bus whose course is showing leaves the course again.
+                    if (highlightedVehicleId == vehicle.id) {
+                        clearHighlightedCourse()
+                        return@setOnMarkerClickListener true
+                    }
                     val pattern = transitIndex.matchDirection(vehicle)
                     val direction = if (pattern == null) {
                         getString(R.string.bus_direction_unavailable)
