@@ -131,6 +131,27 @@ def add_successors(patterns, trip_blocks, trip_span, stops):
         }
 
 
+def mark_duty_ends(patterns, trip_blocks, trip_span):
+    """List, per pattern, the trips after which the bus has nothing more to run today.
+
+    A block is one bus's duty, so its last trip is followed by the depot (or a break long enough to
+    park). Adds "last" to a pattern: its trips that end a block. The app uses it to tell a bus
+    that has finished from one waiting at a terminus for its next run.
+    """
+    by_id = {pattern["id"]: pattern for pattern in patterns}
+    pattern_of = {trip: pattern["id"] for pattern in patterns for trip in pattern["tripIds"]}
+    blocks = defaultdict(list)
+    for trip, block in trip_blocks.items():
+        if trip in pattern_of and trip in trip_span and None not in trip_span[trip]:
+            blocks[block].append(trip)
+    for trips in blocks.values():
+        final = max(trips, key=lambda trip: (clock_seconds(trip_span[trip][1]), trip))
+        by_id[pattern_of[final]].setdefault("last", []).append(final)
+    for pattern in patterns:
+        if "last" in pattern:
+            pattern["last"].sort()
+
+
 def main(source, output):
     with zipfile.ZipFile(source) as archive:
         routes = {row["route_id"]: row for row in rows(archive, "routes.txt")}
@@ -221,10 +242,11 @@ def main(source, output):
                 pattern["shape"] = max(drawn, key=lambda item: (item[0], item[1]))[1]
         patterns = list(merged.values())
         add_successors(patterns, trip_blocks, trip_span, stops)
+        mark_duty_ends(patterns, trip_blocks, trip_span)
         used = {pattern["shape"] for pattern in patterns if "shape" in pattern}
         shapes = {shape_id: shapes[shape_id] for shape_id in sorted(used)}
 
-    payload = {"version": 4, "patterns": patterns, "shapes": shapes}
+    payload = {"version": 5, "patterns": patterns, "shapes": shapes}
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),

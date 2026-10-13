@@ -90,6 +90,8 @@ class GttRepository {
             val vehicles = feed.entityList.mapNotNull { entity ->
                 if (!entity.hasVehicle() || !entity.vehicle.hasPosition()) return@mapNotNull null
                 val update = entity.vehicle
+                // A vehicle with no GPS fix reports 0, 0: open sea off Africa, not a bus.
+                if (update.position.latitude == 0f && update.position.longitude == 0f) return@mapNotNull null
                 LiveVehicle(
                     id = update.vehicle.id.takeIf(String::isNotBlank) ?: entity.id,
                     routeId = update.trip.routeId.removePrefix("gtt:"),

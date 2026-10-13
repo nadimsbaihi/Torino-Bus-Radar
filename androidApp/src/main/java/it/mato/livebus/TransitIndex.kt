@@ -30,7 +30,9 @@ data class TransitPattern(
     // The road line the buses follow; null for an index without geometry.
     val shape: RouteShape? = null,
     // What the same bus usually does after this pattern; null when the timetable does not say.
-    val next: PatternSuccessor? = null
+    val next: PatternSuccessor? = null,
+    // Trips of this pattern that are the last of a bus's duty: the depot comes after them.
+    val lastTripIds: Set<String> = emptySet()
 )
 
 /**
@@ -169,6 +171,62 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     fun patternsForRoute(route: String) = patterns.filter { it.route == route }
 
     private val routeNames by lazy { patterns.associate { it.routeId to it.route } }
+
+    private val dutyEndTrips by lazy { patterns.flatMapTo(HashSet()) { it.lastTripIds } }
+    // The last scheduled trip each bus was seen on, and the buses that finished their duty on it.
+    private val lastTripOf = HashMap<String, String>()
+    private val finishedVehicles = HashSet<String>()
+
+    /**
+     * The vehicles that carry passengers or are about to. A bus heading for the depot, or out of
+     * it, still reports its line, so left in it would be drawn and planned as a bus on that line.
+     *
+     * Only a vehicle the feed gives no trip at all can be dropped, and for one of two reasons: it
+     * finished the last trip of its duty (the index says which they are) and has not been given
+     * another since, or it is nowhere near the line it names. A bus that is merely between two
+     * trips, waiting at its terminus, stays. Call it with every feed: it remembers what each bus
+     * was last seen doing.
+     */
+    @Synchronized
+    fun inService(vehicles: List<LiveVehicle>): List<LiveVehicle> = vehicles.filter { vehicle ->
+        val tripId = vehicle.tripId
+        if (tripId != null) {
+            finishedVehicles.remove(vehicle.id)
+            if (tripId in patternsByTripId) lastTripOf[vehicle.id] = tripId
+            return@filter true
+        }
+        if (vehicle.id in finishedVehicles) return@filter false
+        if (hasFinishedItsDuty(vehicle)) {
+            finishedVehicles.add(vehicle.id)
+            return@filter false
+        }
+        !isOffItsLine(vehicle)
+    }
+
+    private fun hasFinishedItsDuty(vehicle: LiveVehicle): Boolean {
+        val lastTrip = lastTripOf[vehicle.id]?.takeIf { it in dutyEndTrips } ?: return false
+        // A trip ID that goes missing halfway along the last trip is the feed stuttering, not the
+        // end: only a bus near where that trip finishes has finished.
+        val terminus = patternsByTripId[lastTrip]?.stops?.lastOrNull() ?: return false
+        return distance(vehicle.latitude, vehicle.longitude, terminus) <= DUTY_END_RADIUS_METRES
+    }
+
+    private fun isOffItsLine(vehicle: LiveVehicle): Boolean {
+        // A line the index does not know says nothing about where the bus should be.
+        val candidates = patternsByRoute[vehicle.routeId] ?: return false
+        return candidates.none { metresFromLine(vehicle, it) <= OFF_LINE_METRES }
+    }
+
+    private fun metresFromLine(vehicle: LiveVehicle, pattern: TransitPattern): Double {
+        val shape = pattern.shape
+        if (shape != null) {
+            return shape.nearest(vehicle.latitude, vehicle.longitude, 0.0, shape.lengthMetres)?.distance
+                ?: Double.MAX_VALUE
+        }
+        return (0 until pattern.stops.size - 1).minOfOrNull {
+            distanceToSegment(vehicle.latitude, vehicle.longitude, pattern.stops[it], pattern.stops[it + 1])
+        } ?: Double.MAX_VALUE
+    }
 
     /**
      * The name riders see on a line, straight from the feed: "13" and "13+", "59" and "59/", "10"
@@ -881,7 +939,10 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                                 (0 until trips.length()).mapTo(HashSet()) { trips.getString(it) }
                             } ?: emptySet()
                         )
-                    }
+                    },
+                    lastTripIds = item.optJSONArray("last")?.let { last ->
+                        (0 until last.length()).mapTo(HashSet()) { last.getString(it) }
+                    } ?: emptySet()
                 )
             }
             return TransitIndex(patterns)
@@ -965,6 +1026,10 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         private const val MAX_UNKNOWN_BEARING_ERROR = 60.0
         // Beyond this the bus is off its line (diversion, depot run) and the route says nothing.
         private const val MAX_SNAP_METRES = 100.0
+        // A bus within this of where its duty's last trip ends has finished; further, a missing trip is a glitch.
+        private const val DUTY_END_RADIUS_METRES = 1_500.0
+        // A bus with no trip this far from every road of its line is on the way to or from the depot.
+        private const val OFF_LINE_METRES = 500.0
         // Movement shorter than this is GPS jitter, not a direction of travel.
         private const val MIN_MOVE_METRES = 30f
         // A reported bearing is overruled only by movement clearly longer than jitter.

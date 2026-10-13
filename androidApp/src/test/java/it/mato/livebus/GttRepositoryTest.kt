@@ -28,6 +28,12 @@ class GttRepositoryTest {
         results.forEach { assertEquals(listOf("fresh", "delayed", "header"), it.map { vehicle -> vehicle.id }) }
     }
 
+    @Test fun aVehicleWithoutAGpsFixIsNotABus() = runBlocking {
+        val ids = repository(AtomicInteger()).vehicles().map { it.id }
+        assertFalse("nofix" in ids)
+        assertTrue("fresh" in ids)
+    }
+
     @Test fun failedRefreshDoesNotReturnExpiredCache() = runBlocking {
         val calls = AtomicInteger()
         val repository = repository(calls, failAfterFirst = true)
@@ -59,9 +65,11 @@ class GttRepositoryTest {
         val feed = GtfsRealtime.FeedMessage.newBuilder().setHeader(
             GtfsRealtime.FeedHeader.newBuilder().setGtfsRealtimeVersion("2.0").setTimestamp(now)
         )
-        for ((id, timestamp) in listOf("fresh" to now, "delayed" to now - 240, "stale" to now - 301, "future" to now + 60, "header" to null)) {
+        for ((id, timestamp) in listOf("fresh" to now, "delayed" to now - 240, "stale" to now - 301, "future" to now + 60,
+            "header" to null, "nofix" to now)) {
+            val fix = if (id == "nofix") 0f else 45f
             val vehicle = GtfsRealtime.VehiclePosition.newBuilder().setPosition(
-                GtfsRealtime.Position.newBuilder().setLatitude(45f).setLongitude(7f)
+                GtfsRealtime.Position.newBuilder().setLatitude(fix).setLongitude(if (id == "nofix") 0f else 7f)
             )
             if (timestamp != null) vehicle.setTimestamp(timestamp)
             feed.addEntity(GtfsRealtime.FeedEntity.newBuilder().setId(id).setVehicle(vehicle))

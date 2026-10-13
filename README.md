@@ -155,6 +155,11 @@ python3 tools/build_transit_index.py gtt_gtfs.zip androidApp/src/main/assets/tra
 
 The index also records, from the timetable's blocks, which run a bus usually does after
 another, so a bus about to finish its line counts as the one coming back from the terminus.
+It also marks the last trip of each block: a bus that finishes one is going to the depot, and
+the app stops showing and planning with it until the feed gives it another trip. The feed has no
+out-of-service flag, so a bus the feed gives no trip at all is also left out when it is more
+than 500 m from every road of its line. A bus with no trip that is simply waiting at its
+terminus between runs stays.
 Trip IDs change when GTT publishes a new feed, and the app matches live buses to routes by
 trip ID, so refresh this index when live buses stop matching it.
 

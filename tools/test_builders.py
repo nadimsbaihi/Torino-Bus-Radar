@@ -108,7 +108,7 @@ class TransitShapeTest(unittest.TestCase):
             write_zip(source, files)
             run('build_transit_index.py', source, output)
             shapeless = json.loads(output.read_text())
-        self.assertEqual(4, index['version'])
+        self.assertEqual(5, index['version'])
         self.assertEqual(1, len(index['patterns']))
         self.assertEqual('common', index['patterns'][0]['shape'])
         self.assertEqual({'common'}, set(index['shapes']), "only shapes a pattern uses are shipped")
@@ -153,6 +153,34 @@ class TransitTurnaroundTest(unittest.TestCase):
         self.assertEqual(600, out['next']['wait'])
         self.assertEqual(out['id'], back['next']['id'])
         self.assertEqual(['t2'], back['next']['trips'])
+
+    def test_patterns_list_the_trips_that_end_a_bus_s_duty(self):
+        stops = "stop_id,stop_name,stop_lat,stop_lon\nA,A,45.00,7.0\nC,C,45.02,7.0\n"
+        # b1 runs t1, t2, t3 and then goes home; b2 is a single trip; t9 has no block at all.
+        trips = ("route_id,service_id,trip_id,direction_id,trip_headsign,shape_id,block_id\n"
+                 "r,s,t1,0,Out,,b1\nr,s,t2,1,Back,,b1\nr,s,t3,0,Out,,b1\n"
+                 "r,s,t4,0,Out,,b2\nr,s,t9,0,Out,,\n"
+                 "r,other,t5,0,Out,,b1\n")
+
+        def trip(trip_id, sequence, first, last):
+            return "".join(f"{trip_id},{i},{stop},{when},{when}\n"
+                           for i, (stop, when) in enumerate(zip(sequence, (first, last)), 1))
+        stop_times = ("trip_id,stop_sequence,stop_id,arrival_time,departure_time\n"
+                      + trip("t1", "AC", "08:00:00", "08:20:00") + trip("t2", "CA", "08:30:00", "08:50:00")
+                      + trip("t3", "AC", "09:00:00", "09:20:00") + trip("t4", "AC", "10:00:00", "10:20:00")
+                      + trip("t9", "AC", "11:00:00", "11:20:00")
+                      # The same block id under another service is another day's duty.
+                      + trip("t5", "AC", "12:00:00", "12:20:00"))
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory, 'gtfs.zip'), Path(directory, 'out.json')
+            write_zip(source, {'stops.txt': stops, 'routes.txt': "route_id,route_short_name\nr,1\n",
+                               'trips.txt': trips, 'stop_times.txt': stop_times})
+            run('build_transit_index.py', source, output)
+            patterns = json.loads(output.read_text())['patterns']
+        out = next(p for p in patterns if p['headsign'] == 'Out')
+        back = next(p for p in patterns if p['headsign'] == 'Back')
+        self.assertEqual(['t3', 't4', 't5'], out['last'])
+        self.assertNotIn('last', back, "t2 is followed by t3 in the same duty")
 
 
 class TrainIndexTest(unittest.TestCase):

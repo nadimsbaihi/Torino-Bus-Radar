@@ -754,7 +754,7 @@ class MainActivity : AppCompatActivity() {
                     val vehiclesTask = async {
                         timed("vehicles") {
                             try {
-                                Result.success(repository.vehicles())
+                                Result.success(transitIndex.inService(repository.vehicles()))
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (error: Exception) {
@@ -995,7 +995,7 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun fetchVehicles(forceRefresh: Boolean) {
         setLiveStatus(getString(R.string.connecting), R.color.ink)
-        runCatching { repository.vehicles(forceRefresh) }
+        runCatching { transitIndex.inService(repository.vehicles(forceRefresh)) }
             .onSuccess {
                 liveVehicles = it
                 updateLiveStatus()

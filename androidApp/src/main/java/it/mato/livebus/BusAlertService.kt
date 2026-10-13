@@ -81,7 +81,7 @@ class BusAlertService : Service() {
             nextDelay = POLL_MILLIS
             try {
                 checkTransferArrival(alert)
-                val allVehicles = repository.vehicles()
+                val allVehicles = transitIndex.inService(repository.vehicles())
                 if (needsFullReplan) {
                     val replanned = replanCompleteJourney(alert, allVehicles)
                     if (replanned == null) {
