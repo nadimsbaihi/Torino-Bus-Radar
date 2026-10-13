@@ -39,6 +39,7 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -82,6 +83,7 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.coroutines.resume
 
@@ -353,7 +355,7 @@ class MainActivity : AppCompatActivity() {
             override fun longPressHelper(point: GeoPoint?): Boolean {
                 if (point == null) return false
                 binding.map.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                goToMapPoint(point)
+                confirmMapPoint(point)
                 return true
             }
         }))
@@ -484,6 +486,19 @@ class MainActivity : AppCompatActivity() {
         binding.map.invalidate()
         refreshSavedPlaceButton()
         findDestinationRoute()
+    }
+
+    private var mapPointDialog: AlertDialog? = null
+
+    /** A press that lingers is easily an accident, so ask before a journey replaces what is on screen. */
+    private fun confirmMapPoint(point: GeoPoint) {
+        mapPointDialog?.dismiss()
+        mapPointDialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.map_pin_confirm_title)
+            .setMessage(MapPin.format(point.latitude, point.longitude))
+            .setPositiveButton(R.string.map_pin_confirm_action) { _, _ -> goToMapPoint(point) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     /** Press and hold on the map: go there, whether or not the city data has an address for it. */
@@ -1090,7 +1105,11 @@ class MainActivity : AppCompatActivity() {
                                 " · " + getString(R.string.direction_estimated_short)
                             } else ""
                     }
-                    clickedMarker.subDescription = TextUtils.htmlEncode(direction)
+                    // The fleet number is for the curious, so it sits last, small and grey.
+                    clickedMarker.subDescription = TextUtils.htmlEncode(direction) +
+                        "<br/><small><font color=\"#8A8A8A\">" +
+                        TextUtils.htmlEncode(getString(R.string.bus_fleet_number, vehicle.fleetNumber)) +
+                        "</font></small>"
                     highlightCourse(vehicle, pattern)
                     clickedMarker.showInfoWindow()
                     mapView.controller.animateTo(clickedMarker.position)
@@ -1567,7 +1586,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun createBusDirectionMarker(closest: Boolean, bearing: Float?, route: String): BitmapDrawable {
         val density = resources.displayMetrics.density
-        val busDiameter = (if (closest) 30f else 21f) * density
+        val lines = busLabelLines(route)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        paint.textSize = busLabelTextDp(closest, lines) * density
+        paint.textAlign = Paint.Align.CENTER
+        // A long name makes the marker bigger, not the writing smaller.
+        val ring = 2f * density
+        val labelDiameter = 2f * (busLabelRadius(lines.map(paint::measureText), paint.textSize) +
+            ring + 0.5f * density)
+        val busDiameter = max((if (closest) 30f else 21f) * density, labelDiameter)
         val arrowDiameter = (if (closest) 8f else 5f) * density
         val busRadius = busDiameter / 2f
         val arrowRadius = arrowDiameter / 2f
@@ -1578,22 +1606,21 @@ class MainActivity : AppCompatActivity() {
         val canvas = Canvas(bitmap)
         val center = bitmapSize / 2f
         val color = if (closest) getColor(R.color.route_orange) else getColor(R.color.deep_green)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         paint.style = Paint.Style.FILL
         paint.color = if (closest) color else Color.WHITE
         canvas.drawCircle(center, center, busRadius, paint)
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2f * density
+        paint.strokeWidth = ring
         paint.color = if (closest) Color.WHITE else color
         canvas.drawCircle(center, center, busRadius - paint.strokeWidth / 2f, paint)
 
         paint.style = Paint.Style.FILL
         paint.color = if (closest) Color.WHITE else color
-        paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        paint.textSize = (if (closest) 12f else if (route.length > 2) 8f else 10f) * density
-        paint.textAlign = Paint.Align.CENTER
-        canvas.drawText(route, center, center - (paint.ascent() + paint.descent()) / 2, paint)
+        lines.forEachIndexed { index, line ->
+            val offset = (index - (lines.size - 1) / 2f) * paint.textSize
+            canvas.drawText(line, center, center + offset - (paint.ascent() + paint.descent()) / 2, paint)
+        }
 
         bearing?.let {
             val angle = Math.toRadians(it.toDouble() - 90.0)

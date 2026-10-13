@@ -24,8 +24,13 @@ data class LiveVehicle(
     val latitude: Double,
     val longitude: Double,
     val bearing: Float?,
-    val timestampSeconds: Long
+    val timestampSeconds: Long,
+    /** The fleet number painted on the bus, when the feed gives one. */
+    val label: String? = null
 ) {
+    /** What the rider sees on the bus itself; the feed id is that number with a company suffix. */
+    val fleetNumber: String get() = label ?: id.removeSuffix("U")
+
     val ageSeconds: Long get() = ageSecondsAt(System.currentTimeMillis() / 1000)
 
     /** Age against a fixed clock reading, so one planning run sees one consistent "now". */
@@ -92,7 +97,8 @@ class GttRepository {
                     latitude = update.position.latitude.toDouble(),
                     longitude = update.position.longitude.toDouble(),
                     bearing = update.position.bearing.takeIf { update.position.hasBearing() },
-                    timestampSeconds = if (update.hasTimestamp()) update.timestamp else feed.header.timestamp
+                    timestampSeconds = if (update.hasTimestamp()) update.timestamp else feed.header.timestamp,
+                    label = update.vehicle.label.takeIf(String::isNotBlank)
                 )
             }
             Log.i(TAG, "Decoded ${vehicles.size} live GTT vehicles")

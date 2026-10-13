@@ -431,6 +431,39 @@ class BusMapVisibilityTest {
     private fun get(activity: MainActivity, name: String): Any? =
         MainActivity::class.java.getDeclaredField(name).apply { isAccessible = true }.get(activity)
 
+    @Test fun aTappedBusShowsItsFleetNumberLastAndQuietly() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val now = System.currentTimeMillis() / 1000
+        // The feed's id carries a company suffix and, for some buses, is not the number on the side.
+        set(activity, "liveVehicles", listOf(
+            LiveVehicle("1150U", "60U", null, 45.07, 7.65, null, now, label = "14687"),
+            LiveVehicle("9643U", "56U", null, 45.08, 7.66, null, now)))
+        MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }.invoke(activity)
+
+        fun tap(route: String): Marker {
+            val marker = binding.map.overlays.filterIsInstance<Marker>()
+                .single { it.title == activity.getString(R.string.vehicle_title, route) }
+            val listener = Marker::class.java.getDeclaredField("mOnMarkerClickListener")
+                .apply { isAccessible = true }.get(marker) as Marker.OnMarkerClickListener
+            listener.onMarkerClick(marker, binding.map)
+            return marker
+        }
+
+        val labelled = tap("60").subDescription
+        assertTrue(labelled.contains(activity.getString(R.string.bus_fleet_number, "14687")))
+        assertTrue(labelled.indexOf(activity.getString(R.string.bus_direction_unavailable)) <
+            labelled.indexOf("14687"))
+        assertTrue(labelled.contains("<small>"))
+        assertFalse(labelled.contains("1150"))
+        // Without a label the id, minus its suffix, is the number.
+        set(activity, "highlightedVehicleId", null)
+        MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }.invoke(activity)
+        assertTrue(tap("56").subDescription.contains(activity.getString(R.string.bus_fleet_number, "9643")))
+    }
+
     private fun set(activity: MainActivity, name: String, value: Any?) {
         MainActivity::class.java.getDeclaredField(name).apply {
             isAccessible = true

@@ -27,6 +27,7 @@
     <string name="no_bus_positions">No recent bus positions</string>
     <string name="delayed_bus_positions">%1$d buses · up to %2$d min old</string>
     <string name="bus_position_age">Position %1$d min ago</string>
+    <string name="bus_fleet_number">Bus no. %1$s</string>
     <string name="delayed_bus_journey">Bus positions are up to %1$d minutes old. Arrival estimates account for this delay, but the bus may have moved differently.</string>
     <string name="live_updated">● LIVE · UPDATED NOW</string>
     <string name="feed_unavailable">GTT UNAVAILABLE · RETRY</string>
@@ -140,6 +141,8 @@
     <string name="place_name_required">Enter a name</string>
     <string name="place_name_taken">You already have a saved place with this name</string>
     <string name="map_pin_location">Spot on the map · %1$s</string>
+    <string name="map_pin_confirm_title">Go to this spot?</string>
+    <string name="map_pin_confirm_action">Go</string>
     <string name="no_saved_places">No saved places yet. Search for a place and tap the bookmark, or press and hold on the map to go anywhere.</string>
     <string name="save_needs_known_place">Choose a place from the suggestions before saving it.</string>
 </resources>

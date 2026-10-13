@@ -27,6 +27,7 @@
     <string name="no_bus_positions">Nessuna posizione aggiornata disponibile</string>
     <string name="delayed_bus_positions">%1$d bus · posizioni di massimo %2$d min fa</string>
     <string name="bus_position_age">Ultima posizione: %1$d min fa</string>
+    <string name="bus_fleet_number">Bus n. %1$s</string>
     <string name="delayed_bus_journey">Le posizioni dei bus risalgono fino a %1$d min fa. Le stime tengono conto del ritardo, ma la posizione attuale potrebbe essere diversa.</string>
     <string name="live_updated">● AGGIORNATO ORA</string>
     <string name="feed_unavailable">DATI GTT NON DISPONIBILI · RIPROVA</string>
@@ -140,6 +141,8 @@
     <string name="place_name_required">Inserisci un nome</string>
     <string name="place_name_taken">Hai già un luogo salvato con questo nome</string>
     <string name="map_pin_location">Punto sulla mappa · %1$s</string>
+    <string name="map_pin_confirm_title">Andare in questo punto?</string>
+    <string name="map_pin_confirm_action">Vai</string>
     <string name="no_saved_places">Nessun luogo salvato. Cerca un luogo e tocca il segnalibro, oppure tieni premuto sulla mappa per andare ovunque.</string>
     <string name="save_needs_known_place">Scegli un luogo tra i suggerimenti prima di salvarlo.</string>
 </resources>

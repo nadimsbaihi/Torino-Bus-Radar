@@ -103,6 +103,62 @@ class SavedPlacesScreenTest {
             binding.sharedDirections.text.isNullOrEmpty())
     }
 
+    private fun longPress(activity: MainActivity, binding: ActivityMainBinding, point: GeoPoint) {
+        val overlay = binding.map.overlays.filterIsInstance<org.osmdroid.views.overlay.MapEventsOverlay>().single()
+        val receiver = overlay.javaClass.getDeclaredField("mReceiver")
+            .apply { isAccessible = true }.get(overlay) as org.osmdroid.events.MapEventsReceiver
+        receiver.longPressHelper(point)
+    }
+
+    @Test fun longPressOnTheMapAsksBeforeGoingThere() {
+        val (activity, binding) = screen()
+
+        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
+
+        val ask = dialog()
+        assertTrue(ask.isShowing)
+        assertEquals(activity.getString(R.string.map_pin_confirm_title),
+            ask.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString())
+        assertTrue(binding.destinationInput.text.isNullOrEmpty())
+        assertNull(MainActivity::class.java.getDeclaredField("directDestination")
+            .apply { isAccessible = true }.get(activity))
+    }
+
+    @Test fun decliningTheLongPressLeavesTheScreenAlone() {
+        val (activity, binding) = screen()
+        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
+
+        dialog().getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+
+        assertTrue(binding.destinationInput.text.isNullOrEmpty())
+        assertNull(MainActivity::class.java.getDeclaredField("directDestination")
+            .apply { isAccessible = true }.get(activity))
+    }
+
+    @LooperMode(LooperMode.Mode.PAUSED)
+    @Test fun confirmingTheLongPressStartsAJourneyToThatSpot() {
+        val (activity, binding) = screen()
+        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
+
+        dialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        assertEquals("45.07031, 7.68690", binding.destinationInput.text.toString())
+        assertEquals(45.07031, (MainActivity::class.java.getDeclaredField("directDestination")
+            .apply { isAccessible = true }.get(activity) as GeoPoint).latitude, 1e-9)
+    }
+
+    @Test fun aSecondLongPressReplacesTheFirstQuestion() {
+        val (activity, binding) = screen()
+        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
+        val first = dialog()
+
+        longPress(activity, binding, GeoPoint(45.06, 7.67))
+
+        assertFalse(first.isShowing)
+        assertTrue(dialog().isShowing)
+    }
+
     @Test fun removingTheNamedDestinationLeavesAPinThatStillWorks() {
         val place = SavedPlace("a", "Casa", "", 45.05, 7.65)
         SavedPlaces(RuntimeEnvironment.getApplication()).save(place)
