@@ -127,6 +127,7 @@
     <string name="offline_map_loading">Opening offline Torino map…</string>
     <string name="offline_map_failed">Could not open the offline map. Please restart the app.</string>
     <string name="save_destination">Save this destination</string>
+    <string name="saved_places_title">Saved places</string>
     <string name="edit_saved_place">Edit saved place</string>
     <string name="save_place_title">Save place</string>
     <string name="place_name_hint">Name</string>

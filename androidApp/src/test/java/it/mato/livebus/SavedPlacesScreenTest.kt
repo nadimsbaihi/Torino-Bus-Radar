@@ -118,4 +118,40 @@ class SavedPlacesScreenTest {
         assertEquals("45.05000, 7.65000", binding.destinationInput.text.toString())
         assertEquals(activity.getString(R.string.save_destination), binding.savedPlaceButton.contentDescription)
     }
+
+    @LooperMode(LooperMode.Mode.PAUSED)
+    @Test fun pressingAndHoldingTheBookmarkListsEverySavedPlaceToPickFrom() {
+        val saved = SavedPlaces(RuntimeEnvironment.getApplication())
+        saved.save(SavedPlace("a", "Work", "", 45.07, 7.66))
+        saved.save(SavedPlace("b", "Casa", "Via Roma 1", 45.05, 7.65))
+        val (activity, binding) = screen()
+
+        assertTrue(binding.savedPlaceButton.performLongClick())
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        val list = dialog()
+        val rows = (0 until list.listView.adapter.count).map { list.listView.adapter.getItem(it) }
+        assertEquals(listOf("Casa · Via Roma 1", "Work"), rows)
+
+        // Picking one goes there, as choosing it from the suggestions would.
+        list.listView.performItemClick(null, 1, 1L)
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertFalse(list.isShowing)
+        assertEquals("Work", binding.destinationInput.text.toString())
+        val destination = MainActivity::class.java.getDeclaredField("directDestination")
+            .apply { isAccessible = true }.get(activity) as GeoPoint
+        assertEquals(45.07, destination.latitude, 1e-9)
+        assertEquals(activity.getString(R.string.edit_saved_place), binding.savedPlaceButton.contentDescription)
+    }
+
+    @Test fun pressingAndHoldingTheBookmarkWithNothingSavedSaysSo() {
+        val (activity, binding) = screen()
+
+        assertTrue(binding.savedPlaceButton.performLongClick())
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        assertNull(org.robolectric.shadows.ShadowDialog.getLatestDialog())
+        val message = binding.coordinator
+            .findViewById<android.widget.TextView>(com.google.android.material.R.id.snackbar_text)
+        assertEquals(activity.getString(R.string.no_saved_places), message.text.toString())
+    }
 }

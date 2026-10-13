@@ -435,18 +435,43 @@ class MainActivity : AppCompatActivity() {
         }
         binding.destinationInput.setOnClickListener { showSavedSuggestions() }
         binding.savedPlaceButton.setOnClickListener { onSavedPlaceButton() }
+        binding.savedPlaceButton.setOnLongClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            showAllSavedPlaces()
+            true
+        }
         binding.destinationInput.setOnItemClickListener { _, _, position, _ ->
-            adapter.getItem(position)?.let { place ->
-                lastGeocodedAddress = place.name to (place.latitude to place.longitude)
-                lastResolvedPlace = place
-                binding.destinationInput.setText(place.name, false)
-                showDestination(place)
-            }
+            adapter.getItem(position)?.let(::chooseDestination)
         }
         binding.destinationInput.setOnEditorActionListener { _, _, _ ->
             findDestinationRoute()
             true
         }
+    }
+
+    /** Makes [place] the destination, as picking it from the suggestions does. */
+    private fun chooseDestination(place: OfflinePlace) {
+        lastGeocodedAddress = place.name to (place.latitude to place.longitude)
+        lastResolvedPlace = place
+        binding.destinationInput.setText(place.name, false)
+        showDestination(place)
+    }
+
+    /** Press and hold the bookmark: every saved place in one list, to pick one. */
+    private fun showAllSavedPlaces() {
+        val places = savedPlaces.all()
+        if (places.isEmpty()) {
+            Snackbar.make(binding.coordinator, R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
+            return
+        }
+        binding.destinationInput.dismissDropDown()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.saved_places_title)
+            .setItems(places.map { it.label }.toTypedArray()) { _, position ->
+                chooseDestination(places[position].asOfflinePlace(exactMatch = true))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun showDestination(place: OfflinePlace) {

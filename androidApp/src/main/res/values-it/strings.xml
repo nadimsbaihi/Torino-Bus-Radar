@@ -127,6 +127,7 @@
     <string name="offline_map_loading">Caricamento della mappa offline di Torino…</string>
     <string name="offline_map_failed">Impossibile aprire la mappa offline. Riavvia l’app.</string>
     <string name="save_destination">Salva questa destinazione</string>
+    <string name="saved_places_title">Luoghi salvati</string>
     <string name="edit_saved_place">Modifica luogo salvato</string>
     <string name="save_place_title">Salva luogo</string>
     <string name="place_name_hint">Nome</string>
