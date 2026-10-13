@@ -101,7 +101,7 @@ network behavior, and map interaction.
 
 ## Publish a release
 
-Push a version tag such as `v0.1.2`. [GitHub Actions](.github/workflows/release.yml)
+Push a version tag such as `v0.1.3`. [GitHub Actions](.github/workflows/release.yml)
 runs the tests and lint, builds and signs the APK, then attaches it to a GitHub
 Release. Failed validation prevents publishing.
 
