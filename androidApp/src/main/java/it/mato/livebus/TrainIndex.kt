@@ -4,6 +4,7 @@ import android.content.Context
 import android.location.Location
 import org.json.JSONObject
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 import kotlinx.coroutines.currentCoroutineContext
@@ -31,7 +32,9 @@ data class ScheduledTrainJourney(
     val destinationWalkMetres: Float,
     val estimatedTotalSeconds: Float,
     val departureSeconds: Int,
-    val arrivalSeconds: Int
+    val arrivalSeconds: Int,
+    // 1 when the train runs tomorrow; the times above are then tomorrow's clock times.
+    val dayOffset: Int = 0
 ) {
     val totalWalkingMetres: Float get() = walkingMetres + destinationWalkMetres
 }
@@ -39,12 +42,23 @@ data class ScheduledTrainJourney(
 class TrainIndex private constructor(private val trips: List<TrainTrip>) {
     val stations: List<TrainStop> = trips.flatMap { it.stops }.distinctBy { it.id }
 
+    private val tripsByDate: Map<String, List<TrainTrip>> by lazy {
+        val byDate = HashMap<String, MutableList<TrainTrip>>()
+        for (trip in trips) for (date in trip.activeDates) byDate.getOrPut(date) { ArrayList() }.add(trip)
+        byDate
+    }
+
+    /**
+     * The best scheduled train for a journey. Services run on the day they belong to, so a
+     * train after midnight is still yesterday's, and once today's trains are gone the first
+     * ones tomorrow are the answer.
+     */
     suspend fun planScheduledJourney(
         latitude: Double,
         longitude: Double,
         destinationLatitude: Double,
         destinationLongitude: Double,
-        now: LocalDateTime = LocalDateTime.now(),
+        now: LocalDateTime = now(),
         walkFromOrigin: ((Double, Double) -> Float)? = null,
         walkFromDestination: ((Double, Double) -> Float)? = null,
         boardStopId: String? = null,
@@ -52,54 +66,64 @@ class TrainIndex private constructor(private val trips: List<TrainTrip>) {
         walkingPreference: WalkingPreference = WalkingPreference.MORE
     ): ScheduledTrainJourney? {
         val context = currentCoroutineContext()
-        val serviceDate = now.format(DATE)
-        val nowSeconds = now.hour * 3600 + now.minute * 60 + now.second
-        return trips.asSequence()
-            .filter { serviceDate in it.activeDates }
-            .mapNotNull { trip ->
+        val today = now.toLocalDate()
+        val secondsSinceMidnight = now.hour * 3600 + now.minute * 60 + now.second
+        // Walks are per stop, not per trip: ask once.
+        val originWalks = HashMap<String, Float>()
+        val destinationWalks = HashMap<String, Float>()
+
+        var best: ScheduledTrainJourney? = null
+        var bestScore = Float.POSITIVE_INFINITY
+        for (dayOffset in -1..1) {
+            // Tomorrow only matters when nothing is left today.
+            if (dayOffset == 1 && best != null) break
+            val trips = tripsByDate[today.plusDays(dayOffset.toLong()).format(DATE)] ?: continue
+            // Seconds since the start of the service day this timetable belongs to.
+            val nowSeconds = secondsSinceMidnight - dayOffset * SECONDS_PER_DAY
+            for (trip in trips) {
                 context.ensureActive()
-                trip.stops.indices.asSequence().flatMap { boardIndex ->
+                for (boardIndex in trip.stops.indices) {
                     val board = trip.stops[boardIndex]
-                    if (boardStopId != null && board.id != boardStopId) return@flatMap emptySequence()
-                    val walkMetres = walkFromOrigin?.invoke(board.latitude, board.longitude)
-                        ?: distance(latitude, longitude, board)
+                    if (boardStopId != null && board.id != boardStopId) continue
+                    val walkMetres = originWalks.getOrPut(board.id) {
+                        walkFromOrigin?.invoke(board.latitude, board.longitude)
+                            ?: distance(latitude, longitude, board)
+                    }
                     val walkSeconds = walkMetres / WALKING_SPEED
                     if (walkMetres > walkingPreference.maxStationWalkMetres ||
-                        board.departureSeconds < nowSeconds + walkSeconds + BOARDING_MARGIN) {
-                        emptySequence()
-                    } else {
-                        (boardIndex + 1 until trip.stops.size).asSequence()
-                            .filter { exitStopId == null || trip.stops[it].id == exitStopId }
-                            .map { exitIndex ->
-                                val exit = trip.stops[exitIndex]
-                                val destinationWalk = walkFromDestination?.invoke(exit.latitude, exit.longitude)
-                                    ?: distance(destinationLatitude, destinationLongitude, exit)
-                                val total = (exit.arrivalSeconds - nowSeconds) +
-                                    destinationWalk / WALKING_SPEED
-                                ScheduledTrainJourney(
-                                    number = trip.number,
-                                    category = trip.category,
-                                    headsign = trip.headsign,
-                                    boardAt = board,
-                                    destination = exit,
-                                    stops = trip.stops,
-                                    boardIndex = boardIndex,
-                                    destinationIndex = exitIndex,
-                                    walkingMetres = walkMetres,
-                                    destinationWalkMetres = destinationWalk,
-                                    estimatedTotalSeconds = total,
-                                    departureSeconds = board.departureSeconds,
-                                    arrivalSeconds = exit.arrivalSeconds
-                                )
-                            }
+                        board.departureSeconds < nowSeconds + walkSeconds + BOARDING_MARGIN) continue
+                    for (exitIndex in boardIndex + 1 until trip.stops.size) {
+                        val exit = trip.stops[exitIndex]
+                        if (exitStopId != null && exit.id != exitStopId) continue
+                        val destinationWalk = destinationWalks.getOrPut(exit.id) {
+                            walkFromDestination?.invoke(exit.latitude, exit.longitude)
+                                ?: distance(destinationLatitude, destinationLongitude, exit)
+                        }
+                        val total = (exit.arrivalSeconds - nowSeconds) + destinationWalk / WALKING_SPEED
+                        val score = walkingPreference.score(total, walkMetres + destinationWalk)
+                        if (score >= bestScore) continue
+                        bestScore = score
+                        best = ScheduledTrainJourney(
+                            number = trip.number,
+                            category = trip.category,
+                            headsign = trip.headsign,
+                            boardAt = board,
+                            destination = exit,
+                            stops = trip.stops,
+                            boardIndex = boardIndex,
+                            destinationIndex = exitIndex,
+                            walkingMetres = walkMetres,
+                            destinationWalkMetres = destinationWalk,
+                            estimatedTotalSeconds = total,
+                            departureSeconds = board.departureSeconds,
+                            arrivalSeconds = exit.arrivalSeconds,
+                            dayOffset = maxOf(dayOffset, 0)
+                        )
                     }
-                }.minByOrNull {
-                    walkingPreference.score(it.estimatedTotalSeconds, it.totalWalkingMetres)
                 }
             }
-            .minByOrNull {
-                walkingPreference.score(it.estimatedTotalSeconds, it.totalWalkingMetres)
-            }
+        }
+        return best
     }
 
     private data class TrainTrip(
@@ -113,6 +137,11 @@ class TrainIndex private constructor(private val trips: List<TrainTrip>) {
     companion object {
         private const val WALKING_SPEED = 1.2f
         private const val BOARDING_MARGIN = 120f
+        private const val SECONDS_PER_DAY = 86_400
+        // Timetables are in local time whatever the phone's clock is set to.
+        private val ROME = ZoneId.of("Europe/Rome")
+
+        fun now(): LocalDateTime = LocalDateTime.now(ROME)
         private val DATE = DateTimeFormatter.BASIC_ISO_DATE
 
         fun load(context: Context): TrainIndex {

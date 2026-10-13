@@ -87,6 +87,27 @@ class LocationAndGeocodingTest {
         assertEquals(7.6560, result.second, 0.0002)
     }
 
+    @Test fun aSavedNameResolvesBeforeTheBundledCity() = runBlocking {
+        val application = RuntimeEnvironment.getApplication()
+        application.getSharedPreferences("saved_places", 0).edit().clear().commit()
+        SavedPlaces(application).save(SavedPlace("a", "Casa di Anna", "Via Roma 14 · Cambiano", 45.0123, 7.7654))
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+
+        val result = invokeSuspend<Pair<Double, Double>?>(activity, "geocode", "casa di anna")
+
+        assertEquals(45.0123, result!!.first, 1e-9)
+        assertEquals(7.7654, result.second, 1e-9)
+    }
+
+    @Test fun aMapPinResolvesFromItsCoordinatesAlone() = runBlocking {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+
+        val result = invokeSuspend<Pair<Double, Double>?>(activity, "geocode", "45.07031, 7.68690")
+
+        assertEquals(45.07031, result!!.first, 1e-9)
+        assertEquals(7.6869, result.second, 1e-9)
+    }
+
     private fun set(activity: MainActivity, name: String, value: Any) {
         MainActivity::class.java.getDeclaredField(name).apply {
             isAccessible = true

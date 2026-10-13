@@ -1,0 +1,4 @@
+<resources>
+    <!-- Drag handle, title row and the first journey step: what shows before the sheet is pulled up. -->
+    <dimen name="journey_peek_height">128dp</dimen>
+</resources>

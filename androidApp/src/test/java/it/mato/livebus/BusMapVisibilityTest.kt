@@ -54,7 +54,7 @@ class BusMapVisibilityTest {
         val now = System.currentTimeMillis() / 1000
         set(activity, "liveVehicles", (1..40).map {
             val route = if (it == 40) "gtt:60U" else "56U"
-            LiveVehicle("bus-$it", route, null, 45.07, 7.65 + it * 0.001, null, now - 240)
+            LiveVehicle("bus-$it", route, null, 45.07, 7.65 + it * 0.001, null, now - 200)
         })
         val render = MainActivity::class.java.getDeclaredMethod("renderVehicles").apply {
             isAccessible = true
@@ -82,6 +82,37 @@ class BusMapVisibilityTest {
         set(activity, "selectedRoute", null)
         render.invoke(activity)
         assertEquals(40, binding.map.overlays.filterIsInstance<Marker>().size)
+        binding.map.onDetach()
+    }
+
+    @Test fun linesThatDifferOnlyBySuffixStayApartOnTheMap() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val stops = listOf(TransitStop("a", "A", 45.06, 7.66), TransitStop("b", "B", 45.07, 7.66))
+        fun line(id: String, name: String) = TransitPattern("$id:0", id, name, "End", "0", emptySet(), stops)
+        val index = TransitIndex::class.java.getDeclaredConstructor(List::class.java)
+            .apply { isAccessible = true }.newInstance(listOf(
+                line("13U", "13"), line("13BU", "13+"), line("59U", "59"), line("59BU", "59/"),
+                line("10U", "10"), line("10NU", "10N")))
+        set(activity, "transitIndex\$delegate", lazyOf(index))
+        val now = System.currentTimeMillis() / 1000
+        set(activity, "liveVehicles", listOf("13U", "13BU", "59U", "59BU", "10U", "gtt:10NU").mapIndexed { i, route ->
+            LiveVehicle("bus-$i", route, null, 45.07, 7.65 + i * 0.001, null, now)
+        })
+        val render = MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }
+        fun titles() = binding.map.overlays.filterIsInstance<Marker>().map { it.title }
+        render.invoke(activity)
+        assertEquals(listOf("13", "13+", "59", "59/", "10", "10N").map { activity.getString(R.string.vehicle_title, it) },
+            titles())
+
+        set(activity, "selectedRoute", "13")
+        render.invoke(activity)
+        assertEquals(listOf(activity.getString(R.string.vehicle_title, "13")), titles())
+        set(activity, "selectedRoute", "10N")
+        render.invoke(activity)
+        assertEquals(listOf(activity.getString(R.string.vehicle_title, "10N")), titles())
         binding.map.onDetach()
     }
 
@@ -148,6 +179,111 @@ class BusMapVisibilityTest {
         assertEquals(listOf(activity.getString(R.string.vehicle_title, "56")),
             binding.map.overlays.filterIsInstance<Marker>().map { it.title })
         assertTrue(binding.map.overlays.filterIsInstance<Polyline>().isEmpty())
+        binding.map.onDetach()
+    }
+
+    @Test fun tappingABusHighlightsItsCourseUntilTheMapIsTapped() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val stops = listOf(TransitStop("a", "A", 45.06, 7.66), TransitStop("b", "B", 45.07, 7.66),
+            TransitStop("c", "C", 45.08, 7.66), TransitStop("d", "D", 45.09, 7.66))
+        val pattern = TransitPattern("p", "60U", "60", "D", "0", setOf("trip"), stops)
+        val index = TransitIndex::class.java.getDeclaredConstructor(List::class.java)
+            .apply { isAccessible = true }.newInstance(listOf(pattern))
+        set(activity, "transitIndex\$delegate", lazyOf(index))
+        val bus = LiveVehicle("bus", "60U", "trip", 45.075, 7.66, 0f, System.currentTimeMillis() / 1000)
+        val other = LiveVehicle("other", "56U", null, 45.08, 7.67, 0f, System.currentTimeMillis() / 1000)
+        set(activity, "liveVehicles", listOf(bus, other))
+        val render = MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }
+        render.invoke(activity)
+        assertTrue(binding.map.overlays.filterIsInstance<Polyline>().isEmpty())
+        fun busTitles() = binding.map.overlays.filterIsInstance<Marker>()
+            .filter { it.relatedObject is LiveVehicle }.map { it.title }
+        assertEquals(2, busTitles().size)
+
+        val marker = binding.map.overlays.filterIsInstance<Marker>()
+            .single { it.title == activity.getString(R.string.vehicle_title, "60") }
+        val listener = Marker::class.java.getDeclaredField("mOnMarkerClickListener")
+            .apply { isAccessible = true }.get(marker) as Marker.OnMarkerClickListener
+        assertTrue(listener.onMarkerClick(marker, binding.map))
+        assertEquals("bus", get(activity, "highlightedVehicleId"))
+        // The other buses leave the map while the course is highlighted.
+        assertEquals(listOf(activity.getString(R.string.vehicle_title, "60")), busTitles())
+        fun courseLines() = binding.map.overlays.filterIsInstance<Polyline>()
+        assertEquals(3, courseLines().size)
+        // Part ahead covers the bus and the stops it has yet to reach; the part behind is separate.
+        val aheadPoints = courseLines().last().actualPoints
+        assertEquals(listOf(45.075, 45.08, 45.09), aheadPoints.map { it.latitude })
+        assertEquals(listOf(45.06, 45.07, 45.075), courseLines().first().actualPoints.map { it.latitude })
+        // The course sits below every marker, so the bus stays tappable.
+        assertTrue(binding.map.overlays.indexOfLast { it is Polyline } <
+            binding.map.overlays.indexOfFirst { it is Marker })
+        // Every stop gets a small dot, and the bus stays on top of them.
+        val dots = binding.map.overlays.filterIsInstance<Marker>().filter { it.relatedObject == null }
+        assertEquals(listOf("A", "B", "C", "D"), dots.map { it.title })
+        assertTrue(dots.all { it.icon.intrinsicWidth <= (12 * activity.resources.displayMetrics.density).toInt() })
+        assertTrue(binding.map.overlays.indexOf(dots.last()) < binding.map.overlays.indexOf(marker))
+
+        // It survives the 15-second refresh without doubling up.
+        render.invoke(activity)
+        assertEquals(3, courseLines().size)
+        assertEquals(listOf(activity.getString(R.string.vehicle_title, "60")), busTitles())
+
+        MainActivity::class.java.getDeclaredMethod("clearHighlightedCourse").apply {
+            isAccessible = true
+            invoke(activity)
+        }
+        assertTrue(courseLines().isEmpty())
+        assertNull(get(activity, "highlightedVehicleId"))
+        // Clearing the highlight brings every bus back.
+        assertEquals(2, busTitles().size)
+
+        // A highlighted bus that leaves the feed drops its course and the others return.
+        listener.onMarkerClick(marker, binding.map)
+        set(activity, "liveVehicles", listOf(other))
+        render.invoke(activity)
+        assertTrue(courseLines().isEmpty())
+        assertNull(get(activity, "highlightedVehicleId"))
+        assertEquals(listOf(activity.getString(R.string.vehicle_title, "56")), busTitles())
+        binding.map.onDetach()
+    }
+
+    @Test fun highlightedCourseFollowsTheRoadAndMarksEveryStop() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        // The road bends east between the second and third stops, away from the straight line.
+        val stops = listOf(TransitStop("a", "A", 45.062, 7.660), TransitStop("b", "B", 45.068, 7.660),
+            TransitStop("c", "C", 45.072, 7.670), TransitStop("d", "D", 45.078, 7.670))
+        val road = RouteShape(doubleArrayOf(45.060, 45.070, 45.070, 45.080),
+            doubleArrayOf(7.660, 7.660, 7.670, 7.670))
+        val pattern = TransitPattern("p", "60U", "60", "D", "0", setOf("trip"), stops, road)
+        val index = TransitIndex::class.java.getDeclaredConstructor(List::class.java)
+            .apply { isAccessible = true }.newInstance(listOf(pattern))
+        set(activity, "transitIndex\$delegate", lazyOf(index))
+        val bus = LiveVehicle("bus", "60U", "trip", 45.070, 7.665, 90f, System.currentTimeMillis() / 1000)
+        set(activity, "liveVehicles", listOf(bus))
+        val render = MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }
+        render.invoke(activity)
+        val marker = binding.map.overlays.filterIsInstance<Marker>().single()
+        val listener = Marker::class.java.getDeclaredField("mOnMarkerClickListener")
+            .apply { isAccessible = true }.get(marker) as Marker.OnMarkerClickListener
+        listener.onMarkerClick(marker, binding.map)
+
+        val lines = binding.map.overlays.filterIsInstance<Polyline>()
+        val passed = lines.first().actualPoints
+        val ahead = lines.last().actualPoints
+        // Both halves meet at the bus and turn at the bend instead of cutting between stops.
+        assertEquals(45.070, passed.last().latitude, 1e-6)
+        assertEquals(7.665, passed.last().longitude, 1e-6)
+        assertEquals(listOf(45.060, 45.070), passed.map { it.latitude }.take(2))
+        assertEquals(listOf(45.070, 45.070, 45.080), ahead.map { it.latitude })
+        assertEquals(listOf(7.665, 7.670, 7.670), ahead.map { it.longitude })
+        assertEquals(listOf("A", "B", "C", "D"), binding.map.overlays.filterIsInstance<Marker>()
+            .filter { it.relatedObject == null }.map { it.title })
         binding.map.onDetach()
     }
 
@@ -222,8 +358,9 @@ class BusMapVisibilityTest {
                 train.copy(estimatedTotalSeconds = 1_800f), mixed, false)
         }
 
-        assertTrue(binding.sharedDirections.text.contains("Live bus 60"))
-        assertTrue(binding.sharedDirections.text.contains("scheduled REGIONALE 2121"))
+        val steps = stepTexts(binding)
+        assertTrue(steps.any { it.startsWith("Board bus 60") })
+        assertTrue(steps.any { it.startsWith("Take REGIONALE 2121") })
         assertEquals(android.view.View.GONE, binding.alertButton.visibility)
         assertEquals(1, binding.map.overlays.filterIsInstance<Marker>()
             .count { it.title == activity.getString(R.string.vehicle_title, "60") })
@@ -233,6 +370,10 @@ class BusMapVisibilityTest {
             line.actualPoints.any { it.latitude == trainEnd.latitude && it.longitude == trainEnd.longitude }
         })
         binding.map.onDetach()
+    }
+
+    private fun stepTexts(binding: ActivityMainBinding) = (0 until binding.journeySteps.childCount).map {
+        binding.journeySteps.getChildAt(it).findViewById<android.widget.TextView>(R.id.stepText).text.toString()
     }
 
     @Test fun walkingPresetChangesTheDisplayedJourney() {

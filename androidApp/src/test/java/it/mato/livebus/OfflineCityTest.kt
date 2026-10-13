@@ -59,4 +59,23 @@ class OfflineCityTest {
         assertEquals(city.mapCacheKey, reopened.mapCacheKey)
         assertEquals(city.search("Comala"), reopened.search("Comala"))
     }
+
+    @Test fun streetTypeAbbreviationsFindTheFullName() {
+        val full = city.search("Corso Francia 186").first()
+        assertEquals(full, city.search("c.so Francia 186").first())
+        assertEquals(full, city.search("cso francia 186").first())
+        assertTrue(city.search("p.za Castello").isNotEmpty())
+    }
+
+    @Test fun aSingleLetterIsNotASearch() {
+        assertTrue(city.search("v").isEmpty())
+        assertTrue(city.search("v rom").isNotEmpty())
+    }
+
+    @Test fun equallyGoodMatchesAreOrderedByDistanceFromTheUser() {
+        val east = city.search("Via Roma", 45.0938, 7.8822).first { it.name.equals("via roma", true) }
+        val west = city.search("Via Roma", 45.0448, 7.9204).first { it.name.equals("via roma", true) }
+        assertEquals(7.8822, east.longitude, 0.001)
+        assertEquals(7.9204, west.longitude, 0.001)
+    }
 }

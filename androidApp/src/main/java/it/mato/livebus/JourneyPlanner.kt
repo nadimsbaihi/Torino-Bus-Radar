@@ -41,7 +41,9 @@ class JourneyPlanner(private val buses: TransitIndex, private val trains: TrainI
     ): MixedJourney? {
         if (vehicles.isEmpty()) return null
         val context = currentCoroutineContext()
-        val liveStops = vehicles.mapNotNull(buses::matchDirection)
+        // Matching vehicles to routes is the costly part; do it once for every station tried.
+        val tracked = buses.trackVehicles(vehicles)
+        val liveStops = tracked.map { it.pattern }
             .distinctBy { it.id }.flatMap { it.stops }.distinctBy { it.id }
         var best: MixedJourney? = null
         for (station in trains.stations) {
@@ -65,7 +67,8 @@ class JourneyPlanner(private val buses: TransitIndex, private val trains: TrainI
                     walkFromDestination = ::stationWalk,
                     maxDestinationWalkMetres = MAX_CONNECTION_WALK,
                     directOnly = true,
-                    walkingPreference = walkingPreference)
+                    walkingPreference = walkingPreference,
+                    tracked = tracked)
                 if (bus != null) {
                     val arrivalSeconds = ceil(bus.estimatedTotalSeconds).toLong()
                     val train = trains.planScheduledJourney(station.latitude, station.longitude,
@@ -102,7 +105,8 @@ class JourneyPlanner(private val buses: TransitIndex, private val trains: TrainI
                     walkFromDestination = walkFromDestination,
                     earliestStartSeconds = train.estimatedTotalSeconds + ALIGHTING_SECONDS,
                     directOnly = true,
-                    walkingPreference = walkingPreference)
+                    walkingPreference = walkingPreference,
+                    tracked = tracked)
                 if (bus != null) {
                     val choice = MixedJourney(bus, train, false, bus.estimatedTotalSeconds)
                     if (best == null || walkingPreference.score(choice.estimatedTotalSeconds,

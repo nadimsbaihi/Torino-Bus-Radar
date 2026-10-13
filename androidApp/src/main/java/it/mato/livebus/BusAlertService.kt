@@ -43,7 +43,8 @@ class BusAlertService : Service() {
     private var pollingJob: Job? = null
     private val previousDistances = mutableMapOf<String, Float>()
     private val notifiedVehicles = mutableSetOf<String>()
-    private val passedVehicles = mutableSetOf<String>()
+    // Vehicle IDs are reused all day, so "has passed" is per trip and forgotten after a while.
+    private val passedVehicles = mutableMapOf<String, Long>()
     private var transferNotified = false
 
     override fun onCreate() {
@@ -75,14 +76,16 @@ class BusAlertService : Service() {
         var alert = initialAlert
         var targetPattern = transitIndex.patterns.firstOrNull { it.id == alert.patternId }
         var needsFullReplan = false
+        var nextDelay = POLL_MILLIS
         while (scope.isActive) {
+            nextDelay = POLL_MILLIS
             try {
                 checkTransferArrival(alert)
                 val allVehicles = repository.vehicles()
                 if (needsFullReplan) {
                     val replanned = replanCompleteJourney(alert, allVehicles)
                     if (replanned == null) {
-                        delay(30_000)
+                        delay(POLL_MILLIS)
                         continue
                     }
                     alert = replanned
@@ -93,21 +96,23 @@ class BusAlertService : Service() {
                 }
 
                 val currentTargetPattern = targetPattern
+                val stopId = alert.stopId
                 val directionVehicles = allVehicles
                     .asSequence()
                     .filter { it.routeId == alert.routeId }
                     .mapNotNull { vehicle ->
                         val pattern = transitIndex.matchDirection(vehicle)
                             ?: return@mapNotNull null
+                        // Same direction is what matters; a short-turn variant with a different
+                        // headsign still counts as long as it serves the stop being watched.
                         if (currentTargetPattern != null &&
-                            (pattern.directionId != currentTargetPattern.directionId ||
-                                pattern.headsign != currentTargetPattern.headsign)
+                            pattern.directionId != currentTargetPattern.directionId
                         ) return@mapNotNull null
+                        if (stopId != null && pattern.stops.none { it.id == stopId }) return@mapNotNull null
                         vehicle to pattern
                     }
                     .toList()
 
-                val stopId = alert.stopId
                 val selected = alert.vehicleId?.let { selectedId ->
                     directionVehicles.firstOrNull { (vehicle, _) -> vehicle.id == selectedId }
                 }
@@ -116,7 +121,7 @@ class BusAlertService : Service() {
                         selected.first, selected.second, stopId
                     )
                 if (selectedPassed) {
-                    passedVehicles.add(selected.first.id)
+                    passedVehicles[passedKey(selected.first)] = SystemClock.elapsedRealtime()
                     needsFullReplan = true
                     val replanned = replanCompleteJourney(alert, allVehicles)
                     if (replanned != null) {
@@ -132,32 +137,43 @@ class BusAlertService : Service() {
                         notifyJourneyReplanUnavailable(alert)
                         getSystemService(NotificationManager::class.java)
                             .notify(ONGOING_ID, ongoingNotification(alert))
-                        delay(30_000)
+                        delay(POLL_MILLIS)
                         continue
                     }
                 }
 
                 val watchedVehicles = alert.vehicleId?.let { watchedId ->
-                    directionVehicles.asSequence()
-                        .map { it.first }
-                        .filter { it.id == watchedId }
-                } ?: directionVehicles.asSequence().map { it.first }
-                watchedVehicles.forEach { vehicle ->
-                        val distance = distanceToStop(vehicle, alert)
-                        val previous = previousDistances.put(vehicle.id, distance)
-                        val approaching = previous == null || distance < previous - 8
-                        if (distance <= alert.thresholdMetres && approaching &&
-                            notifiedVehicles.add(vehicle.id)
-                        ) {
-                            notifyApproaching(alert, distance)
-                        }
+                    directionVehicles.filter { it.first.id == watchedId }
+                } ?: directionVehicles
+                var closest = Float.MAX_VALUE
+                // The alert may just have been replanned onto another stop.
+                val watchedStopId = alert.stopId
+                watchedVehicles.forEach { (vehicle, pattern) ->
+                    // Along the route, not as the crow flies: a bus on a parallel street is not
+                    // approaching, and one that has already passed the stop is not either.
+                    val distance = if (watchedStopId == null) distanceToStop(vehicle, alert)
+                        else transitIndex.routeMetresToStop(vehicle, pattern, watchedStopId)
+                    if (distance == null) {
+                        previousDistances.remove(vehicle.id)
+                        return@forEach
+                    }
+                    closest = minOf(closest, distance)
+                    val previous = previousDistances.put(vehicle.id, distance)
+                    val approaching = previous == null || distance < previous - 8
+                    if (distance <= alert.thresholdMetres && approaching &&
+                        notifiedVehicles.add(vehicle.id)
+                    ) {
+                        notifyApproaching(alert, distance)
+                    }
                 }
+                previousDistances.keys.retainAll(watchedVehicles.mapTo(mutableSetOf()) { it.first.id })
+                nextDelay = if (closest <= NEAR_METRES) NEAR_POLL_MILLIS else POLL_MILLIS
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 Log.e(TAG, "Background bus alert refresh failed", error)
             }
-            delay(30_000)
+            delay(nextDelay)
         }
     }
 
@@ -176,7 +192,7 @@ class BusAlertService : Service() {
             location.longitude,
             finalLatitude,
             finalLongitude,
-            vehicles.filterNot { it.id in passedVehicles },
+            vehicles.filterNot(::hasPassed),
             walkFromOrigin = fromOrigin::estimatedMetresTo,
             walkFromDestination = fromDestination::estimatedMetresTo,
             walkBetweenStops = { startLat, startLon, endLat, endLon ->
@@ -250,6 +266,16 @@ class BusAlertService : Service() {
             transferNotified = true
             notifyReplan(alert)
         }
+    }
+
+    private fun passedKey(vehicle: LiveVehicle) = "${vehicle.id}|${vehicle.tripId.orEmpty()}"
+
+    private fun hasPassed(vehicle: LiveVehicle): Boolean {
+        val key = passedKey(vehicle)
+        val since = passedVehicles[key] ?: return false
+        if (SystemClock.elapsedRealtime() - since <= PASSED_MEMORY_MILLIS) return true
+        passedVehicles.remove(key)
+        return false
     }
 
     private fun distanceToStop(vehicle: LiveVehicle, alert: BusAlert): Float {
@@ -378,6 +404,11 @@ class BusAlertService : Service() {
         private const val REPLAN_ID = 212
         private const val REPLACEMENT_ID = 213
         private const val TRANSFER_RADIUS_METRES = 250f
+        private const val POLL_MILLIS = 30_000L
+        // A bus this close can reach the stop between two slow polls; look sooner.
+        private const val NEAR_POLL_MILLIS = 15_000L
+        private const val NEAR_METRES = 1_500f
+        private const val PASSED_MEMORY_MILLIS = 20 * 60_000L
         const val ACTION_REPLAN = "it.mato.livebus.REPLAN"
         const val EXTRA_FINAL_ADDRESS = "final_address"
     }

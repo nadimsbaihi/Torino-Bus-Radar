@@ -178,7 +178,7 @@ class TransitIndexTest {
             stops = first.stops.reversed())
         for (trip in listOf(null, "new-unindexed-trip")) {
             val choice = index(first, reverse).planLiveJourney(45.01, 7.0, 45.03, 7.0,
-                listOf(vehicle(first, 45.0, 7.0).copy(tripId = trip, bearing = 0f)))
+                listOf(vehicle(first, 45.0, 7.0).copy(tripId = trip, bearing = 5f)))
             assertNotNull(choice)
             assertEquals("first", choice!!.pattern.id)
             assertTrue(choice.directionEstimated)
@@ -192,10 +192,91 @@ class TransitIndexTest {
         val bus = vehicle(first, 45.005, 7.0).copy(tripId = null)
         assertNull(index.matchDirection(bus))
         assertEquals("reverse", index.matchDirection(bus.copy(bearing = 180f))!!.id)
-        assertNull(index.matchDirection(bus.copy(longitude = 7.1, bearing = 0f)))
+        assertNull(index.matchDirection(bus.copy(longitude = 7.1, bearing = 5f)))
         assertFalse(index.isStopIndexAhead(bus.copy(longitude = 7.1), first, 1))
-        assertNull(index.matchDirection(bus.copy(routeId = "unknown", bearing = 0f)))
+        assertNull(index.matchDirection(bus.copy(routeId = "unknown", bearing = 5f)))
         assertNull(index(first).matchDirection(bus.copy(bearing = 180f)))
+    }
+
+    @Test fun movementResolvesDirectionWhenTheFeedGivesNoBearing() {
+        val reverse = first.copy(id = "reverse", directionId = "1", tripIds = setOf("reverse"),
+            stops = first.stops.reversed())
+        val index = index(first, reverse)
+        val now = System.currentTimeMillis() / 1000
+        val earlier = vehicle(first, 45.003, 7.0).copy(tripId = null, timestampSeconds = now - 30)
+        assertNull(index.matchDirection(earlier))
+        val later = earlier.copy(latitude = 45.005, timestampSeconds = now)
+        assertEquals("first", index.matchDirection(later)!!.id)
+        // The same fix again, and a jittery one, keep the heading from real movement.
+        assertEquals("first", index.matchDirection(later)!!.id)
+        assertEquals("first", index.matchDirection(
+            later.copy(latitude = 45.00501, timestampSeconds = now + 15))!!.id)
+    }
+
+    @Test fun clearMovementOverrulesAContradictoryFeedBearing() {
+        val reverse = first.copy(id = "reverse", directionId = "1", tripIds = setOf("reverse"),
+            stops = first.stops.reversed())
+        val index = index(first, reverse)
+        val now = System.currentTimeMillis() / 1000
+        val staleBearing = vehicle(first, 45.002, 7.0).copy(
+            tripId = null, bearing = 180f, timestampSeconds = now - 30)
+        assertEquals("reverse", index.matchDirection(staleBearing)!!.id)
+        assertEquals("first", index.matchDirection(
+            staleBearing.copy(latitude = 45.005, timestampSeconds = now))!!.id)
+    }
+
+    @Test fun recentMatchBreaksTiesButDoesNotOutliveTheRun() {
+        val reverse = first.copy(id = "reverse", directionId = "1", tripIds = setOf("reverse"),
+            stops = first.stops.reversed())
+        val index = index(first, reverse)
+        val now = System.currentTimeMillis() / 1000
+        val known = vehicle(first, 45.005, 7.0).copy(tripId = null, bearing = 5f, timestampSeconds = now - 60)
+        assertEquals("first", index.matchDirection(known)!!.id)
+        val unknown = known.copy(bearing = null, timestampSeconds = now - 45)
+        assertEquals("first", index.matchDirection(unknown)!!.id)
+        // Much later the earlier run is no evidence of where the bus is heading now.
+        assertNull(index.matchDirection(unknown.copy(timestampSeconds = now + 600)))
+    }
+
+    @Test fun reusedVehicleIdDoesNotInheritMovementFromAFarAwayRun() {
+        val reverse = first.copy(id = "reverse", directionId = "1", tripIds = setOf("reverse"),
+            stops = first.stops.reversed())
+        val index = index(first, reverse)
+        val now = System.currentTimeMillis() / 1000
+        val farAway = vehicle(first, 45.2, 7.0).copy(tripId = null, bearing = 5f, timestampSeconds = now - 20)
+        index.matchDirection(farAway)
+        val nearby = farAway.copy(latitude = 45.005, bearing = null, timestampSeconds = now)
+        assertNull(index.matchDirection(nearby))
+    }
+
+    @Test fun bearingZeroIsTreatedAsUnknownUntilMovementBacksItUp() {
+        val reverse = first.copy(id = "reverse", directionId = "1", tripIds = setOf("reverse"),
+            stops = first.stops.reversed())
+        val now = System.currentTimeMillis() / 1000
+        val bus = vehicle(first, 45.003, 7.0).copy(tripId = null, bearing = 0f, timestampSeconds = now - 30)
+        // Alone, a 0 could be a bus heading south with no real bearing.
+        assertNull(index(first, reverse).matchDirection(bus))
+        val northbound = index(first, reverse)
+        northbound.matchDirection(bus)
+        assertEquals("first", northbound.matchDirection(
+            bus.copy(latitude = 45.005, timestampSeconds = now))!!.id)
+        val southbound = index(first, reverse)
+        southbound.matchDirection(bus.copy(latitude = 45.007))
+        assertEquals("reverse", southbound.matchDirection(
+            bus.copy(latitude = 45.005, timestampSeconds = now))!!.id)
+    }
+
+    @Test fun displayHeadingFollowsTheRouteWhenTheFeedBearingIsMissingOrWrong() {
+        val index = index(first)
+        val onRoute = vehicle(first, 45.005, 7.0)
+        assertEquals(10f, index.displayHeading(onRoute.copy(bearing = 10f))!!, 0.01f)
+        assertEquals(0f, index.displayHeading(onRoute.copy(bearing = null))!!, 1f)
+        assertEquals(0f, index.displayHeading(onRoute.copy(bearing = 0f))!!, 1f)
+        assertEquals(0f, index.displayHeading(onRoute.copy(bearing = 180f))!!, 1f)
+        // Away from the line the route says nothing about where the bus points.
+        val offRoute = onRoute.copy(longitude = 7.01, bearing = 180f)
+        assertEquals(180f, index.displayHeading(offRoute)!!, 0.01f)
+        assertNull(index.displayHeading(offRoute.copy(bearing = null)))
     }
 
     @Test fun exactTripStillTakesPrecedenceOverHeading() = runBlocking {
@@ -216,7 +297,7 @@ class TransitIndexTest {
 
     @Test fun inferredProgressResetsWhenVehicleStartsAnotherRun() {
         val index = index(first)
-        val bus = vehicle(first, 45.015, 7.0).copy(tripId = null, bearing = 0f)
+        val bus = vehicle(first, 45.015, 7.0).copy(tripId = null, bearing = 5f)
         assertFalse(index.isStopIndexAhead(bus, first, 1))
         assertTrue(index.isStopIndexAhead(bus.copy(latitude = 45.0), first, 1))
     }
@@ -252,6 +333,85 @@ class TransitIndexTest {
         assertEquals("shorter-walk", lessWalking.pattern.id)
         assertTrue(fastest.estimatedTotalSeconds < lessWalking.estimatedTotalSeconds)
         assertTrue(fastest.totalWalkingMetres > lessWalking.totalWalkingMetres)
+    }
+
+    @Test fun aSpikeOntoADistantOverlappingSegmentDoesNotDragProgressForward() {
+        // Out along one line, back along (almost) the same one: a fix near the way back must not
+        // make the bus look as if it had skipped the whole route.
+        val out = (0..14).map { stop("out$it", 45.0 + 0.002 * it, 7.0) }
+        val back = (15..29).map { stop("back$it", 45.028 - 0.002 * (it - 15), 7.0001) }
+        val loop = pattern("loop", out + back)
+        val index = index(loop)
+        val onTheWayOut = vehicle(loop, 45.005, 7.0)
+        assertTrue(index.isStopIndexAhead(onTheWayOut, loop, 3))
+        // Closer to the return leg's line (segment 26) than to the outbound one (segment 2).
+        val spike = onTheWayOut.copy(longitude = 7.00009)
+        assertTrue("Progress must stay near segment 2", index.isStopIndexAhead(spike, loop, 3))
+        // Genuinely somewhere else entirely: the old position is no evidence any more.
+        val farOnTheWayBack = onTheWayOut.copy(latitude = 45.026, longitude = 7.0001)
+        assertFalse(index.isStopIndexAhead(farOnTheWayBack, loop, 3))
+    }
+
+    @Test fun tyingVariantsOfOneDirectionDoNotFlipBetweenFixes() {
+        val trunk = pattern("trunk", listOf(
+            stop("a", 45.000, 7.0), stop("b", 45.010, 7.0), stop("c", 45.020, 7.0)))
+        val branch = trunk.copy(id = "branch", headsign = "other", tripIds = setOf("branch"),
+            stops = listOf(stop("a", 45.000, 7.0), stop("b2", 45.010, 7.0002), stop("c", 45.020, 7.0)))
+        val now = System.currentTimeMillis() / 1000
+        for (patterns in listOf(arrayOf(trunk, branch), arrayOf(branch, trunk))) {
+            val index = index(*patterns)
+            val onBranch = vehicle(trunk, 45.010, 7.0002).copy(
+                tripId = null, bearing = 5f, timestampSeconds = now - 10)
+            assertEquals("branch", index.matchDirection(onBranch)!!.id)
+            // 16 m away and nearer the other variant, but not by enough to be evidence.
+            val sameBusLater = onBranch.copy(longitude = 7.0, timestampSeconds = now)
+            assertEquals("branch", index.matchDirection(sameBusLater)!!.id)
+        }
+    }
+
+    @Test fun secondLegRidesToTheExitThatIsQuickestNotMerelyClosest() = runBlocking {
+        val first = pattern("first", listOf(
+            stop("start", 45.0, 7.0), stop("board", 45.01, 7.0), stop("transfer", 45.02, 7.0)))
+        // Reaching "far" saves a few metres of walking, but only after a long detour.
+        val detour = (1..10).map { stop("detour$it", 45.02, 7.0295 + 0.01 * it) }
+        val second = pattern("second", listOf(
+            stop("start2", 45.02, 6.95), stop("transfer", 45.02, 7.0),
+            stop("near", 45.02, 7.0295)) + detour + stop("far", 45.0205, 7.0299))
+        val choice = index(first, second).planLiveJourney(45.01, 7.0, 45.0205, 7.03,
+            listOf(vehicle(first, 45.0, 7.0), vehicle(second, 45.02, 6.96)))
+        assertNotNull(choice?.secondLeg)
+        assertEquals("near", choice!!.secondLeg!!.exitAt.id)
+    }
+
+    @Test fun routeMetresToStopFollowsTheRouteAndIgnoresPassedStops() {
+        val index = index(first)
+        val bus = vehicle(first, 45.005, 7.0)
+        val toTransfer = index.routeMetresToStop(bus, first, "transfer")!!
+        // Half a leg to "board", then a full leg to "transfer".
+        assertEquals(555f + 1_112f, toTransfer, 25f)
+        assertEquals(555f, index.routeMetresToStop(bus, first, "board")!!, 15f)
+        assertNull(index.routeMetresToStop(bus, first, "start"))
+        // Off the line altogether (a diversion): all that is known is how far the stop is.
+        assertEquals(7_900f, index.routeMetresToStop(bus.copy(longitude = 7.1), first, "board")!!, 150f)
+    }
+
+    @Test fun trackedVehiclesCanBeSharedAcrossPlans() = runBlocking {
+        val index = index(first, second)
+        val fleet = listOf(vehicle(first, 45.0, 7.0), vehicle(second, 45.02, 6.96))
+        val tracked = index.trackVehicles(fleet)
+        assertEquals(2, tracked.size)
+        val own = index.planLiveJourney(45.01, 7.0, 45.02, 7.03, fleet)
+        val shared = index.planLiveJourney(45.01, 7.0, 45.02, 7.03, emptyList(), tracked = tracked)
+        assertEquals(own?.transferAt?.id, shared?.transferAt?.id)
+        assertEquals(own!!.estimatedTotalSeconds, shared!!.estimatedTotalSeconds, 1f)
+    }
+
+    @Test fun aBusTheWalkerOnlyJustReachesIsNotOffered() = runBlocking {
+        // 111 m (92 s at the walking pace) against a bus about 128 s away leaves slack;
+        // 150 m (125 s) leaves none once real walkers' pace is allowed for.
+        val bus = vehicle(first, 45.004, 7.0)
+        assertNotNull(index(first).planLiveJourney(45.01, 7.0014, 45.03, 7.0, listOf(bus)))
+        assertNull(index(first).planLiveJourney(45.01, 7.0019, 45.03, 7.0, listOf(bus)))
     }
 
     private fun stop(id: String, lat: Double, lon: Double) = TransitStop(id, id, lat, lon)

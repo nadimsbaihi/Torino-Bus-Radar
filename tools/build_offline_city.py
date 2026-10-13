@@ -26,11 +26,18 @@ def normalize(value):
     return ' '.join(re.findall(r'[^\W_]+', text))
 
 
+# Ways a person can plausibly walk along. An allow-list: new or odd highway values
+# (guided busways, via ferratas, ...) must not silently become footpaths.
+WALKABLE_HIGHWAYS = {
+    'footway', 'pedestrian', 'path', 'steps', 'living_street', 'residential',
+    'service', 'unclassified', 'road', 'track', 'cycleway', 'bridleway',
+    'corridor', 'platform', 'tertiary', 'tertiary_link', 'secondary',
+    'secondary_link', 'primary', 'primary_link',
+}
+
+
 def pedestrian_way(tags):
-    highway = tags.get('highway')
-    if highway is None or highway in {'motorway', 'motorway_link', 'trunk',
-                                      'trunk_link', 'busway', 'raceway',
-                                      'construction', 'proposed'}:
+    if tags.get('highway') not in WALKABLE_HIGHWAYS:
         return False
     if tags.get('motorroad') == 'yes' or tags.get('foot') in {'no', 'private'}:
         return False
@@ -45,6 +52,115 @@ def walk_metres(first, second):
     delta_lat, delta_lon = lat2 - lat1, lon2 - lon1
     a = math.sin(delta_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lon / 2) ** 2
     return 12_742_000 * math.asin(min(1, math.sqrt(a)))
+
+
+def polyline_midpoint(points):
+    """The point half way along a polyline, by length (not the middle vertex)."""
+    if len(points) == 1:
+        return points[0]
+    lengths = [walk_metres(p, q) for p, q in zip(points, points[1:])]
+    half = sum(lengths) / 2
+    for (p, q), length in zip(zip(points, points[1:]), lengths):
+        if half <= length:
+            t = half / length if length else 0
+            return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
+        half -= length
+    return points[-1]
+
+
+def inside_polygon(point, ring):
+    lat, lon = point
+    inside = False
+    for (lat1, lon1), (lat2, lon2) in zip(ring, ring[1:]):
+        if (lat1 > lat) != (lat2 > lat):
+            if lon < lon1 + (lat - lat1) / (lat2 - lat1) * (lon2 - lon1):
+                inside = not inside
+    return inside
+
+
+def polygon_point(ring):
+    """A point inside a closed ring: its centroid, or failing that the middle of its widest
+    chord at the centroid's latitude. The bounding-box centre can be outside L-shaped areas."""
+    lat0 = sum(p[0] for p in ring) / len(ring)
+    scale = math.cos(math.radians(lat0))
+    area = cx = cy = 0.0
+    for (lat1, lon1), (lat2, lon2) in zip(ring, ring[1:]):
+        x1, y1, x2, y2 = lon1 * scale, lat1, lon2 * scale, lat2
+        cross = x1 * y2 - x2 * y1
+        area += cross
+        cx += (x1 + x2) * cross
+        cy += (y1 + y2) * cross
+    bbox = ((min(p[0] for p in ring) + max(p[0] for p in ring)) / 2,
+            (min(p[1] for p in ring) + max(p[1] for p in ring)) / 2)
+    if abs(area) < 1e-18:
+        return bbox
+    centroid = (cy / (3 * area), cx / (3 * area) / scale)
+    if inside_polygon(centroid, ring):
+        return centroid
+    crossings = sorted(
+        lon1 + (centroid[0] - lat1) / (lat2 - lat1) * (lon2 - lon1)
+        for (lat1, lon1), (lat2, lon2) in zip(ring, ring[1:])
+        if (lat1 > centroid[0]) != (lat2 > centroid[0])
+    )
+    chords = list(zip(crossings[0::2], crossings[1::2]))
+    if not chords:
+        return bbox
+    start, end = max(chords, key=lambda chord: chord[1] - chord[0])
+    return (centroid[0], (start + end) / 2)
+
+
+def representative_point(refs, points, tags):
+    """Where to put a way on the map: along a street, inside an area."""
+    closed = len(refs) > 3 and refs[0] == refs[-1] and 'highway' not in tags
+    if closed and len(points) == len(refs):
+        return polygon_point(points)
+    return polyline_midpoint(points)
+
+
+STREET_LINK_METRES = 1000
+SETTLEMENTS = {'city', 'town', 'village', 'suburb', 'hamlet', 'quarter'}
+
+
+def cluster_streets(entries):
+    """Split same-named street fragments into separate streets: fragments within
+    STREET_LINK_METRES of each other are one street, farther apart they are not.
+    Returns one (tags, lat, lon) per street, at the fragment closest to its centre."""
+    parent = list(range(len(entries)))
+
+    def find(index):
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    cells = {}
+    size = 0.02
+    for index, (lat, lon, _) in enumerate(entries):
+        cell = (math.floor(lat / size), math.floor(lon / size))
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for other in cells.get((cell[0] + dx, cell[1] + dy), ()):
+                    if walk_metres(entries[other][:2], (lat, lon)) <= STREET_LINK_METRES:
+                        parent[find(index)] = find(other)
+        cells.setdefault(cell, []).append(index)
+    groups = {}
+    for index in range(len(entries)):
+        groups.setdefault(find(index), []).append(index)
+    streets = []
+    for members in groups.values():
+        centre = (sum(entries[i][0] for i in members) / len(members),
+                  sum(entries[i][1] for i in members) / len(members))
+        lat, lon, tags = min(
+            (entries[i] for i in members), key=lambda e: walk_metres(centre, e[:2]))
+        streets.append((tags, lat, lon))
+    return streets
+
+
+def nearest_settlement(lat, lon, settlements, limit=8000):
+    best = min(settlements, key=lambda s: walk_metres((lat, lon), s[1:]), default=None)
+    if best and walk_metres((lat, lon), best[1:]) <= limit:
+        return best[0]
+    return None
 
 
 def write_walk_graph(path, nodes, ways):
@@ -98,7 +214,9 @@ def build(source, output, transit_index, train_index):
         CREATE VIRTUAL TABLE search USING fts4(tokens);
     ''')
     nodes = {}
-    roads = {}
+    streets = {}
+    settlements = []
+    way_boxes = {}
     walk_ways = []
     seen = set()
     bounds = None
@@ -151,27 +269,50 @@ def build(source, output, transit_index, train_index):
                         element.clear(); root.clear(); continue
                     if pedestrian_way(tags):
                         walk_ways.append(refs)
-                    # A point on a street, or a building/area's bounding-box centre.
-                    if 'highway' in tags:
-                        lat, lon = points[len(points) // 2]
-                    else:
-                        lat = (min(p[0] for p in points) + max(p[0] for p in points)) / 2
-                        lon = (min(p[1] for p in points) + max(p[1] for p in points)) / 2
+                    # Relations only know their members by id: keep the extent of the ways
+                    # that can be parts of one (buildings and streets are never outlines).
+                    if 'highway' not in tags and 'building' not in tags:
+                        way_boxes[int(element.attrib['id'])] = (
+                            min(p[0] for p in points), max(p[0] for p in points),
+                            min(p[1] for p in points), max(p[1] for p in points))
+                    lat, lon = representative_point(refs, points, tags)
+                elif tags.get('type') == 'multipolygon':
+                    # Parks, hospitals and the like are often relations of untagged ways.
+                    boxes = [way_boxes[int(m.attrib['ref'])] for m in element.findall('member')
+                             if m.attrib.get('type') == 'way' and m.attrib.get('role') in ('outer', '')
+                             and int(m.attrib['ref']) in way_boxes]
+                    if not boxes:
+                        element.clear(); root.clear(); continue
+                    lat = (min(b[0] for b in boxes) + max(b[1] for b in boxes)) / 2
+                    lon = (min(b[2] for b in boxes) + max(b[3] for b in boxes)) / 2
                 else:
                     element.clear(); root.clear(); continue
                 if tags.get('addr:street') and tags.get('addr:housenumber'):
                     add(tags, lat, lon, 'address')
                 if tags.get('name'):
                     if 'highway' in tags and element.tag == 'way':
-                        # Keep one representative per named street and municipality.
-                        roads.setdefault((tags['name'], tags.get('addr:city', '')), (tags, lat, lon))
+                        # Fragments of a street; grouped into streets once all are known.
+                        streets.setdefault((tags['name'], tags.get('addr:city', '')), []).append(
+                            (lat, lon, tags))
                     elif any(k in tags for k in ('amenity', 'shop', 'tourism', 'leisure', 'office',
                                                  'railway', 'public_transport', 'place', 'historic')):
                         add(tags, lat, lon, 'place')
+                    if element.tag == 'node' and tags.get('place') in SETTLEMENTS:
+                        settlements.append((tags['name'], lat, lon))
                 element.clear()
                 root.clear()
-    for tags, lat, lon in roads.values():
-        add(tags, lat, lon, 'street')
+    # The extract holds several municipalities and street ways rarely say which they are in,
+    # so a name can mean several streets: one result each, told apart by the nearest town.
+    by_name = {}
+    for (name, city), entries in streets.items():
+        for street in cluster_streets(entries):
+            by_name.setdefault(name, []).append((city, street))
+    for name, found in by_name.items():
+        for city, (tags, lat, lon) in found:
+            locality = None
+            if len(found) > 1 and not city:
+                locality = nearest_settlement(lat, lon, settlements)
+            add(tags, lat, lon, 'street', source_label=locality)
     source_counts = {'OpenStreetMap': count}
     for index_path, collection, kind, label, source_name in (
         (transit_index, 'patterns', 'bus_stop', 'GTT stop', 'GTT GTFS stops'),

@@ -11,4 +11,11 @@
         <item name="android:statusBarColor">@color/warm_white</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <style name="ShapeAppearanceOverlay.MatoLiveBus.Sheet" parent="">
+        <item name="cornerSizeTopLeft">20dp</item>
+        <item name="cornerSizeTopRight">20dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
 </resources>

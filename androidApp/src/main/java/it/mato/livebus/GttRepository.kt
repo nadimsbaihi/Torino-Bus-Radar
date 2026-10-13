@@ -26,7 +26,10 @@ data class LiveVehicle(
     val bearing: Float?,
     val timestampSeconds: Long
 ) {
-    val ageSeconds: Long get() = (System.currentTimeMillis() / 1000 - timestampSeconds).coerceAtLeast(0)
+    val ageSeconds: Long get() = ageSecondsAt(System.currentTimeMillis() / 1000)
+
+    /** Age against a fixed clock reading, so one planning run sees one consistent "now". */
+    fun ageSecondsAt(nowSeconds: Long): Long = (nowSeconds - timestampSeconds).coerceAtLeast(0)
 }
 
 class GttRepository {

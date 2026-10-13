@@ -3,9 +3,11 @@ package it.mato.livebus
 import android.content.Context
 import android.location.Location
 import org.json.JSONObject
+import org.osmdroid.util.GeoPoint
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -24,7 +26,40 @@ data class TransitPattern(
     val headsign: String,
     val directionId: String,
     val tripIds: Set<String>,
-    val stops: List<TransitStop>
+    val stops: List<TransitStop>,
+    // The road line the buses follow; null for an index without geometry.
+    val shape: RouteShape? = null,
+    // What the same bus usually does after this pattern; null when the timetable does not say.
+    val next: PatternSuccessor? = null
+)
+
+/**
+ * The pattern a bus runs after finishing another one (typically the line the other way, from the
+ * same terminus), the usual wait before it, and the trips of the first pattern that do continue.
+ */
+class PatternSuccessor(
+    val patternId: String,
+    val waitSeconds: Int,
+    val tripIds: Set<String>
+)
+
+/** A bus still on its previous run, planned as the next one: it reaches the start in [departsInSeconds]. */
+data class Turnaround(
+    val previousPatternId: String,
+    val departsInSeconds: Float,
+    val plannedAtMillis: Long = System.currentTimeMillis()
+) {
+    /** Whether the bus has had its time (plus [graceMillis]) to start the run it was planned for. */
+    fun overdue(nowMillis: Long, graceMillis: Long) =
+        nowMillis > plannedAtMillis + (departsInSeconds * 1000).toLong() + graceMillis
+}
+
+/** What a highlighted bus has driven and has yet to drive, split at the bus. */
+class BusCourse(
+    val passed: List<GeoPoint>,
+    val ahead: List<GeoPoint>,
+    val passedStops: List<TransitStop>,
+    val aheadStops: List<TransitStop>
 )
 
 data class JourneyChoice(
@@ -43,11 +78,14 @@ data class JourneyChoice(
     val estimatedTotalSeconds: Float = 0f,
     val secondLeg: JourneyLeg? = null,
     val transferAt: TransitStop? = null,
-    val transferWalkMetres: Float = 0f
+    val transferWalkMetres: Float = 0f,
+    val turnaround: Turnaround? = null
 ) {
     val totalWalkingMetres: Float get() = walkingMetres + transferWalkMetres + destinationWalkMetres
-    val directionEstimated: Boolean get() = vehicle.tripId !in pattern.tripIds ||
-        secondLeg?.let { it.vehicle.tripId !in it.pattern.tripIds } == true
+    // A bus about to turn around still carries the trip it is finishing, not this one.
+    val directionEstimated: Boolean get() =
+        (turnaround == null && vehicle.tripId !in pattern.tripIds) ||
+            secondLeg?.let { !it.turnaround && it.vehicle.tripId !in it.pattern.tripIds } == true
 }
 
 data class JourneyLeg(
@@ -55,7 +93,19 @@ data class JourneyLeg(
     val vehicle: LiveVehicle,
     val boardAt: TransitStop,
     val exitAt: TransitStop,
-    val stopCount: Int
+    val stopCount: Int,
+    val turnaround: Boolean = false
+)
+
+/** A live vehicle matched to a pattern, with its arrival time at every stop still ahead of it. */
+class TrackedVehicle internal constructor(
+    val vehicle: LiveVehicle,
+    val pattern: TransitPattern,
+    val progress: Int,
+    // Seconds from now until the vehicle reaches stop i; only meaningful for i > progress.
+    internal val arrivalSeconds: FloatArray,
+    // Set when this is the run the bus will start after the one it is on (progress is then -1).
+    val turnaround: Turnaround? = null
 )
 
 class TransitIndex private constructor(val patterns: List<TransitPattern>) {
@@ -78,6 +128,13 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             pattern.id to distances
         }
     }
+    private val segmentBearings by lazy {
+        patterns.associate { pattern ->
+            pattern.id to DoubleArray((pattern.stops.size - 1).coerceAtLeast(0)) { index ->
+                bearing(pattern.stops[index], pattern.stops[index + 1])
+            }
+        }
+    }
     private val transferStops by lazy {
         val stops = patterns.flatMap { it.stops }.distinctBy { it.id }.sortedBy { it.latitude }
         val neighbours = mutableMapOf<String, List<Pair<String, Float>>>()
@@ -98,6 +155,10 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         neighbours
     }
     private val vehicleProgress = mutableMapOf<String, ObservedProgress>()
+    private val vehicleMotion = mutableMapOf<String, VehicleMotion>()
+    // One fix is matched many times per refresh (map, planner, alerts); remember the answer.
+    private val matchCache = HashMap<String, CachedMatch>()
+    private val progressCache = HashMap<String, CachedProgress>()
 
     val destinationNames: List<String> = patterns
         .flatMap { it.stops }
@@ -106,6 +167,55 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         .sorted()
 
     fun patternsForRoute(route: String) = patterns.filter { it.route == route }
+
+    private val routeNames by lazy { patterns.associate { it.routeId to it.route } }
+
+    /**
+     * The name riders see on a line, straight from the feed: "13" and "13+", "59" and "59/", "10"
+     * and "10N" are different lines. Null for a route the index does not know.
+     */
+    fun routeName(routeId: String): String? = routeNames[routeId.removePrefix("gtt:")]
+
+    /**
+     * Matches every vehicle to a pattern and precomputes when it reaches each stop ahead.
+     * Planning several journeys on one feed snapshot can share the result.
+     */
+    suspend fun trackVehicles(
+        vehicles: List<LiveVehicle>,
+        nowSeconds: Long = System.currentTimeMillis() / 1000
+    ): List<TrackedVehicle> {
+        val context = currentCoroutineContext()
+        val running = vehicles.mapNotNull { vehicle ->
+            context.ensureActive()
+            val pattern = matchDirection(vehicle) ?: return@mapNotNull null
+            val progress = progressIndex(vehicle, pattern) ?: return@mapNotNull null
+            TrackedVehicle(vehicle, pattern, progress,
+                arrivalSeconds(vehicle, pattern, progress, nowSeconds))
+        }
+        return running + running.mapNotNull(::turnaroundOf)
+    }
+
+    private val patternsById by lazy { patterns.associateBy { it.id } }
+
+    /**
+     * A bus nearing the end of its line will, on most trips, set off again the other way after a
+     * short wait. Until then it is not on that run, but it is a bus that is coming, and when
+     * nothing else is running that way it may be the only one.
+     */
+    private fun turnaroundOf(current: TrackedVehicle): TrackedVehicle? {
+        if (current.turnaround != null) return null
+        val successor = current.pattern.next ?: return null
+        // Only a trip the timetable says continues; the last run of a bus's day goes to the depot.
+        if (current.vehicle.tripId !in successor.tripIds) return null
+        val next = patternsById[successor.patternId] ?: return null
+        val toTerminus = current.arrivalSeconds[current.pattern.stops.lastIndex].coerceAtLeast(0f)
+        if (toTerminus > MAX_TURNAROUND_LOOKAHEAD_SECONDS) return null
+        val departs = toTerminus + maxOf(successor.waitSeconds, MIN_TURNAROUND_SECONDS) + TURNAROUND_BUFFER_SECONDS
+        val arrivals = FloatArray(next.stops.size) { index ->
+            departs + routeDistance(next, 0, index) / BUS_METRES_PER_SECOND + index * DWELL_SECONDS_PER_STOP
+        }
+        return TrackedVehicle(current.vehicle, next, -1, arrivals, Turnaround(current.pattern.id, departs))
+    }
 
     suspend fun planLiveJourney(
         latitude: Double,
@@ -120,14 +230,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         earliestStartSeconds: Float = 0f,
         maxDestinationWalkMetres: Float = Float.POSITIVE_INFINITY,
         directOnly: Boolean = false,
-        walkingPreference: WalkingPreference = WalkingPreference.MORE
+        walkingPreference: WalkingPreference = WalkingPreference.MORE,
+        tracked: List<TrackedVehicle>? = null
     ): JourneyChoice? {
-        data class Tracked(
-            val vehicle: LiveVehicle,
-            val pattern: TransitPattern,
-            val progress: Int
-        )
-
         val context = currentCoroutineContext()
         val walkingDistances = mutableMapOf<String, Float>()
         val destinationDistances = mutableMapOf<String, Float>()
@@ -140,147 +245,166 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             walkFromDestination?.invoke(stop.latitude, stop.longitude)
                 ?: distance(destinationLatitude, destinationLongitude, stop)
         }
-        val tracked = vehicles.mapNotNull { vehicle ->
-            context.ensureActive()
-            val pattern = matchDirection(vehicle) ?: return@mapNotNull null
-            val progress = progressIndex(vehicle, pattern) ?: return@mapNotNull null
-            Tracked(vehicle, pattern, progress)
-        }
+        val fleet = tracked ?: trackVehicles(vehicles)
 
         val initialDistance = walkFromOrigin?.invoke(destinationLatitude, destinationLongitude)
             ?: distance(latitude, longitude,
                 TransitStop("", "", destinationLatitude, destinationLongitude))
-        val direct = tracked.flatMap { current ->
+
+        // Best (boarding, exit) pair per vehicle, kept online so no candidate list is built.
+        var best: JourneyChoice? = null
+        var bestScore = Float.POSITIVE_INFINITY
+        for (current in fleet) {
             context.ensureActive()
             val vehicle = current.vehicle
             val pattern = current.pattern
             val progressIndex = current.progress
+            val arrivals = current.arrivalSeconds
+            var vehicleDistance = -1f
             // A later, reachable exit can still help even if the closest stop
             // to the destination occurs before we can board this vehicle.
-            pattern.stops.indices.drop(progressIndex + 2).mapNotNull { destinationIndex ->
+            for (destinationIndex in progressIndex + 2 until pattern.stops.size) {
                 context.ensureActive()
                 val destinationStop = pattern.stops[destinationIndex]
                 val remainingWalk = destinationDistance(destinationStop)
                 if (remainingWalk >= initialDistance ||
-                    remainingWalk > maxDestinationWalkMetres) return@mapNotNull null
-                val destinationCandidate = Triple(destinationIndex, destinationStop, remainingWalk)
-                val boarding = pattern.stops.indices
-                    .drop(progressIndex + 1)
-                    .takeWhile { it < destinationIndex }
-                    .mapNotNull { index ->
-                        val stop = pattern.stops[index]
-                        val walkMetres = walkingDistance(stop)
-                        val walkSeconds = walkMetres / WALKING_METRES_PER_SECOND
-                        val busSeconds = busSecondsToStop(vehicle, pattern, progressIndex, index)
-                        if (destinationCandidate.third >= destinationDistance(stop) ||
-                            earliestStartSeconds + walkSeconds + BOARDING_MARGIN_SECONDS > busSeconds) null
-                        else BoardingCandidate(index, stop, walkMetres, walkSeconds, busSeconds)
+                    remainingWalk > maxDestinationWalkMetres) continue
+                var boarding: BoardingCandidate? = null
+                var boardingScore = Float.POSITIVE_INFINITY
+                for (index in progressIndex + 1 until destinationIndex) {
+                    val stop = pattern.stops[index]
+                    val walkMetres = walkingDistance(stop)
+                    val walkSeconds = walkMetres / WALKING_METRES_PER_SECOND
+                    val busSeconds = arrivals[index]
+                    if (remainingWalk >= destinationDistance(stop) ||
+                        !canCatch(earliestStartSeconds, walkSeconds, busSeconds)) continue
+                    val score = walkingPreference.score(
+                        maxOf(earliestStartSeconds + walkSeconds, busSeconds) +
+                            routeDistance(pattern, index, destinationIndex) / BUS_METRES_PER_SECOND +
+                            (destinationIndex - index) * DWELL_SECONDS_PER_STOP,
+                        walkMetres
+                    )
+                    if (score < boardingScore) {
+                        boardingScore = score
+                        boarding = BoardingCandidate(index, stop, walkMetres, walkSeconds, busSeconds)
                     }
-                    .minByOrNull { candidate ->
-                        val rideSeconds = routeDistance(pattern, candidate.index, destinationIndex) /
-                            BUS_METRES_PER_SECOND
-                        walkingPreference.score(
-                            maxOf(earliestStartSeconds + candidate.walkSeconds, candidate.busSeconds) +
-                                rideSeconds +
-                                (destinationIndex - candidate.index) * DWELL_SECONDS_PER_STOP,
-                            candidate.walkMetres
-                        )
-                    } ?: return@mapNotNull null
-                val rideSeconds = routeDistance(pattern, boarding.index, destinationIndex) /
-                    BUS_METRES_PER_SECOND
+                }
+                if (boarding == null) continue
                 val totalSeconds = maxOf(earliestStartSeconds + boarding.walkSeconds, boarding.busSeconds) +
-                    rideSeconds +
+                    routeDistance(pattern, boarding.index, destinationIndex) / BUS_METRES_PER_SECOND +
                     (destinationIndex - boarding.index) * DWELL_SECONDS_PER_STOP +
-                    destinationCandidate.third / WALKING_METRES_PER_SECOND
-                JourneyChoice(
+                    remainingWalk / WALKING_METRES_PER_SECOND
+                val score = walkingPreference.score(totalSeconds, boarding.walkMetres + remainingWalk)
+                if (score >= bestScore) continue
+                if (vehicleDistance < 0f) {
+                    vehicleDistance = distance(latitude, longitude,
+                        TransitStop("", "", vehicle.latitude, vehicle.longitude))
+                }
+                bestScore = score
+                best = JourneyChoice(
                     pattern = pattern,
                     vehicle = vehicle,
                     boardAt = boarding.stop,
                     boardStopIndex = boarding.index,
-                    destination = pattern.stops[destinationIndex],
-                    vehicleDistanceMetres = distance(
-                        latitude,
-                        longitude,
-                        TransitStop("", "", vehicle.latitude, vehicle.longitude)
-                    ),
+                    destination = destinationStop,
+                    vehicleDistanceMetres = vehicleDistance,
                     walkingMetres = boarding.walkMetres,
                     stopCount = destinationIndex - boarding.index,
-                    destinationWalkMetres = destinationCandidate.third,
+                    destinationWalkMetres = remainingWalk,
                     finalLatitude = destinationLatitude,
                     finalLongitude = destinationLongitude,
                     boardingEtaSeconds = boarding.busSeconds,
-                    estimatedTotalSeconds = totalSeconds
+                    estimatedTotalSeconds = totalSeconds,
+                    turnaround = current.turnaround
                 )
             }
         }
 
-        var best = direct.minByOrNull { journeyScore(it, walkingPreference) }
         onDirectJourney?.invoke(best)
         context.ensureActive()
         if (directOnly) return best
 
         // Index only boarding occurrences that each live vehicle has yet to reach.
-        val vehiclesByStop = mutableMapOf<String, MutableList<Pair<Tracked, Int>>>()
-        for (second in tracked) {
+        val vehiclesByStop = mutableMapOf<String, MutableList<Pair<TrackedVehicle, Int>>>()
+        for (second in fleet) {
             for (index in second.progress + 1 until second.pattern.stops.lastIndex) {
                 vehiclesByStop.getOrPut(second.pattern.stops[index].id) { mutableListOf() }
                     .add(second to index)
             }
         }
-        val destinationsByPattern = tracked.distinctBy { it.pattern.id }.associate { trackedPattern ->
-            val stops = trackedPattern.pattern.stops
-            val exits = IntArray(stops.size)
-            var closest = stops.lastIndex
-            for (index in stops.indices.reversed()) {
-                if (destinationDistance(stops[index]) <= destinationDistance(stops[closest])) closest = index
-                exits[index] = closest
+        // For a second leg boarded at stop b, the exit e > b that minimises ride time plus the
+        // walk from e: cost(b, e) = f(e) - g(b), so a suffix argmin over f serves every b.
+        val exitsByPattern = HashMap<String, IntArray>()
+        for (trackedPattern in fleet.distinctBy { it.pattern.id }) {
+            val pattern = trackedPattern.pattern
+            val stops = pattern.stops
+            val cost = FloatArray(stops.size) { index ->
+                val walk = destinationDistance(stops[index])
+                if (walk >= initialDistance) Float.POSITIVE_INFINITY
+                else routeDistance(pattern, 0, index) / BUS_METRES_PER_SECOND +
+                    index * DWELL_SECONDS_PER_STOP +
+                    walk / WALKING_METRES_PER_SECOND * (1f + walkingPreference.extraWalkingWeight)
             }
-            trackedPattern.pattern.id to exits
+            val exits = IntArray(stops.size) { -1 }
+            var closest = -1
+            for (boardIndex in stops.lastIndex - 1 downTo 0) {
+                val candidate = boardIndex + 1
+                if (cost[candidate].isFinite() &&
+                    (closest < 0 || cost[candidate] <= cost[closest])) closest = candidate
+                exits[boardIndex] = closest
+            }
+            exitsByPattern[pattern.id] = exits
         }
-        for (first in tracked) {
+        for (first in fleet) {
             context.ensureActive()
             val pattern = first.pattern
-            var firstBoarding: BoardingCandidate? = null
+            val firstArrivals = first.arrivalSeconds
+            val reachable = ArrayList<BoardingCandidate>()
             for (exitIndex in first.progress + 2 until pattern.stops.size) {
                 context.ensureActive()
                 val boardIndex = exitIndex - 1
                 val board = pattern.stops[boardIndex]
                 val walk = walkingDistance(board)
                 val walkSeconds = walk / WALKING_METRES_PER_SECOND
-                val busSeconds = busSecondsToStop(first.vehicle, pattern, first.progress, boardIndex)
-                if (walkSeconds + BOARDING_MARGIN_SECONDS <= busSeconds) {
-                    val candidate = BoardingCandidate(boardIndex, board, walk, walkSeconds, busSeconds)
-                    val previous = firstBoarding
-                    // Compare arrival at this exit, including the ride after boarding.
-                    if (previous == null || busSeconds < previous.busSeconds +
-                        routeDistance(pattern, previous.index, boardIndex) / BUS_METRES_PER_SECOND +
-                        (boardIndex - previous.index) * DWELL_SECONDS_PER_STOP) {
-                        firstBoarding = candidate
+                val busSeconds = firstArrivals[boardIndex]
+                if (canCatch(earliestStartSeconds, walkSeconds, busSeconds)) {
+                    reachable.add(BoardingCandidate(boardIndex, board, walk, walkSeconds, busSeconds))
+                }
+                if (reachable.isEmpty()) continue
+                // The boarding stop is chosen for this exit, so walk preference applies here too.
+                var boarding = reachable[0]
+                var firstArrival = Float.POSITIVE_INFINITY
+                var boardingScore = Float.POSITIVE_INFINITY
+                for (candidate in reachable) {
+                    val arrival = maxOf(earliestStartSeconds + candidate.walkSeconds, candidate.busSeconds) +
+                        routeDistance(pattern, candidate.index, exitIndex) / BUS_METRES_PER_SECOND +
+                        (exitIndex - candidate.index) * DWELL_SECONDS_PER_STOP
+                    val score = walkingPreference.score(arrival, candidate.walkMetres)
+                    if (score < boardingScore) {
+                        boardingScore = score
+                        boarding = candidate
+                        firstArrival = arrival
                     }
                 }
-                val boarding = firstBoarding ?: continue
-                val firstArrival = boarding.busSeconds +
-                    routeDistance(pattern, boarding.index, exitIndex) / BUS_METRES_PER_SECOND +
-                    (exitIndex - boarding.index) * DWELL_SECONDS_PER_STOP
-                if (walkingPreference == WalkingPreference.MORE && best != null &&
-                    firstArrival >= best.estimatedTotalSeconds) continue
-                for ((stopId, transferWalk) in transferStops[pattern.stops[exitIndex].id].orEmpty()) {
+                // Nothing after this point can score better than this: the journey cannot
+                // end before the first bus does, nor walk less than the walk to board it.
+                if (walkingPreference.score(firstArrival, boarding.walkMetres) >= bestScore) continue
+                val exitStop = pattern.stops[exitIndex]
+                for ((stopId, transferWalk) in transferStops[exitStop.id].orEmpty()) {
                     for ((second, secondBoardIndex) in vehiclesByStop[stopId].orEmpty()) {
                         context.ensureActive()
                         if (second.pattern.route == pattern.route) continue
-                        val exitStop = pattern.stops[exitIndex]
                         val secondBoard = second.pattern.stops[secondBoardIndex]
                         val streetTransferWalk = transferWalkingDistances.getOrPut(exitStop.id to stopId) {
                             walkBetweenStops?.invoke(exitStop.latitude, exitStop.longitude,
                                 secondBoard.latitude, secondBoard.longitude) ?: transferWalk
                         }
                         if (streetTransferWalk > MAX_TRANSFER_WALK) continue
-                        val secondArrival = busSecondsToStop(
-                            second.vehicle, second.pattern, second.progress, secondBoardIndex
-                        )
-                        if (firstArrival + streetTransferWalk / WALKING_METRES_PER_SECOND +
-                            BOARDING_MARGIN_SECONDS > secondArrival) continue
-                        val destinationIndex = destinationsByPattern.getValue(second.pattern.id)[secondBoardIndex + 1]
+                        val secondArrival = second.arrivalSeconds[secondBoardIndex]
+                        if (!canCatch(firstArrival, streetTransferWalk / WALKING_METRES_PER_SECOND,
+                                secondArrival, TRANSFER_MARGIN_SECONDS)) continue
+                        val destinationIndex = exitsByPattern.getValue(second.pattern.id)[secondBoardIndex]
+                        if (destinationIndex < 0) continue
                         val destination = second.pattern.stops[destinationIndex]
                         val destinationWalk = destinationDistance(destination)
                         if (destinationWalk >= initialDistance ||
@@ -289,7 +413,11 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             routeDistance(second.pattern, secondBoardIndex, destinationIndex) / BUS_METRES_PER_SECOND +
                             (destinationIndex - secondBoardIndex) * DWELL_SECONDS_PER_STOP +
                             destinationWalk / WALKING_METRES_PER_SECOND
-                        val candidate = JourneyChoice(
+                        val score = walkingPreference.score(
+                            total, boarding.walkMetres + streetTransferWalk + destinationWalk)
+                        if (score >= bestScore) continue
+                        bestScore = score
+                        best = JourneyChoice(
                             pattern = pattern,
                             vehicle = first.vehicle,
                             boardAt = boarding.stop,
@@ -306,38 +434,16 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             estimatedTotalSeconds = total,
                             secondLeg = JourneyLeg(second.pattern, second.vehicle,
                                 second.pattern.stops[secondBoardIndex], destination,
-                                destinationIndex - secondBoardIndex),
-                            transferAt = pattern.stops[exitIndex],
-                            transferWalkMetres = streetTransferWalk
+                                destinationIndex - secondBoardIndex, second.turnaround != null),
+                            transferAt = exitStop,
+                            transferWalkMetres = streetTransferWalk,
+                            turnaround = first.turnaround
                         )
-                        if (best == null || journeyScore(candidate, walkingPreference) <
-                            journeyScore(best, walkingPreference)) best = candidate
                     }
                 }
             }
         }
         return best
-    }
-
-    private fun journeyScore(choice: JourneyChoice, walkingPreference: WalkingPreference): Float {
-        if (choice.estimatedTotalSeconds > 0f) return walkingPreference.score(
-            choice.estimatedTotalSeconds, choice.totalWalkingMetres)
-        val transferPenalty = if (choice.secondLeg == null) 0f else 650f
-        val secondBusPenalty = choice.secondLeg?.let {
-            distance(
-                it.boardAt.latitude,
-                it.boardAt.longitude,
-                TransitStop("", "", it.vehicle.latitude, it.vehicle.longitude)
-            ) * 0.2f
-        } ?: 0f
-        return choice.destinationWalkMetres * 3f +
-            choice.vehicleDistanceMetres +
-            choice.walkingMetres * 0.15f +
-            choice.stopCount * 35f +
-            (choice.secondLeg?.stopCount ?: 0) * 35f +
-            choice.transferWalkMetres * 2f +
-            transferPenalty +
-            secondBusPenalty
     }
 
     private data class BoardingCandidate(
@@ -348,47 +454,265 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         val busSeconds: Float
     )
 
-    private fun busSecondsToStop(
+    /**
+     * Whether someone free from [freeAtSeconds] who walks for [walkSeconds] gets to the stop
+     * before the bus. The walk gets some slack (nobody keeps an exact pace); standing at the
+     * stop needs none.
+     */
+    private fun canCatch(
+        freeAtSeconds: Float,
+        walkSeconds: Float,
+        busSeconds: Float,
+        marginSeconds: Float = 0f
+    ) = freeAtSeconds + walkSeconds * (1f + WALK_SLACK) + marginSeconds <= busSeconds
+
+    private fun arrivalSeconds(
         vehicle: LiveVehicle,
         pattern: TransitPattern,
         progressIndex: Int,
-        boardingIndex: Int
-    ): Float {
-        val nextIndex = (progressIndex + 1).coerceAtMost(pattern.stops.lastIndex)
-        val vehicleToNext = distance(
-            vehicle.latitude,
-            vehicle.longitude,
-            pattern.stops[nextIndex]
-        )
-        val routeMetres = routeDistance(pattern, nextIndex, boardingIndex)
-        val intermediateStops = (boardingIndex - nextIndex).coerceAtLeast(0)
-        return (vehicleToNext + routeMetres) / BUS_METRES_PER_SECOND +
-            intermediateStops * DWELL_SECONDS_PER_STOP - vehicle.ageSeconds
+        nowSeconds: Long
+    ): FloatArray {
+        val stops = pattern.stops
+        val arrivals = FloatArray(stops.size)
+        val nextIndex = (progressIndex + 1).coerceAtMost(stops.lastIndex)
+        // Straight lines between stops understate the road; scale them to realistic travel.
+        val vehicleToNext = distance(vehicle.latitude, vehicle.longitude, stops[nextIndex]) *
+            ROUTE_CIRCUITY
+        // The position is old: the bus has been driving towards the stop since it was recorded.
+        val age = vehicle.ageSecondsAt(nowSeconds)
+        for (index in nextIndex until stops.size) {
+            arrivals[index] = (vehicleToNext + routeDistance(pattern, nextIndex, index)) /
+                BUS_METRES_PER_SECOND + (index - nextIndex) * DWELL_SECONDS_PER_STOP - age
+        }
+        return arrivals
     }
 
-    private fun routeDistance(pattern: TransitPattern, fromIndex: Int, toIndex: Int): Float {
+    /** Estimated driving distance between two stops of [pattern]. */
+    private fun routeDistance(pattern: TransitPattern, fromIndex: Int, toIndex: Int): Float =
+        straightRouteDistance(pattern, fromIndex, toIndex) * ROUTE_CIRCUITY
+
+    /** Sum of the straight lines between consecutive stops. */
+    private fun straightRouteDistance(pattern: TransitPattern, fromIndex: Int, toIndex: Int): Float {
         if (toIndex <= fromIndex) return 0f
         val distances = cumulativeDistances.getValue(pattern.id)
         return distances[toIndex] - distances[fromIndex]
     }
 
+    /**
+     * Metres [vehicle] still has to travel along [pattern] to reach the next occurrence of
+     * [stopId] ahead of it, or null when the stop is behind it. A vehicle that has left the
+     * line (diversion) says nothing about where it is on it, so then it is the straight distance.
+     */
+    fun routeMetresToStop(vehicle: LiveVehicle, pattern: TransitPattern, stopId: String): Float? {
+        val progress = progressIndex(vehicle, pattern) ?: return null
+        val nextIndex = progress + 1
+        val stopIndex = (nextIndex until pattern.stops.size)
+            .firstOrNull { pattern.stops[it].id == stopId } ?: return null
+        val segmentStart = pattern.stops[progress]
+        val segmentEnd = pattern.stops[nextIndex]
+        if (distanceToSegment(vehicle.latitude, vehicle.longitude, segmentStart, segmentEnd) >
+            OFF_ROUTE_METRES) return distance(vehicle.latitude, vehicle.longitude, pattern.stops[stopIndex])
+        return distance(vehicle.latitude, vehicle.longitude, segmentEnd) +
+            straightRouteDistance(pattern, nextIndex, stopIndex)
+    }
+
     fun matchDirection(vehicle: LiveVehicle): TransitPattern? {
+        synchronized(this) {
+            matchCache[vehicle.id]?.takeIf { it.vehicle == vehicle }?.let { return it.pattern }
+        }
+        val pattern = inferPattern(vehicle)
+        synchronized(this) { matchCache[vehicle.id] = CachedMatch(vehicle, pattern) }
+        return pattern
+    }
+
+    private fun inferPattern(vehicle: LiveVehicle): TransitPattern? {
         exactTripPattern(vehicle)?.let { return it }
 
         // GTT often supplies a route and position without a usable scheduled trip ID.
-        // Limit inference to nearby segments of that route, using heading when available.
+        // Limit inference to nearby segments of that route, using the heading when
+        // available and otherwise the direction the vehicle has actually been moving.
+        val heading = headingOf(vehicle)
         val candidates = patternsByRoute[vehicle.routeId].orEmpty().mapNotNull { pattern ->
-            val score = pattern.stops.zipWithNext().mapNotNull { (from, to) ->
-                segmentScore(vehicle, from, to, inferred = true).takeIf { it.isFinite() }
-            }.minOrNull() ?: return@mapNotNull null
-            pattern to score
+            var score = Double.POSITIVE_INFINITY
+            for (index in 0 until pattern.stops.size - 1) {
+                score = minOf(score, segmentScore(vehicle, pattern, index, inferred = true, heading = heading))
+            }
+            if (score.isFinite()) pattern to score else null
         }.sortedBy { it.second }
         val best = candidates.firstOrNull() ?: return null
-        // Overlapping opposite directions without enough evidence are not a match.
-        if (candidates.any { it.first.directionId != best.first.directionId &&
-                it.second - best.second < 75.0 }) return null
-        return best.first
+        // Variants of one direction often share a trunk and tie; stay on the one already
+        // matched so the answer does not flip between them as the bus moves.
+        val previous = recentInferredPattern(vehicle)
+        val sticky = previous?.let { id ->
+            candidates.firstOrNull { it.first.id == id && it.second - best.second < AMBIGUOUS_SCORE_MARGIN }
+        }
+        // Overlapping opposite directions without enough evidence are not a match,
+        // unless the vehicle was recently matched to one of them and is still on it.
+        val rivals = candidates.filter {
+            it.first.directionId != best.first.directionId &&
+                it.second - best.second < AMBIGUOUS_SCORE_MARGIN
+        }
+        if (rivals.isEmpty()) return remember(vehicle, (sticky ?: best).first)
+        return sticky?.first?.let { remember(vehicle, it) }
     }
+
+    private fun remember(vehicle: LiveVehicle, pattern: TransitPattern): TransitPattern {
+        synchronized(this) { vehicleMotion[vehicle.id]?.inferredPatternId = pattern.id }
+        return pattern
+    }
+
+    @Synchronized
+    private fun recentInferredPattern(vehicle: LiveVehicle): String? {
+        val motion = vehicleMotion[vehicle.id] ?: return null
+        return motion.inferredPatternId?.takeIf {
+            vehicle.timestampSeconds - motion.lastTimestamp <= MOTION_MEMORY_SECONDS
+        }
+    }
+
+    /**
+     * Best available direction of travel: the feed bearing, or the heading derived from
+     * the vehicle's last fixes when the feed gives none or contradicts clear movement.
+     */
+    @Synchronized
+    private fun headingOf(vehicle: LiveVehicle): Float? {
+        val motion = vehicleMotion.getOrPut(vehicle.id) {
+            VehicleMotion(vehicle.latitude, vehicle.longitude, vehicle.timestampSeconds)
+        }
+        if (vehicle.timestampSeconds > motion.lastTimestamp) {
+            val moved = FloatArray(1)
+            Location.distanceBetween(
+                motion.anchorLatitude, motion.anchorLongitude,
+                vehicle.latitude, vehicle.longitude, moved
+            )
+            if (moved[0] > MAX_PLAUSIBLE_MOVE_METRES ||
+                vehicle.timestampSeconds - motion.lastTimestamp > MOTION_MEMORY_SECONDS) {
+                // Reused vehicle ID or a long gap: earlier movement says nothing now.
+                motion.reset(vehicle)
+            } else {
+                if (moved[0] >= MIN_MOVE_METRES) {
+                    motion.movementHeading = bearing(
+                        TransitStop("", "", motion.anchorLatitude, motion.anchorLongitude),
+                        TransitStop("", "", vehicle.latitude, vehicle.longitude)
+                    ).toFloat()
+                    motion.movementDistance = moved[0]
+                    motion.movementTimestamp = vehicle.timestampSeconds
+                    motion.anchorLatitude = vehicle.latitude
+                    motion.anchorLongitude = vehicle.longitude
+                }
+                motion.lastTimestamp = vehicle.timestampSeconds
+            }
+        }
+        // Movement heading goes stale once the vehicle stops, e.g. before reversing at a terminus.
+        val moving = motion.movementHeading?.takeIf {
+            vehicle.timestampSeconds - motion.movementTimestamp <= MOVEMENT_FRESH_SECONDS
+        }
+        val reported = vehicle.bearing
+        return when {
+            moving == null -> reported?.takeIf { it != UNKNOWN_BEARING }
+            reported == null -> moving
+            // GTT sends exactly 0 for many buses with no real heading (about 1 in 5 in the live
+            // feed, and most of those do not run north), so 0 needs movement to back it up.
+            reported == UNKNOWN_BEARING &&
+                angleDifference(reported.toDouble(), moving.toDouble()) > MAX_UNKNOWN_BEARING_ERROR -> moving
+            motion.movementDistance >= CONTRADICTION_MOVE_METRES &&
+                angleDifference(reported.toDouble(), moving.toDouble()) > MAX_FORWARD_BEARING_DIFFERENCE -> moving
+            else -> reported
+        }
+    }
+
+    /**
+     * Where a bus should look like it is pointing: its own heading, corrected to the direction of
+     * the route segment it is on when the heading is missing or points the wrong way along it.
+     */
+    fun displayHeading(vehicle: LiveVehicle): Float? {
+        val heading = headingOf(vehicle)
+        val pattern = matchDirection(vehicle) ?: return heading
+        val segment = progressOf(vehicle, pattern) ?: return heading
+        val from = pattern.stops[segment]
+        val to = pattern.stops[segment + 1]
+        if (distanceToSegment(vehicle.latitude, vehicle.longitude, from, to) > MAX_SNAP_METRES) return heading
+        val route = bearing(from, to).toFloat()
+        return if (heading == null ||
+            angleDifference(heading.toDouble(), route.toDouble()) > MAX_FORWARD_BEARING_DIFFERENCE) route
+        else heading
+    }
+
+    private class VehicleMotion(
+        var anchorLatitude: Double,
+        var anchorLongitude: Double,
+        var lastTimestamp: Long
+    ) {
+        var movementHeading: Float? = null
+        var movementDistance = 0f
+        var movementTimestamp = 0L
+        var inferredPatternId: String? = null
+
+        fun reset(vehicle: LiveVehicle) {
+            anchorLatitude = vehicle.latitude
+            anchorLongitude = vehicle.longitude
+            lastTimestamp = vehicle.timestampSeconds
+            movementHeading = null
+            movementDistance = 0f
+            movementTimestamp = 0L
+            inferredPatternId = null
+        }
+    }
+
+    // Where each pattern's stops sit along its shape; null when the shape is missing or does not fit.
+    private val stopAlignments = HashMap<String, RouteShape.Alignment?>()
+
+    @Synchronized
+    private fun alignmentOf(pattern: TransitPattern): RouteShape.Alignment? {
+        val shape = pattern.shape ?: return null
+        if (pattern.id !in stopAlignments) {
+            stopAlignments[pattern.id] =
+                shape.align(pattern.stops)?.takeIf { it.worstMetres <= MAX_SHAPE_STOP_GAP_METRES }
+        }
+        return stopAlignments[pattern.id]
+    }
+
+    /**
+     * The course of [vehicle] along [pattern], following the roads when the pattern has a shape and
+     * joining the stops with straight lines when it does not.
+     */
+    fun courseOf(vehicle: LiveVehicle, pattern: TransitPattern): BusCourse? {
+        if (pattern.stops.size < 2) return null
+        // Segment i joins stops i and i + 1; the bus sits somewhere along its segment.
+        val segment = progressOf(vehicle, pattern)
+        val shape = pattern.shape
+        val alignment = alignmentOf(pattern)
+        if (shape != null && alignment != null) {
+            // Off its line (or position unknown), the bus says nothing about how far along it is.
+            fun wholeRoute() = BusCourse(emptyList(), shape.slice(0.0, shape.lengthMetres), emptyList(), pattern.stops)
+            if (segment == null) return wholeRoute()
+            // The segment comes from straight lines between stops, so on a winding road it can be a
+            // stop out. Look one stop either side, but no further: a route that passes the same
+            // street twice must not pull the bus onto the wrong pass.
+            val last = pattern.stops.size - 1
+            val fix = shape.nearest(vehicle.latitude, vehicle.longitude,
+                alignment.chainages[(segment - 1).coerceAtLeast(0)], alignment.chainages[(segment + 2).coerceAtMost(last)])
+            if (fix != null && fix.distance <= OFF_ROUTE_METRES) {
+                // A stop the bus is level with counts as passed.
+                val reached = pattern.stops.indices.count { alignment.chainages[it] <= fix.chainage + AT_STOP_METRES }
+                return BusCourse(shape.slice(0.0, fix.chainage), shape.slice(fix.chainage, shape.lengthMetres),
+                    pattern.stops.subList(0, reached), pattern.stops.subList(reached, pattern.stops.size))
+            }
+            return wholeRoute()
+        }
+        val passedStops = segment?.let { pattern.stops.subList(0, it + 1) }.orEmpty()
+        val aheadStops = segment?.let { pattern.stops.subList(it + 1, pattern.stops.size) } ?: pattern.stops
+        val stops = pattern.stops.map { GeoPoint(it.latitude, it.longitude) }
+        val here = GeoPoint(vehicle.latitude, vehicle.longitude)
+        return BusCourse(
+            passed = segment?.let { stops.subList(0, it + 1) + here }.orEmpty(),
+            ahead = segment?.let { listOf(here) + stops.subList(it + 1, stops.size) } ?: stops,
+            passedStops = passedStops,
+            aheadStops = aheadStops
+        )
+    }
+
+    /** Index of the segment the vehicle is travelling on within [pattern], or null if it is off the line. */
+    fun progressOf(vehicle: LiveVehicle, pattern: TransitPattern): Int? = progressIndex(vehicle, pattern)
 
     fun isBoardingStopAhead(
         vehicle: LiveVehicle,
@@ -416,23 +740,59 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
 
     @Synchronized
     private fun progressIndex(vehicle: LiveVehicle, pattern: TransitPattern): Int? {
+        progressCache[vehicle.id]?.takeIf {
+            it.vehicle == vehicle && it.patternId == pattern.id
+        }?.let { return it.progress }
+        val progress = computeProgress(vehicle, pattern)
+        progressCache[vehicle.id] = CachedProgress(vehicle, pattern.id, progress)
+        return progress
+    }
+
+    private fun computeProgress(vehicle: LiveVehicle, pattern: TransitPattern): Int? {
         val inferred = exactTripPattern(vehicle) == null
-        val rawProgress = pattern.stops.zipWithNext()
-            .withIndex()
-            .minByOrNull { (_, segment) ->
-                segmentScore(vehicle, segment.first, segment.second, inferred)
-            }
-            ?.takeIf { (_, segment) ->
-                segmentScore(vehicle, segment.first, segment.second, inferred).isFinite()
-            }
-            ?.index
-            ?: return null
+        val heading = headingOf(vehicle)
+        val lastSegment = pattern.stops.size - 2
         val prior = vehicleProgress[vehicle.id]
         val sameTrip = !inferred && prior != null && prior.tripId == vehicle.tripId &&
             prior.patternId == pattern.id
-        val progress = if (sameTrip) maxOf(prior!!.progress, rawProgress) else rawProgress
+        // A bus only moves forward along its trip, but only look a little way ahead: a GPS
+        // spike or a route that doubles back must not drag the progress to a far-off segment.
+        var progress: Int? = null
+        if (sameTrip) {
+            val windowed = nearestSegment(vehicle, pattern, prior!!.progress,
+                minOf(lastSegment, prior.progress + PROGRESS_WINDOW), inferred, heading)
+            if (windowed != null && distanceToSegment(vehicle.latitude, vehicle.longitude,
+                    pattern.stops[windowed], pattern.stops[windowed + 1]) <= PROGRESS_RESYNC_METRES) {
+                progress = windowed
+            }
+        }
+        // First sighting, or the vehicle is nowhere near where it should be: start afresh.
+        if (progress == null) {
+            progress = nearestSegment(vehicle, pattern, 0, lastSegment, inferred, heading)
+                ?: return null
+        }
         vehicleProgress[vehicle.id] = ObservedProgress(vehicle.tripId, pattern.id, progress)
         return progress
+    }
+
+    private fun nearestSegment(
+        vehicle: LiveVehicle,
+        pattern: TransitPattern,
+        from: Int,
+        to: Int,
+        inferred: Boolean,
+        heading: Float?
+    ): Int? {
+        var bestIndex = -1
+        var bestScore = Double.POSITIVE_INFINITY
+        for (index in from..to) {
+            val score = segmentScore(vehicle, pattern, index, inferred, heading)
+            if (score < bestScore) {
+                bestScore = score
+                bestIndex = index
+            }
+        }
+        return bestIndex.takeIf { it >= 0 }
     }
 
     private data class ObservedProgress(
@@ -441,19 +801,25 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         val progress: Int
     )
 
+    private class CachedMatch(val vehicle: LiveVehicle, val pattern: TransitPattern?)
+    private class CachedProgress(val vehicle: LiveVehicle, val patternId: String, val progress: Int?)
+
     private fun segmentScore(
         vehicle: LiveVehicle,
-        from: TransitStop,
-        to: TransitStop,
-        inferred: Boolean = false
+        pattern: TransitPattern,
+        index: Int,
+        inferred: Boolean,
+        heading: Float?
     ): Double {
         val segmentDistance = distanceToSegment(
-            vehicle.latitude, vehicle.longitude, from, to
+            vehicle.latitude, vehicle.longitude, pattern.stops[index], pattern.stops[index + 1]
         )
-        val heading = vehicle.bearing?.let { angleDifference(it.toDouble(), bearing(from, to)) }
+        val headingError = heading?.let {
+            angleDifference(it.toDouble(), segmentBearings.getValue(pattern.id)[index])
+        }
         if (inferred && (segmentDistance > 500.0 ||
-                heading != null && heading > MAX_FORWARD_BEARING_DIFFERENCE)) return Double.POSITIVE_INFINITY
-        return segmentDistance + (heading ?: 0.0) * 5.0
+                headingError != null && headingError > MAX_FORWARD_BEARING_DIFFERENCE)) return Double.POSITIVE_INFINITY
+        return segmentDistance + (headingError ?: 0.0) * 5.0
     }
 
     private fun isStopAheadOfVehicle(vehicle: LiveVehicle, stop: TransitStop): Boolean {
@@ -478,6 +844,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 context.assets.open("transit_index.json").bufferedReader().use { it.readText() }
             )
             val array = root.getJSONArray("patterns")
+            val encodedShapes = root.optJSONObject("shapes")
+            // Patterns often share a shape; decode each one once.
+            val shapes = HashMap<String, RouteShape?>()
             val patterns = (0 until array.length()).map { index ->
                 val item = array.getJSONObject(index)
                 val stopsArray = item.getJSONArray("stops")
@@ -499,6 +868,18 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             name = stop.getString("name"),
                             latitude = stop.getDouble("lat"),
                             longitude = stop.getDouble("lon")
+                        )
+                    },
+                    shape = item.optString("shape").takeIf { it.isNotEmpty() }?.let { id ->
+                        shapes.getOrPut(id) { encodedShapes?.optString(id)?.let(RouteShape::decode) }
+                    },
+                    next = item.optJSONObject("next")?.let { next ->
+                        PatternSuccessor(
+                            patternId = next.getString("id"),
+                            waitSeconds = next.getInt("wait"),
+                            tripIds = next.optJSONArray("trips")?.let { trips ->
+                                (0 until trips.length()).mapTo(HashSet()) { trips.getString(it) }
+                            } ?: emptySet()
                         )
                     }
                 )
@@ -534,6 +915,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             return if (difference > 180) 360 - difference else difference
         }
 
+        /** Metres from a point to a stop-to-stop segment; flat-earth maths is exact enough at city scale. */
         private fun distanceToSegment(
             latitude: Double,
             longitude: Double,
@@ -545,27 +927,51 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             val py = latitude
             val ax = from.longitude * scale
             val ay = from.latitude
-            val bx = to.longitude * scale
-            val by = to.latitude
-            val dx = bx - ax
-            val dy = by - ay
+            val dx = to.longitude * scale - ax
+            val dy = to.latitude - ay
             val lengthSquared = dx * dx + dy * dy
             val t = if (lengthSquared == 0.0) 0.0 else
                 (((px - ax) * dx + (py - ay) * dy) / lengthSquared).coerceIn(0.0, 1.0)
-            val nearestLon = (ax + t * dx) / scale
-            val nearestLat = ay + t * dy
-            val result = FloatArray(1)
-            Location.distanceBetween(latitude, longitude, nearestLat, nearestLon, result)
-            return result[0].toDouble()
+            return hypot(px - (ax + t * dx), py - (ay + t * dy)) * METRES_PER_DEGREE
         }
 
         private const val MAX_TRANSFER_WALK = 350f
         private const val WALKING_METRES_PER_SECOND = 1.2f
         private const val BUS_METRES_PER_SECOND = 6.0f
         private const val DWELL_SECONDS_PER_STOP = 18f
-        // Reaching a stop uses the same walking pace as the journey estimate.
-        private const val BOARDING_MARGIN_SECONDS = 0f
+        private const val WALK_SLACK = 0.15f
+        // Getting off one bus and spotting the next takes time even at the same stop.
+        private const val TRANSFER_MARGIN_SECONDS = 20f
+        // Roads are longer than the straight lines between consecutive stops.
+        private const val ROUTE_CIRCUITY = 1.15f
+        private const val METRES_PER_DEGREE = 111_195.0
+        // How many segments past its last known position a bus may plausibly have advanced.
+        private const val PROGRESS_WINDOW = 10
+        private const val PROGRESS_RESYNC_METRES = 200.0
+        private const val OFF_ROUTE_METRES = 300.0
+        private const val AT_STOP_METRES = 10.0
+        // A shape whose line misses a stop by more than this is the wrong line for the pattern.
+        private const val MAX_SHAPE_STOP_GAP_METRES = 120.0
+        // Buses further than this from the end of their line are not yet worth counting on to turn around.
+        private const val MAX_TURNAROUND_LOOKAHEAD_SECONDS = 1_200f
+        // Passengers off, driver across, doors open: no turnaround is quicker than this.
+        private const val MIN_TURNAROUND_SECONDS = 60
+        // A scheduled wait is the plan, not a promise; lean towards the later departure.
+        private const val TURNAROUND_BUFFER_SECONDS = 90f
         private const val MAX_BOARDING_HEADING_CHECK_METRES = 2_000f
         private const val MAX_FORWARD_BEARING_DIFFERENCE = 100.0
+        private const val AMBIGUOUS_SCORE_MARGIN = 75.0
+        private const val UNKNOWN_BEARING = 0f
+        private const val MAX_UNKNOWN_BEARING_ERROR = 60.0
+        // Beyond this the bus is off its line (diversion, depot run) and the route says nothing.
+        private const val MAX_SNAP_METRES = 100.0
+        // Movement shorter than this is GPS jitter, not a direction of travel.
+        private const val MIN_MOVE_METRES = 30f
+        // A reported bearing is overruled only by movement clearly longer than jitter.
+        private const val CONTRADICTION_MOVE_METRES = 60f
+        // No bus covers this between two fixes, so the vehicle ID has been reused.
+        private const val MAX_PLAUSIBLE_MOVE_METRES = 3_000f
+        private const val MOTION_MEMORY_SECONDS = 300L
+        private const val MOVEMENT_FRESH_SECONDS = 90L
     }
 }

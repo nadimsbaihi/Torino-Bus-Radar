@@ -7,6 +7,7 @@ import java.io.File
 import java.security.MessageDigest
 import java.text.Normalizer
 import java.util.Locale
+import kotlin.math.cos
 
 data class OfflinePlace(
     val name: String,
@@ -39,14 +40,24 @@ class OfflineCity private constructor(
                        toLatitude: Double, toLongitude: Double): WalkGraph.Route? =
         walkGraph.shortWalkRoute(fromLatitude, fromLongitude, toLatitude, toLongitude)
 
-    fun search(query: String): List<OfflinePlace> {
-        val normalized = normalize(query)
-        val words = normalized.split(' ').filter { it.isNotEmpty() }
-        if (words.isEmpty()) return emptyList()
+    /** Places matching [query]; among equally good matches the ones near the given point come first. */
+    fun search(query: String, nearLatitude: Double? = null, nearLongitude: Double? = null): List<OfflinePlace> {
+        val words = searchWords(query)
+        // One letter matches most of the table and would sort all of it on every keystroke.
+        if (words.isEmpty() || words.singleOrNull()?.length == 1) return emptyList()
+        val key = words.joinToString(" ")
         // Numeric tokens are exact: house 1 must not silently resolve to house 10.
         // Whitespace means AND in both SQLite FTS4 query syntax variants.
         val expression = words.joinToString(" ") { word ->
             if (word.any(Char::isDigit)) "\"$word\"" else "\"$word*\""
+        }
+        // Numeric literals built from Doubles, so there is nothing to inject.
+        val distance = if (nearLatitude == null || nearLongitude == null) "0.0" else {
+            val lonScale = cos(Math.toRadians(nearLatitude)).let { it * it }
+            val lat = "%.6f".format(Locale.ROOT, nearLatitude)
+            val lon = "%.6f".format(Locale.ROOT, nearLongitude)
+            "((p.lat - $lat) * (p.lat - $lat) + (p.lon - $lon) * (p.lon - $lon) * %.4f)"
+                .format(Locale.ROOT, lonScale)
         }
         val sql = """
             SELECT p.name, p.label, p.lat, p.lon, p.kind,
@@ -58,10 +69,11 @@ class OfflineCity private constructor(
                      CASE WHEN p.name_key LIKE ? THEN 0 ELSE 1 END,
                      CASE p.kind WHEN 'place' THEN 0 WHEN 'address' THEN 1
                                  WHEN 'bus_stop' THEN 2 ELSE 3 END,
+                     $distance,
                      length(p.name), length(p.label), p.id
             LIMIT 12
         """.trimIndent()
-        return database.rawQuery(sql, arrayOf(normalized, normalized, expression, "$normalized%"))
+        return database.rawQuery(sql, arrayOf(key, key, expression, "$key%"))
             .use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) {
@@ -116,11 +128,46 @@ class OfflineCity private constructor(
                 database, File(directory, "walk_graph.bin"))
         }
 
+        private val MARKS = Regex("\\p{M}+")
+        private val SEPARATORS = Regex("[^\\p{L}\\p{N}]+")
+        // How people abbreviate street types: "c.so", "p.za", "v.le", "str.".
+        private val SPLIT_ABBREVIATIONS = mapOf(
+            "c" to ("so" to "corso"), "p" to ("za" to "piazza"), "v" to ("le" to "viale"),
+            "l" to ("go" to "largo")
+        )
+        private val SINGLE_ABBREVIATIONS = mapOf(
+            "cso" to "corso", "pza" to "piazza", "pzza" to "piazza", "vle" to "viale",
+            "lgo" to "largo", "str" to "strada", "strd" to "strada"
+        )
+
+        /** The words a search sees in [text]: accents and punctuation dropped, "c.so" spelled out. */
+        internal fun searchWords(text: String): List<String> =
+            expandAbbreviations(normalize(text).split(' ').filter { it.isNotEmpty() })
+
+        private fun expandAbbreviations(words: List<String>): List<String> {
+            val result = ArrayList<String>(words.size)
+            var index = 0
+            while (index < words.size) {
+                val word = words[index]
+                val split = SPLIT_ABBREVIATIONS[word]
+                val next = words.getOrNull(index + 1)
+                // "p za" is how "p.za" normalizes, but the prefix "so" alone is not "corso".
+                if (split != null && next == split.first) {
+                    result.add(split.second)
+                    index += 2
+                    continue
+                }
+                result.add(SINGLE_ABBREVIATIONS[word] ?: word)
+                index++
+            }
+            return result
+        }
+
         private fun normalize(value: String): String =
             Normalizer.normalize(value, Normalizer.Form.NFD)
-                .replace(Regex("\\p{M}+"), "")
+                .replace(MARKS, "")
                 .lowercase(Locale.ROOT)
-                .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+                .replace(SEPARATORS, " ")
                 .trim()
     }
 }

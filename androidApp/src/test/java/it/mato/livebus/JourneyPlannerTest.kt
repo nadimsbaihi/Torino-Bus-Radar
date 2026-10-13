@@ -57,6 +57,40 @@ class JourneyPlannerTest {
         assertTrue(journeyAfterWalking(300f)!!.departureSeconds > catchable.departureSeconds)
     }
 
+    @Test fun afterTheLastTrainThePlannerOffersTomorrowsFirstOne() = runBlocking {
+        val station = portaNuova
+        val destination = lingotto
+        val late = trains.planScheduledJourney(
+            station.latitude, station.longitude, destination.latitude, destination.longitude,
+            LocalDateTime.of(2026, 9, 24, 23, 58, 0),
+            walkFromOrigin = { _, _ -> 0f }, walkFromDestination = { _, _ -> 0f },
+            boardStopId = station.id, exitStopId = destination.id)
+        assertNotNull("Tomorrow's timetable is in the bundled data", late)
+        assertEquals(1, late!!.dayOffset)
+        // Waiting overnight is part of the journey: more than the hours until the first train.
+        assertTrue(late.estimatedTotalSeconds > late.departureSeconds + 120)
+    }
+
+    @Test fun anAfterMidnightRunBelongsToYesterdaysTimetable() = runBlocking {
+        fun stop(id: String, lat: Double, arrival: Int, departure: Int) =
+            TrainStop(id, id, lat, 7.0, arrival, departure)
+        val stops = listOf(stop("a", 45.0, 24 * 3600 + 600, 24 * 3600 + 660),
+            stop("b", 45.1, 25 * 3600, 25 * 3600 + 60))
+        val tripClass = Class.forName("it.mato.livebus.TrainIndex\$TrainTrip")
+        val trip = tripClass.declaredConstructors.single().apply { isAccessible = true }
+            .newInstance("1", "REGIONALE", "B", setOf("20260924"), stops)
+        val index = TrainIndex::class.java.getDeclaredConstructor(List::class.java)
+            .apply { isAccessible = true }.newInstance(listOf(trip)) as TrainIndex
+        // 00:05 on the 25th: the 24th's timetable is still running.
+        val journey = index.planScheduledJourney(45.0, 7.0, 45.1, 7.0,
+            LocalDateTime.of(2026, 9, 25, 0, 5, 0),
+            walkFromOrigin = { _, _ -> 0f }, walkFromDestination = { _, _ -> 0f })
+        assertNotNull(journey)
+        assertEquals(0, journey!!.dayOffset)
+        // 00:10 departure is five minutes after 00:05, the arrival fifty-five.
+        assertEquals(55 * 60f, journey.estimatedTotalSeconds, 1f)
+    }
+
     @Test fun liveBusCanConnectToScheduledTrain() = runBlocking {
         val station = portaNuova
         val destination = lingotto

@@ -18,15 +18,28 @@ destination and your search preferences.
 ## Features
 
 - **Live bus map.** See GTT vehicles across the city, with positions refreshed
-  every 15 seconds. Select a journey or line to focus the map.
+  every 15 seconds. Select a journey or line to focus the map, or tap a bus
+  to highlight its whole course and the stops it has yet to reach.
 - **Bus and train journeys.** Find direct trips and connections, including
   bus-to-train and train-to-bus options.
+- **Journey steps, out of the way of the map.** Your journey opens as a short
+  list of steps (walk, board, get off, walk) in a panel at the bottom, so the
+  map stays in view. Pull the panel up for every step, or swipe it down to
+  close it. The back button closes things one level at a time: the expanded
+  panel, a highlighted bus, then the journey, before it leaves the app.
 - **Your choice of walking.** Favor less walking, a balance, or faster trips
   with more walking. Include or exclude regional trains.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
   and regional stations without a connection or an API key.
+- **Saved places.** Tap the bookmark beside the search box to give any
+  destination a name of your own, such as "Mum's" or "Work". Saved names come
+  first in search, and an empty search box lists them. Tap the bookmark again to
+  rename or remove one. Saved places stay on your phone.
+- **Go anywhere from the map.** Press and hold on the map to plan a journey to
+  that spot, even where the bundled data has no address. Bookmark it to keep it.
 - **Walking directions.** Compare a ride with walking, then open Google Maps
-  directions to the destination or boarding stop.
+  directions to the destination or boarding stop. Maps opens only when you tap
+  a directions button, and the button stays so you can reopen the route.
 - **Shared routes.** Share directions text from another app to find a bus line
   mentioned in it.
 
@@ -73,6 +86,11 @@ network behavior, and map interaction.
   and omits the walking line.
 - Train journeys allow two minutes for boarding. The maximum walk to a boarding
   station is 1.5 km for Less walking, 2.5 km for Balanced, and 5 km for More walking.
+  Timetables use Europe/Rome time; once the day's trains have gone, the first
+  trains tomorrow are offered, marked "(+1)".
+- Bus arrival estimates assume 6 m/s, 18 s per stop, and roads 15% longer than the
+  straight line between stops. A walker needs 15% slack on the walk to a stop and
+  20 s to change buses.
 - Bus positions older than two minutes are faded and labeled as delayed;
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.
@@ -94,7 +112,7 @@ the workflow run number sets the version code.
 
 ## Data and credits
 
-- **GTT:** live vehicle positions and static routes and stops.
+- **GTT:** live vehicle positions and static routes, stops, and route shapes.
 - **OpenStreetMap contributors:** the offline map, places, addresses, and walking
   network, using a [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/).
 - **Regione Piemonte:** published GTFS timetables for Trenitalia regional trains.
@@ -127,6 +145,18 @@ python3 tools/build_offline_city.py build/offline-source androidApp/src/main/ass
 The builder uses only Python's standard library. Rebuild the search index when
 either GTFS-derived index changes. Ship updated assets in a new APK; the app
 does not download map updates automatically.
+
+The bus index, including the road shapes drawn when a bus is highlighted, comes from
+GTT's GTFS feed (`https://www.gtt.to.it/open_data/gtt_gtfs.zip`):
+
+```sh
+python3 tools/build_transit_index.py gtt_gtfs.zip androidApp/src/main/assets/transit_index.json
+```
+
+The index also records, from the timetable's blocks, which run a bus usually does after
+another, so a bus about to finish its line counts as the one coming back from the terminus.
+Trip IDs change when GTT publishes a new feed, and the app matches live buses to routes by
+trip ID, so refresh this index when live buses stop matching it.
 
 The live GTT feed is
 `https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx`.

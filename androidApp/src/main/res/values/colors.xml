@@ -9,5 +9,6 @@
     <color name="live_green">#176B62</color>
     <color name="route_orange">#176B62</color>
     <color name="train_blue">#2267A8</color>
+    <color name="course_magenta">#D81B60</color>
     <color name="warning">#B3482C</color>
 </resources>

@@ -18,7 +18,9 @@ class LocalizationTest {
         assertEquals("Quanto vuoi camminare?", context.getString(R.string.walking_label))
         assertEquals("Poco ▾", context.getString(R.string.walking_preset_less))
         assertEquals("A piedi · ~12 min", context.getString(R.string.walk_summary, 12))
-        assertEquals("A piedi · 12 min ↗", context.getString(R.string.walk_option, 12))
+        assertEquals("A piedi · 12 min", context.getString(R.string.walk_option, 12))
+        assertEquals("Salva questa destinazione", context.getString(R.string.save_destination))
+        assertEquals("“Casa” salvato", context.getString(R.string.place_saved, "Casa"))
         assertEquals("1 veicolo in tempo reale sulla linea 4",
             context.resources.getQuantityString(R.plurals.live_vehicle_count, 1, 1, "4"))
         assertEquals("2 veicoli in tempo reale sulla linea 4",
