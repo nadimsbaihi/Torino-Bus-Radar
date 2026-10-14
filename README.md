@@ -38,6 +38,8 @@ destination and your search preferences.
   with more walking. Include or exclude regional trains.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
   and regional stations without a connection or an API key.
+- **Dark mode.** The app and its offline map follow your phone's dark-mode
+  setting. Tap the half-moon button at the top to hold it light or dark instead.
 - **Saved places.** Tap the bookmark beside the search box to give any
   destination a name of your own, such as "Mum's" or "Work". Saved names come
   first in search, and an empty search box lists them, followed by the last few
