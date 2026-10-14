@@ -48,7 +48,9 @@ import androidx.core.view.doOnLayout
 import android.graphics.Typeface
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.gms.location.LocationServices
 import it.mato.livebus.databinding.ActivityMainBinding
 import it.mato.livebus.databinding.DialogSavePlaceBinding
@@ -1007,10 +1009,13 @@ class MainActivity : AppCompatActivity() {
         refreshJob?.cancel()
         refreshJob = lifecycleScope.launch {
             var forceNextFetch = forceRefresh
-            while (isActive) {
-                fetchVehicles(forceNextFetch)
-                forceNextFetch = false
-                delay(15_000)
+            // Polling stops in the background (BusAlertService does its own) and fetches at once on return.
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (isActive) {
+                    fetchVehicles(forceNextFetch)
+                    forceNextFetch = false
+                    delay(15_000)
+                }
             }
         }
     }
