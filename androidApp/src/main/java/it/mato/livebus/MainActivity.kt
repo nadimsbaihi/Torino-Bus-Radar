@@ -65,7 +65,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
-import org.mapsforge.map.android.rendertheme.AssetsRenderTheme
 import org.osmdroid.mapsforge.MapsForgeTileSource
 import org.osmdroid.mapsforge.MapsForgeTileProvider
 import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
@@ -376,9 +375,10 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val city = withContext(Dispatchers.IO) { offlineCity }
+                val night = MapTheme.isNight(this@MainActivity)
                 val source = MapsForgeTileSource.createFromFiles(arrayOf(city.mapFile),
-                    AssetsRenderTheme(assets, "offline/", "map-theme.xml"),
-                    city.mapCacheKey + "-simple-v3", "it")
+                    MapTheme.renderTheme(this@MainActivity, night),
+                    MapTheme.cacheKey(city, night), "it")
                 offlineMapSource = source
                 val provider = MapsForgeTileProvider(SimpleRegisterReceiver(this@MainActivity), source, null)
                 setTileProvider(provider)

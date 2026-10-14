@@ -2,11 +2,11 @@ package it.mato.livebus
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mapsforge.map.android.rendertheme.AssetsRenderTheme
 import org.osmdroid.mapsforge.MapsForgeTileSource
 import org.osmdroid.util.MapTileIndex
 import org.robolectric.RobolectricTestRunner
@@ -21,10 +21,41 @@ import kotlin.math.*
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class OfflineMapRenderTest {
     @Test fun bundledMapRendersTorinoWithoutNetworkTiles() {
+        renderPreview(false, "offline-map-preview.png")
+    }
+
+    @Test fun nightMapRendersWithADarkBackground() {
+        val preview = renderPreview(true, "offline-map-preview-night.png")
+        var luminance = 0.0
+        var count = 0
+        for (py in 0 until 768 step 8) for (px in 0 until 768 step 8) {
+            val pixel = preview.getPixel(px, py)
+            luminance += (Color.red(pixel) * 0.299 + Color.green(pixel) * 0.587 + Color.blue(pixel) * 0.114) / 255
+            count++
+        }
+        assertTrue("Night map should be dark overall", luminance / count < 0.3)
+    }
+
+    @Test fun themeFilesFollowTheNightFlag() {
+        assertEquals("map-theme.xml", MapTheme.fileName(false))
+        assertEquals("map-theme-night.xml", MapTheme.fileName(true))
+        val city = (RuntimeEnvironment.getApplication() as MatoApplication).offlineCity
+        assertNotEquals(MapTheme.cacheKey(city, false), MapTheme.cacheKey(city, true))
+    }
+
+    @Test @Config(qualifiers = "night") fun nightConfigurationIsDetected() {
+        assertTrue(MapTheme.isNight(RuntimeEnvironment.getApplication()))
+    }
+
+    @Test @Config(qualifiers = "notnight") fun dayConfigurationIsDetected() {
+        assertFalse(MapTheme.isNight(RuntimeEnvironment.getApplication()))
+    }
+
+    private fun renderPreview(night: Boolean, fileName: String): Bitmap {
         val city = (RuntimeEnvironment.getApplication() as MatoApplication).offlineCity
         val source = MapsForgeTileSource.createFromFiles(arrayOf(city.mapFile),
-            AssetsRenderTheme(RuntimeEnvironment.getApplication().assets, "offline/", "map-theme.xml"),
-            city.mapCacheKey + "-simple-v1", "it")
+            MapTheme.renderTheme(RuntimeEnvironment.getApplication(), night),
+            MapTheme.cacheKey(city, night) + "-test", "it")
         try {
             assertTrue(source.bounds.contains(45.0692, 7.6560))
             val zoom = 16
@@ -42,10 +73,11 @@ class OfflineMapRenderTest {
             val colours = mutableSetOf<Int>()
             for (py in 0 until 768 step 8) for (px in 0 until 768 step 8) colours.add(preview.getPixel(px, py))
             assertTrue("Rendered tiles must contain map detail, not a blank background", colours.size > 20)
-            val output = File("build/reports/offline-map-preview.png")
+            val output = File("build/reports/$fileName")
             output.parentFile!!.mkdirs()
             output.outputStream().use { preview.compress(Bitmap.CompressFormat.PNG, 100, it) }
             println("Offline map preview: ${output.absolutePath}")
+            return preview
         } finally {
             source.dispose()
         }
