@@ -118,7 +118,10 @@ network behavior, and map interaction.
   station is 1.5 km for Less walking, 2.5 km for Balanced, and 5 km for More walking.
   Timetables use Europe/Rome time; once the day's trains have gone, the first
   trains tomorrow are offered, marked "(+1)".
-- Bus arrival estimates add 18 s per stop to the drive between stops, and the drive
+- Bus arrival estimates add 18 s per stop to the drive between stops. Distances
+  follow the line's road shape: stop to stop along the shape, and from a bus to the
+  next stop from where it sits on the shape. A line without a shape that fits its
+  stops falls back to straight lines between stops, 15% longer. The drive
   uses speeds learned from the live feed: between two refreshes, how far each bus got
   along its line, with the time at stops taken out. Standing, jittering,
   off-line, turned-around, and implausible samples are dropped. The app keeps a

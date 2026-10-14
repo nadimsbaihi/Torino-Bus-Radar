@@ -265,10 +265,11 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             context.ensureActive()
             val pattern = matchDirection(vehicle) ?: return@mapNotNull null
             val progress = progressIndex(vehicle, pattern) ?: return@mapNotNull null
-            learnSpeed(vehicle, pattern, progress)
+            val position = routePosition(vehicle, pattern, progress)
+            learnSpeed(vehicle, pattern, progress, position)
             val speed = speedOf(pattern, nowSeconds)
             TrackedVehicle(vehicle, pattern, progress,
-                arrivalSeconds(vehicle, pattern, progress, nowSeconds, speed), speed = speed)
+                arrivalSeconds(vehicle, pattern, progress, nowSeconds, speed, position), speed = speed)
         }
         return running + running.mapNotNull { turnaroundOf(it, nowSeconds) }
     }
@@ -282,13 +283,18 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
      * speed model what that says about the pace of its line. Only buses on a trip the timetable
      * knows count: for a guessed line the position along it is too uncertain to measure.
      */
-    private fun learnSpeed(vehicle: LiveVehicle, pattern: TransitPattern, progress: Int) {
+    private fun learnSpeed(
+        vehicle: LiveVehicle,
+        pattern: TransitPattern,
+        progress: Int,
+        position: RoutePosition
+    ) {
         if (exactTripPattern(vehicle)?.id != pattern.id) {
             synchronized(speedFixes) { speedFixes.remove(vehicle.id) }
             return
         }
-        val (along, offLine) = alongRoute(vehicle, pattern, progress) ?: return
-        val fix = SpeedSampler.Fix(vehicle.timestampSeconds, pattern.id, along, progress + 1, offLine)
+        val fix = SpeedSampler.Fix(vehicle.timestampSeconds, pattern.id,
+            position.alongMetres, progress + 1, position.offLineMetres)
         val previous = synchronized(speedFixes) {
             val old = speedFixes[vehicle.id]
             // The same feed is tracked several times (map, planner, alerts); count each fix once.
@@ -303,27 +309,47 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     }
 
     /**
-     * Metres of road from the line's first stop to the vehicle, and how far the vehicle is from the
-     * line. Along the shape when there is one, otherwise along the straight lines between stops
-     * scaled by the usual circuity.
+     * Where a vehicle is on its line: metres of road from the first stop, how far the vehicle is
+     * from the line, and the metres of road still to drive to the next stop. Along the shape when
+     * the pattern has a usable one; otherwise along the straight lines between stops, scaled by the
+     * usual circuity.
      */
-    private fun alongRoute(vehicle: LiveVehicle, pattern: TransitPattern, progress: Int): Pair<Double, Double>? {
+    private class RoutePosition(
+        val alongMetres: Double,
+        val offLineMetres: Double,
+        val toNextStopMetres: Float
+    )
+
+    private fun routePosition(vehicle: LiveVehicle, pattern: TransitPattern, progress: Int): RoutePosition {
+        val stops = pattern.stops
+        val nextIndex = (progress + 1).coerceAtMost(stops.lastIndex)
+        val straightToNext = distance(vehicle.latitude, vehicle.longitude, stops[nextIndex])
         val shape = pattern.shape
         val alignment = alignmentOf(pattern)
         if (shape != null && alignment != null) {
-            val last = pattern.stops.lastIndex
             val fix = shape.nearest(vehicle.latitude, vehicle.longitude,
                 alignment.chainages[(progress - 1).coerceAtLeast(0)],
-                alignment.chainages[(progress + 2).coerceAtMost(last)]) ?: return null
-            return fix.chainage to fix.distance
+                alignment.chainages[(progress + 2).coerceAtMost(stops.lastIndex)])
+            if (fix != null && fix.distance <= OFF_ROUTE_METRES) {
+                // Never shorter than the crow flies, whatever a shape or its alignment says.
+                var toNext = (alignment.chainages[nextIndex] - fix.chainage).toFloat()
+                // The bus is on the stretch into the next stop, so it cannot have more to drive than
+                // that stretch (as capped for stop-to-stop distances), nor less than the crow flies.
+                if (nextIndex > 0) {
+                    val road = roadDistances(pattern)
+                    toNext = minOf(toNext, road[nextIndex] - road[nextIndex - 1] + SEGMENT_SLACK_METRES)
+                }
+                toNext = maxOf(toNext, straightToNext)
+                return RoutePosition(fix.chainage, fix.distance, toNext)
+            }
         }
-        val from = pattern.stops[progress]
-        val to = pattern.stops[progress + 1]
-        val segment = distanceBetween(from, to)
-        val into = distance(vehicle.latitude, vehicle.longitude, from).coerceAtMost(segment)
+        // No usable shape, or off it: straight lines between stops.
+        val from = stops[progress]
+        val to = stops[nextIndex]
+        val into = distance(vehicle.latitude, vehicle.longitude, from).coerceAtMost(distanceBetween(from, to))
         val straight = cumulativeDistances.getValue(pattern.id)[progress] + into
-        return (straight * ROUTE_CIRCUITY).toDouble() to
-            distanceToSegment(vehicle.latitude, vehicle.longitude, from, to)
+        return RoutePosition((straight * ROUTE_CIRCUITY).toDouble(),
+            distanceToSegment(vehicle.latitude, vehicle.longitude, from, to), straightToNext * ROUTE_CIRCUITY)
     }
 
     private val patternsById by lazy { patterns.associateBy { it.id } }
@@ -607,14 +633,13 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         pattern: TransitPattern,
         progressIndex: Int,
         nowSeconds: Long,
-        speed: Float
+        speed: Float,
+        position: RoutePosition
     ): FloatArray {
         val stops = pattern.stops
         val arrivals = FloatArray(stops.size)
         val nextIndex = (progressIndex + 1).coerceAtMost(stops.lastIndex)
-        // Straight lines between stops understate the road; scale them to realistic travel.
-        val vehicleToNext = distance(vehicle.latitude, vehicle.longitude, stops[nextIndex]) *
-            ROUTE_CIRCUITY
+        val vehicleToNext = position.toNextStopMetres
         // The position is old: the bus has been driving towards the stop since it was recorded.
         val age = vehicle.ageSecondsAt(nowSeconds)
         for (index in nextIndex until stops.size) {
@@ -624,9 +649,36 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         return arrivals
     }
 
-    /** Estimated driving distance between two stops of [pattern]. */
-    private fun routeDistance(pattern: TransitPattern, fromIndex: Int, toIndex: Int): Float =
-        straightRouteDistance(pattern, fromIndex, toIndex) * ROUTE_CIRCUITY
+    /**
+     * Driving distance between two stops of [pattern]: along its shape when it has one that fits
+     * its stops, otherwise the straight lines between stops scaled by the usual circuity.
+     */
+    private fun routeDistance(pattern: TransitPattern, fromIndex: Int, toIndex: Int): Float {
+        if (toIndex <= fromIndex) return 0f
+        val distances = roadDistances(pattern)
+        return distances[toIndex] - distances[fromIndex]
+    }
+
+    // Cumulative road metres to every stop of a pattern, worked out once.
+    private val roadCumulative = HashMap<String, FloatArray>()
+
+    @Synchronized
+    private fun roadDistances(pattern: TransitPattern): FloatArray = roadCumulative.getOrPut(pattern.id) {
+        val straight = cumulativeDistances.getValue(pattern.id)
+        val alignment = alignmentOf(pattern)
+        FloatArray(straight.size).also { road ->
+            for (index in 1 until road.size) {
+                val crowFlies = straight[index] - straight[index - 1]
+                val segment = if (alignment == null) crowFlies * ROUTE_CIRCUITY else {
+                    // Along the shape; a stretch can neither be shorter than the straight line
+                    // nor, when the stop pinned to the wrong pass of a looping line, absurdly longer.
+                    (alignment.chainages[index] - alignment.chainages[index - 1]).toFloat()
+                        .coerceIn(crowFlies, crowFlies * MAX_DETOUR_FACTOR + MAX_DETOUR_SLACK_METRES)
+                }
+                road[index] = road[index - 1] + segment
+            }
+        }
+    }
 
     /** Sum of the straight lines between consecutive stops. */
     private fun straightRouteDistance(pattern: TransitPattern, fromIndex: Int, toIndex: Int): Float {
@@ -1080,6 +1132,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         private const val STALE_MIN_VEHICLES = 10
         private const val STALE_MAX_KNOWN_SHARE = 0.25
         private const val SECONDS_PER_DAY = 86_400L
+        private const val SEGMENT_SLACK_METRES = 150f
+        private const val MAX_DETOUR_FACTOR = 2.5f
+        private const val MAX_DETOUR_SLACK_METRES = 200f
         private const val MAX_SPEED_FIXES = 3_000
         private const val DWELL_SECONDS_PER_STOP = 18f
         private const val WALK_SLACK = 0.15f
