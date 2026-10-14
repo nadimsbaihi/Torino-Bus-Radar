@@ -31,6 +31,9 @@ destination and your search preferences.
 - **Approach alerts.** Tap Notify me to get a notification when your bus is
   300, 500, 700, or 1000 metres from your boarding stop. The app remembers your
   choice.
+- **Leave-by time.** The walk to your boarding stop says when to set off, such
+  as "leave in ~3 min", or "leave now" when the bus is about as far away as
+  your walk.
 - **Your choice of walking.** Favor less walking, a balance, or faster trips
   with more walking. Include or exclude regional trains.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,

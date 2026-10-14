@@ -25,11 +25,12 @@ object JourneySteps {
     // A shorter walk is just standing at the stop; a step for it would be noise.
     private const val MIN_WALK_METRES = 20f
     private const val STALE_POSITION_SECONDS = 120
+    // The planner's walking pace.
+    private const val WALKING_SPEED = 1.2f
 
     fun forBus(context: Context, bus: JourneyChoice) = JourneyGuide(
         buildList {
-            walkTo(context, bus.walkingMetres, bus.boardAt, directions = true)?.let(::add)
-            addAll(busLeg(context, bus, withEta = true))
+            addAll(firstBusLeg(context, bus))
             walkToDestination(context, bus.destinationWalkMetres)?.let(::add)
         },
         busNotes(context, bus)
@@ -49,8 +50,7 @@ object JourneySteps {
         val train = mixed.train
         val steps = buildList {
             if (mixed.busFirst) {
-                walkTo(context, bus.walkingMetres, bus.boardAt, directions = true)?.let(::add)
-                addAll(busLeg(context, bus, withEta = true))
+                addAll(firstBusLeg(context, bus))
                 walkTo(context, bus.destinationWalkMetres, train.boardAt)?.let(::add)
                 addAll(trainLeg(context, train))
                 walkToDestination(context, train.destinationWalkMetres)?.let(::add)
@@ -71,6 +71,25 @@ object JourneySteps {
             context.getString(R.string.step_walk_to_destination, metres), destination)),
         listOf(context.getString(R.string.walking_selected, metres, minutes))
     )
+
+    /**
+     * The walk to the boarding stop and the ride, with when to set off so the bus is not missed:
+     * its arrival less the walk. It rides on the walk step, or on boarding when there is no walk.
+     */
+    private fun firstBusLeg(context: Context, bus: JourneyChoice): List<JourneyStep> {
+        val steps = listOfNotNull(walkTo(context, bus.walkingMetres, bus.boardAt, directions = true)) +
+            busLeg(context, bus, withEta = true)
+        val leave = leaveBy(context, bus)
+        val first = steps.first()
+        return listOf(first.copy(text = "${first.text} · $leave")) + steps.drop(1)
+    }
+
+    internal fun leaveBy(context: Context, bus: JourneyChoice): String {
+        val walkSeconds = if (bus.walkingMetres < MIN_WALK_METRES) 0f else bus.walkingMetres / WALKING_SPEED
+        val minutes = ((bus.boardingEtaSeconds - walkSeconds) / 60f).toInt()
+        return if (minutes < 1) context.getString(R.string.leave_now)
+        else context.getString(R.string.leave_in, minutes)
+    }
 
     private fun busLeg(context: Context, bus: JourneyChoice, withEta: Boolean): List<JourneyStep> = buildList {
         add(JourneyStep(StepKind.BUS,

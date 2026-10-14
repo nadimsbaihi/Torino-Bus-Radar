@@ -44,7 +44,7 @@ class JourneyStepsTest {
         val guide = JourneySteps.forBus(context, bus())
 
         assertEquals(listOf(
-            "Walk 250 m to Via Roma",
+            "Walk 250 m to Via Roma · leave now",
             "Board bus 4 · arrives in ~4 min",
             "Get off at Piazza Castello",
             "Walk 120 m to your destination"
@@ -62,10 +62,22 @@ class JourneyStepsTest {
         assertTrue(guide.steps.drop(1).all { it.target == null })
     }
 
+    @Test fun leaveByIsTheBusArrivalLessTheWalk() {
+        // 600 s until the bus, 300 m (250 s) to walk: set off in about 5 minutes.
+        assertEquals("leave in ~5 min", JourneySteps.leaveBy(context, bus(walk = 300f, eta = 600f)))
+        assertEquals("Walk 300 m to Via Roma · leave in ~5 min",
+            texts(JourneySteps.forBus(context, bus(walk = 300f, eta = 600f))).first())
+    }
+
+    @Test fun leaveNowWhenTheWalkTakesAsLongAsTheBusDoes() {
+        assertEquals("leave now", JourneySteps.leaveBy(context, bus(walk = 300f, eta = 250f)))
+        assertEquals("leave now", JourneySteps.leaveBy(context, bus(walk = 300f, eta = 100f)))
+    }
+
     @Test fun aNegligibleWalkIsNotAStep() {
         val guide = JourneySteps.forBus(context, bus(walk = 5f, lastWalk = 0f))
 
-        assertEquals(listOf("Board bus 4 · arrives in ~4 min", "Get off at Piazza Castello"), texts(guide))
+        assertEquals(listOf("Board bus 4 · arrives in ~4 min · leave in ~4 min", "Get off at Piazza Castello"), texts(guide))
     }
 
     @Test fun aTransferAddsTheChangeAndTheSecondRide() {
@@ -76,7 +88,7 @@ class JourneyStepsTest {
         val guide = JourneySteps.forBus(context, bus(leg = leg, transfer = transfer, transferWalk = 80f))
 
         assertEquals(listOf(
-            "Walk 250 m to Via Roma",
+            "Walk 250 m to Via Roma · leave now",
             "Board bus 4 · arrives in ~4 min",
             "Get off at Corso Vittorio",
             "Walk 80 m to Corso Vittorio",
@@ -118,7 +130,7 @@ class JourneyStepsTest {
             MixedJourney(bus(lastWalk = 150f), train(walk = 0f), busFirst = true, estimatedTotalSeconds = 3_000f))
 
         assertEquals(listOf(
-            "Walk 250 m to Via Roma",
+            "Walk 250 m to Via Roma · leave now",
             "Board bus 4 · arrives in ~4 min",
             "Get off at Piazza Castello",
             "Walk 150 m to Torino Porta Susa",
@@ -160,7 +172,7 @@ class JourneyStepsTest {
     @Test @Config(qualifiers = "it") fun stepsAreInItalian() {
         val guide = JourneySteps.forBus(context, bus())
 
-        assertEquals("Cammina per 250 m fino a Via Roma", guide.steps.first().text)
+        assertEquals("Cammina per 250 m fino a Via Roma · parti ora", guide.steps.first().text)
         assertEquals("Sali sul bus 4 · arriva tra circa 4 min", guide.steps[1].text)
         assertEquals("Scendi a Piazza Castello", guide.steps[2].text)
     }

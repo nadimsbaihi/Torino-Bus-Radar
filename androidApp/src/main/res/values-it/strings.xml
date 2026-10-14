@@ -107,6 +107,8 @@
     <string name="step_walk_to_destination">Cammina per %1$d m fino a destinazione</string>
     <string name="step_board_bus_eta">Sali sul bus %1$s · arriva tra circa %2$d min</string>
     <string name="step_board_bus">Sali sul bus %1$s</string>
+    <string name="leave_in">parti tra circa %1$d min</string>
+    <string name="leave_now">parti ora</string>
     <string name="step_get_off">Scendi a %1$s</string>
     <string name="step_change_bus">Cambia con il bus %1$s a %2$s</string>
     <string name="step_take_train">Treno %1$s %2$s per %3$s · parte alle %4$s</string>
