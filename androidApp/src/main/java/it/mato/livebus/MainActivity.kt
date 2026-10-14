@@ -1274,7 +1274,7 @@ class MainActivity : AppCompatActivity() {
             title = TransitIndex.cleanStopName(stop.name)
             icon = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.WHITE)
+                setColor(getColor(R.color.map_face))
                 setStroke((1.5f * density).roundToInt(), ring)
                 val size = (STOP_DOT_DP * density).roundToInt()
                 setSize(size, size)
@@ -1282,7 +1282,7 @@ class MainActivity : AppCompatActivity() {
         }
         return buildList {
             if (course.passed.size >= 2) add(line(course.passed, faded, 3.5f))
-            add(line(course.ahead, Color.WHITE, 8f))
+            add(line(course.ahead, getColor(R.color.map_casing), 8f))
             add(line(course.ahead, colour, 5f))
             // Dots sit above the line but, like it, below every bus and journey marker.
             course.passedStops.forEach { add(stopDot(it, faded)) }
@@ -1335,7 +1335,7 @@ class MainActivity : AppCompatActivity() {
             // A white casing keeps the route leg readable over streets and labels.
             binding.map.overlays.add(Polyline(binding.map).apply {
                 setPoints(points)
-                outlinePaint.color = Color.WHITE
+                outlinePaint.color = getColor(R.color.map_casing)
                 outlinePaint.strokeWidth = 6f * resources.displayMetrics.density
                 outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
                 outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
@@ -1370,7 +1370,7 @@ class MainActivity : AppCompatActivity() {
                         GeoPoint(leg.boardAt.latitude, leg.boardAt.longitude))
                 }
             }
-            for ((colour, width) in listOf(Color.WHITE to 6f, getColor(R.color.deep_green) to 3.5f)) {
+            for ((colour, width) in listOf(getColor(R.color.map_casing) to 6f, getColor(R.color.deep_green) to 3.5f)) {
                 binding.map.overlays.add(Polyline(binding.map).apply {
                     setPoints(secondPoints)
                     outlinePaint.color = colour
@@ -1402,7 +1402,7 @@ class MainActivity : AppCompatActivity() {
         if (points.size >= 2) {
             binding.map.overlays.add(Polyline(binding.map).apply {
                 setPoints(points)
-                outlinePaint.color = Color.WHITE
+                outlinePaint.color = getColor(R.color.map_casing)
                 outlinePaint.strokeWidth = 6f * resources.displayMetrics.density
                 outlinePaint.strokeCap = Paint.Cap.ROUND
             })
@@ -1442,7 +1442,7 @@ class MainActivity : AppCompatActivity() {
         val dash = DashPathEffect(floatArrayOf(9f * density, 7f * density), 0f)
         binding.map.overlays.add(Polyline(binding.map).apply {
             setPoints(points)
-            outlinePaint.color = Color.WHITE
+            outlinePaint.color = getColor(R.color.map_casing)
             outlinePaint.strokeWidth = 5f * density
             outlinePaint.strokeCap = Paint.Cap.ROUND
             outlinePaint.pathEffect = dash
@@ -1487,7 +1487,7 @@ class MainActivity : AppCompatActivity() {
             icon = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(color)
-                setStroke((2 * resources.displayMetrics.density).roundToInt(), Color.WHITE)
+                setStroke((2 * resources.displayMetrics.density).roundToInt(), getColor(R.color.map_casing))
                 val size = (sizeDp * resources.displayMetrics.density).roundToInt()
                 setSize(size, size)
             }
@@ -1703,15 +1703,15 @@ class MainActivity : AppCompatActivity() {
         val color = if (closest) getColor(R.color.route_orange) else getColor(R.color.deep_green)
 
         paint.style = Paint.Style.FILL
-        paint.color = if (closest) color else Color.WHITE
+        paint.color = if (closest) color else getColor(R.color.map_face)
         canvas.drawCircle(center, center, busRadius, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = ring
-        paint.color = if (closest) Color.WHITE else color
+        paint.color = if (closest) getColor(R.color.map_on_accent) else color
         canvas.drawCircle(center, center, busRadius - paint.strokeWidth / 2f, paint)
 
         paint.style = Paint.Style.FILL
-        paint.color = if (closest) Color.WHITE else color
+        paint.color = if (closest) getColor(R.color.map_on_accent) else color
         lines.forEachIndexed { index, line ->
             val offset = (index - (lines.size - 1) / 2f) * paint.textSize
             canvas.drawText(line, center, center + offset - (paint.ascent() + paint.descent()) / 2, paint)
@@ -1728,7 +1728,7 @@ class MainActivity : AppCompatActivity() {
             val arrowY = center + directionY * separation
 
             paint.style = Paint.Style.FILL
-            paint.color = Color.WHITE
+            paint.color = getColor(R.color.map_face)
             canvas.drawCircle(arrowX, arrowY, arrowRadius, paint)
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.5f * density

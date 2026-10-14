@@ -12,4 +12,7 @@
     <color name="course_magenta">#FF6FA3</color>
     <color name="warning">#FF8F73</color>
     <color name="shared_bg">#26352D</color>
+    <color name="map_casing">#161A19</color>
+    <color name="map_face">#1C2321</color>
+    <color name="map_on_accent">#0B1F1C</color>
 </resources>
