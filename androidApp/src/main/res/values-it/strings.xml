@@ -63,6 +63,7 @@
     <string name="bus_passed_replanning">Non fai più in tempo a prendere questo bus · ricalcolo del percorso…</string>
     <string name="restoring_journey">Ricalcolo del percorso verso la tua destinazione…</string>
     <string name="walking_selected">Stima: %1$d m, ~%2$d min. Maps può variare.</string>
+    <string name="no_ride_beats_walking">Nessun mezzo batte la camminata</string>
     <string name="walk_there">Vai a piedi</string>
     <string name="walk_to_boarding_stop">Indicazioni fino alla fermata</string>
     <string name="lazy_bus_option">Prendi i mezzi</string>
@@ -129,14 +130,14 @@
         <item quantity="other">%1$d veicoli GTT in tempo reale su tutte le linee</item>
     </plurals>
     <string name="close_journey">Chiudi il percorso</string>
-    <string name="location_unavailable">Posizione non disponibile. Prova vicino a una finestra o all’aperto, poi tocca di nuovo il pulsante della posizione.</string>
+    <string name="location_unavailable">Posizione non trovata · riprova all’aperto</string>
     <string name="location_approximate">Posizione approssimativa</string>
     <string name="journey_failed">Impossibile calcolare il percorso. Riprova.</string>
     <string name="checking_transfers">Ricerca delle coincidenze…</string>
     <string name="map_attribution">© contributori di OpenStreetMap</string>
-    <string name="device_location_off">La posizione del dispositivo è disattivata. Attivala per pianificare un percorso dalla tua posizione.</string>
+    <string name="device_location_off">Posizione del telefono disattivata</string>
     <string name="turn_on_location">Attiva la posizione</string>
-    <string name="location_permission_required">Consenti a Torino Bus Radar di accedere alla tua posizione. Tocca il pulsante della posizione per riprovare.</string>
+    <string name="location_permission_required">Serve il permesso di posizione</string>
     <string name="offline_map_loading">Caricamento della mappa offline di Torino…</string>
     <string name="offline_map_failed">Impossibile aprire la mappa offline. Riavvia l’app.</string>
     <string name="save_destination">Salva questa destinazione</string>

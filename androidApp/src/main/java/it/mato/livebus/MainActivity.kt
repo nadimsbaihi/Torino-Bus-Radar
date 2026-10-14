@@ -44,6 +44,7 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationManagerCompat
@@ -1079,6 +1080,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     val (fromOrigin, fromDestination) = walkingTask.await()
                     walkingFromOrigin = fromOrigin
                     walkingFromDestination = fromDestination
+                    val walkSeconds = directWalkingDistance(address.first, address.second) /
+                        WALKING_METRES_PER_SECOND
                     val options = withContext(Dispatchers.Default) {
                         timed("journeys") {
                             hasMatchedVehicles = journeyVehicles.any { transitIndex.matchDirection(it) != null }
@@ -1096,8 +1099,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                             ), onDirectJourney = { direct ->
                                 withContext(Dispatchers.Main) {
                                     val trainChoice = trainTask?.await()
-                                    if (direct != null || trainChoice != null) {
-                                        displayJourney(destination, address, direct, trainChoice, frame = true)
+                                        ?.takeIf { worthTaking(it.estimatedTotalSeconds, walkSeconds) }
+                                    val bus = direct?.takeIf { worthTaking(it.estimatedTotalSeconds, walkSeconds) }
+                                    if (bus != null || trainChoice != null) {
+                                        displayJourney(destination, address, bus, trainChoice, frame = true)
                                         appendJourneyNote(getString(R.string.checking_transfers))
                                         shown = true
                                     }
@@ -1105,10 +1110,15 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                             })
                         }
                     }
-                    val trainChoice = trainTask?.await()
-                    val busChoice = options.firstOrNull { it.bus != null }?.bus
-                    val mixedChoice = options.firstOrNull { it.mixed != null }?.mixed
-                    if (busChoice == null && trainChoice == null && mixedChoice == null) {
+                    val plannedTrain = trainTask?.await()
+                    val trainChoice = plannedTrain?.takeIf { worthTaking(it.estimatedTotalSeconds, walkSeconds) }
+                    val worthOptions = options.filter { worthTaking(it.totalSeconds, walkSeconds) }
+                    val busChoice = worthOptions.firstOrNull { it.bus != null }?.bus
+                    val mixedChoice = worthOptions.firstOrNull { it.mixed != null }?.mixed
+                    if (busChoice == null && trainChoice == null && mixedChoice == null &&
+                        (plannedTrain != null || options.isNotEmpty())) {
+                        showWalkingOnly(destination, address)
+                    } else if (busChoice == null && trainChoice == null && mixedChoice == null) {
                         showJourneyMessage(getString(
                             if (vehicleResult.isFailure) R.string.journey_feed_unavailable
                             else if (liveVehicles.isEmpty()) R.string.no_live_vehicles_now
@@ -1118,7 +1128,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     } else {
                         val changed = mixedChoice != mixedJourneyChoice ||
                             (busChoice != journeyChoice && trainJourneyChoice == null)
-                        showJourneyOptions(destination, address, options, trainChoice, frame = !shown || changed)
+                        showJourneyOptions(destination, address, worthOptions, trainChoice, frame = !shown || changed)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -1912,14 +1922,16 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
-    private fun showJourneyMessage(message: String) {
+    private fun showJourneyMessage(message: String) = showJourneyMessage(message, null)
+
+    private fun showJourneyMessage(message: String, @DrawableRes icon: Int?) {
         hideTravelModeChoices()
         transitGuide = null
         binding.journeySteps.removeAllViews()
         binding.journeyTitle.setText(R.string.your_journey)
         binding.locationSettingsButton.visibility = View.GONE
         binding.destinationLayout.error = null
-        binding.sharedDirections.text = message
+        binding.sharedDirections.text = icon?.let { notesText(listOf(JourneyNote(it, message))) } ?: message
         binding.sharedDirections.visibility = View.VISIBLE
         // A message is short, so show all of it rather than a clipped peek.
         showJourneySheet(BottomSheetBehavior.STATE_EXPANDED)
@@ -2234,7 +2246,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             if (!enabled) R.string.device_location_off
             else if (!hasLocationPermission()) R.string.location_permission_required
             else R.string.location_unavailable
-        ))
+        ), R.drawable.ic_my_location)
         binding.locationSettingsButton.visibility = if (enabled) View.GONE else View.VISIBLE
     }
 
@@ -2346,6 +2358,46 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         frameCurrentJourney()
     }
 
+    /**
+     * Every ride found takes far longer than walking there, such as tomorrow's first train while
+     * the buses are out of reach: offer only the walk.
+     */
+    private fun showWalkingOnly(destination: String, address: Pair<Double, Double>) {
+        hideTravelModeChoices()
+        if (destination.trim() != myLocationLabel) {
+            saveLastDestination(destination.trim())
+            recentDestinations.add(destination, address.first, address.second)
+        }
+        journeyChoice = null
+        trainJourneyChoice = null
+        mixedJourneyChoice = null
+        transitGuide = null
+        selectedRoute = null
+        selectedPattern = null
+        highlightedVehicleId = null
+        binding.destinationLayout.error = null
+        binding.locationSettingsButton.visibility = View.GONE
+        val target = GeoPoint(address.first, address.second)
+        directDestination = target
+        directWalkingMetres = directWalkingDistance(address.first, address.second)
+        directWalkingSeconds = directWalkingMetres / WALKING_METRES_PER_SECOND
+        walkingMode = true
+        binding.journeyTitle.text = getString(R.string.walk_summary, minutes(directWalkingSeconds))
+        val guide = JourneySteps.forWalking(this, directWalkingMetres.roundToInt(),
+            minutes(directWalkingSeconds), target)
+        renderJourneyGuide(guide.copy(notes =
+            listOf(JourneyNote(R.drawable.ic_bolt, getString(R.string.no_ride_beats_walking))) + guide.notes))
+        binding.boardStopDirectionsButton.setText(R.string.open_walking_directions)
+        binding.boardStopDirectionsButton.visibility = View.VISIBLE
+        showJourneySheet(BottomSheetBehavior.STATE_COLLAPSED)
+        renderVehicles()
+        frameCurrentJourney()
+    }
+
+    /** A ride is worth offering beside walking unless it takes far longer than the walk. */
+    private fun worthTaking(totalSeconds: Float, walkSeconds: Float) =
+        totalSeconds <= maxOf(walkSeconds * WORTH_WALK_FACTOR, walkSeconds + WORTH_WALK_SLACK_SECONDS)
+
     private fun selectBusMode() {
         if (journeyChoice == null && trainJourneyChoice == null) return
         planningJob?.cancel()
@@ -2456,6 +2508,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         const val STALE_NOTICE_VERSION = "stale_notice_version"
         const val INCLUDE_TRAINS = "include_trains"
         const val WALKING_METRES_PER_SECOND = 1.2f
+        /** A ride is not offered when it takes more than 1.5 times the walk and 15 minutes more. */
+        private const val WORTH_WALK_FACTOR = 1.5f
+        private const val WORTH_WALK_SLACK_SECONDS = 15 * 60f
         const val WALKING_STREET_FACTOR = 1.2f
         const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"
         const val MISSING_REFRESHES_BEFORE_REPLAN = 3

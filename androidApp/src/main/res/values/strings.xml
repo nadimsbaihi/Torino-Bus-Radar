@@ -63,6 +63,7 @@
     <string name="bus_passed_replanning">That bus is no longer catchable · recalculating the whole journey with current live vehicles…</string>
     <string name="restoring_journey">Restoring your destination and recalculating the best live journey…</string>
     <string name="walking_selected">Estimate: %1$d m, ~%2$d min. Maps may differ.</string>
+    <string name="no_ride_beats_walking">No ride beats walking</string>
     <string name="walk_there">Walk instead</string>
     <string name="walk_to_boarding_stop">Directions to boarding stop</string>
     <string name="lazy_bus_option">Take transit</string>
@@ -129,14 +130,14 @@
         <item quantity="other">%1$d live GTT vehicles across all routes</item>
     </plurals>
     <string name="close_journey">Close journey</string>
-    <string name="location_unavailable">Could not get a position yet. Try near a window or outdoors, then tap the location button again.</string>
+    <string name="location_unavailable">No position yet · try outdoors</string>
     <string name="location_approximate">Approximate location</string>
     <string name="journey_failed">Could not plan this journey. Please try again.</string>
     <string name="checking_transfers">Checking connections…</string>
     <string name="map_attribution">© OpenStreetMap contributors</string>
-    <string name="device_location_off">Device location is switched off. Turn it on to plan a journey from your position.</string>
+    <string name="device_location_off">Phone location is off</string>
     <string name="turn_on_location">Turn on location</string>
-    <string name="location_permission_required">Allow Torino Bus Radar to access your location. Tap the location button to try again.</string>
+    <string name="location_permission_required">Location permission needed</string>
     <string name="offline_map_loading">Opening offline Torino map…</string>
     <string name="offline_map_failed">Could not open the offline map. Please restart the app.</string>
     <string name="save_destination">Save this destination</string>

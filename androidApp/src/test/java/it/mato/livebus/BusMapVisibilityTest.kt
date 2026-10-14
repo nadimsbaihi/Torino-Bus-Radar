@@ -336,6 +336,34 @@ class BusMapVisibilityTest {
         binding.map.onDetach()
     }
 
+    @Test fun aRideFarSlowerThanWalkingLeavesOnlyTheWalk() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val worthTaking = MainActivity::class.java.getDeclaredMethod("worthTaking",
+            Float::class.javaPrimitiveType, Float::class.javaPrimitiveType).apply { isAccessible = true }
+        // A 38-minute walk: tomorrow's first train is no option, a ride a little slower still is.
+        assertFalse(worthTaking.invoke(activity, 963 * 60f, 38 * 60f) as Boolean)
+        assertTrue(worthTaking.invoke(activity, 50 * 60f, 38 * 60f) as Boolean)
+        // A short walk still leaves a quarter of an hour for a ride.
+        assertTrue(worthTaking.invoke(activity, 20 * 60f, 6 * 60f) as Boolean)
+        assertFalse(worthTaking.invoke(activity, 22 * 60f, 6 * 60f) as Boolean)
+
+        MainActivity::class.java.getDeclaredMethod("showWalkingOnly", String::class.java, Pair::class.java).apply {
+            isAccessible = true
+            invoke(activity, "Destination", 45.09 to 7.6869)
+        }
+        assertTrue(binding.journeyTitle.text.startsWith("Walk"))
+        assertEquals(android.view.View.GONE, binding.travelModeChoices.visibility)
+        assertEquals(android.view.View.GONE, binding.alertButton.visibility)
+        assertEquals(activity.getString(R.string.open_walking_directions), binding.boardStopDirectionsButton.text)
+        assertEquals(android.view.View.VISIBLE, binding.boardStopDirectionsButton.visibility)
+        assertTrue(binding.sharedDirections.text.contains(activity.getString(R.string.no_ride_beats_walking)))
+        assertEquals(1, binding.journeySteps.childCount)
+        binding.map.onDetach()
+    }
+
     @Test fun mixedJourneyShowsBothLegsAndOnlyItsLiveBus() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
         activity.setTheme(R.style.Theme_MatoLiveBus)

@@ -49,6 +49,8 @@ destination and whether to include trains.
 - **Other ways to go.** The app picks the journey that best weighs time against
   walking. When another journey has fewer changes, arrives sooner, or walks less,
   a button beside it shows that one instead. Include or exclude regional trains.
+  A ride that takes more than 1.5 times the walk and 15 minutes longer, such as
+  tomorrow's first train, is not offered; when no ride is left, the app shows the walk.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
   and regional stations without a connection or an API key.
 - **Dark mode.** The app and its offline map follow your phone's dark-mode
