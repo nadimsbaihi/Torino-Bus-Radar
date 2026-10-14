@@ -131,6 +131,15 @@ network behavior, and map interaction.
   16 km/h with stops) while the city has few. Old samples fade with a two-week
   half-life, and the figures live in a small private file, `bus_speeds.txt`.
   A walker needs 15% slack on the walk to a stop and 20 s to change buses.
+- Catching a bus is a chance, not a yes or no. An arrival is treated as normally
+  distributed around the estimate, with a spread of at least 20 s that grows by 10% of
+  the time still to wait, by half a second per second of position age, and by a minute
+  for a bus that has still to turn around; the walker's pace adds 10% of the walk.
+  Each boarding and each change gets the chance that its margin holds, and the
+  journey's score (not its travel time) is charged 7 min times the chance of missing,
+  so a slim connection loses to a safe one that is a little slower. The panel then adds
+  "Missed it? Next bus ..." for the next vehicle that reaches the same boarding stop,
+  and the same exit, after the planned one.
 - Bus positions older than two minutes are faded and labeled as delayed;
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.

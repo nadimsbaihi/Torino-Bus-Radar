@@ -75,7 +75,9 @@ object JourneySteps {
                     destination ?: GeoPoint(bus.finalLatitude, bus.finalLongitude))?.let(::add)
             }
         }
-        return JourneyGuide(steps, busNotes(context, bus) + context.getString(R.string.train_timetable_note))
+        // A bus planned for after the train is judged by the clock then; "in N min" from now would mislead.
+        return JourneyGuide(steps, busNotes(context, bus, withBackup = mixed.busFirst) +
+            context.getString(R.string.train_timetable_note))
     }
 
     fun forWalking(context: Context, metres: Int, minutes: Int, destination: GeoPoint) = JourneyGuide(
@@ -126,9 +128,12 @@ object JourneySteps {
             stopName(train.destination.name), formatClock(train.arrivalSeconds, train.dayOffset)))
     )
 
-    private fun busNotes(context: Context, bus: JourneyChoice): List<String> {
+    private fun busNotes(context: Context, bus: JourneyChoice, withBackup: Boolean = true): List<String> {
         val age = maxOf(bus.vehicle.ageSeconds, bus.secondLeg?.vehicle?.ageSeconds ?: 0)
         return listOfNotNull(
+            bus.backup?.takeIf { withBackup }?.let {
+                context.getString(R.string.missed_it_next_bus, it.route, ceilMinutes(it.etaSeconds))
+            },
             bus.turnaround?.let { context.getString(R.string.bus_turnaround_note, bus.pattern.route,
                 stopName(bus.pattern.stops.first().name), ceilMinutes(it.departsInSeconds)) },
             if (bus.directionEstimated) context.getString(R.string.direction_estimated_short) else null,

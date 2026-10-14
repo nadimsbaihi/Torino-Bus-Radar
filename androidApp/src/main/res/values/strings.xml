@@ -34,6 +34,7 @@
     <string name="delayed_bus_positions">%1$d buses · up to %2$d min old</string>
     <string name="data_out_of_date">Bus data may be out of date: many live buses do not match the app’s timetable. Update the app for accurate journeys.</string>
     <string name="bus_position_age">Position %1$d min ago</string>
+    <string name="missed_it_next_bus">Missed it? Next bus %1$s in ~%2$d min</string>
     <string name="bus_fleet_number">Bus no. %1$s</string>
     <string name="delayed_bus_journey">Bus positions are up to %1$d minutes old. Arrival estimates account for this delay, but the bus may have moved differently.</string>
     <string name="live_updated">● LIVE · UPDATED NOW</string>

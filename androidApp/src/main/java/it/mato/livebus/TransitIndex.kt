@@ -81,7 +81,11 @@ data class JourneyChoice(
     val secondLeg: JourneyLeg? = null,
     val transferAt: TransitStop? = null,
     val transferWalkMetres: Float = 0f,
-    val turnaround: Turnaround? = null
+    val turnaround: Turnaround? = null,
+    // Chance (0 to 1) of getting to the boarding stop in time, and of making the change.
+    val boardingChance: Float = 1f,
+    val transferChance: Float = 1f,
+    val backup: BackupBus? = null
 ) {
     val totalWalkingMetres: Float get() = walkingMetres + transferWalkMetres + destinationWalkMetres
     // A bus about to turn around still carries the trip it is finishing, not this one.
@@ -109,8 +113,17 @@ class TrackedVehicle internal constructor(
     // Set when this is the run the bus will start after the one it is on (progress is then -1).
     val turnaround: Turnaround? = null,
     // Metres of road per second this vehicle's line is expected to run at, between stops.
-    val speed: Float = SpeedEstimator.DEFAULT_METRES_PER_SECOND
-)
+    val speed: Float = SpeedEstimator.DEFAULT_METRES_PER_SECOND,
+    // How old the position the estimates start from was, in seconds.
+    val positionAgeSeconds: Float = 0f
+) {
+    /** How uncertain an arrival [etaSeconds] from now is, as a standard deviation in seconds. */
+    fun arrivalSigma(etaSeconds: Float) = Reliability.arrivalSigma(etaSeconds, positionAgeSeconds,
+        if (turnaround != null) Reliability.TURNAROUND_EXTRA_SECONDS else 0f)
+}
+
+/** The next bus that would do the same job, for a rider who misses the one planned. */
+data class BackupBus(val route: String, val vehicle: LiveVehicle, val etaSeconds: Float)
 
 class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     private val patternsByTripId: Map<String, TransitPattern> by lazy {
@@ -269,7 +282,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             learnSpeed(vehicle, pattern, progress, position)
             val speed = speedOf(pattern, nowSeconds)
             TrackedVehicle(vehicle, pattern, progress,
-                arrivalSeconds(vehicle, pattern, progress, nowSeconds, speed, position), speed = speed)
+                arrivalSeconds(vehicle, pattern, progress, nowSeconds, speed, position), speed = speed,
+                positionAgeSeconds = vehicle.ageSecondsAt(nowSeconds).toFloat())
         }
         return running + running.mapNotNull { turnaroundOf(it, nowSeconds) }
     }
@@ -373,7 +387,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             departs + routeDistance(next, 0, index) / speed + index * DWELL_SECONDS_PER_STOP
         }
         return TrackedVehicle(current.vehicle, next, -1, arrivals,
-            Turnaround(current.pattern.id, departs), speed)
+            Turnaround(current.pattern.id, departs), speed, current.positionAgeSeconds)
     }
 
     suspend fun planLiveJourney(
@@ -438,15 +452,16 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                     val busSeconds = arrivals[index]
                     if (remainingWalk >= destinationDistance(stop) ||
                         !canCatch(earliestStartSeconds, walkSeconds, busSeconds)) continue
+                    val chance = boardingChance(current, earliestStartSeconds, walkSeconds, busSeconds)
                     val score = walkingPreference.score(
                         maxOf(earliestStartSeconds + walkSeconds, busSeconds) +
                             routeDistance(pattern, index, destinationIndex) / speed +
                             (destinationIndex - index) * DWELL_SECONDS_PER_STOP,
                         walkMetres
-                    )
+                    ) + Reliability.penaltySeconds(chance)
                     if (score < boardingScore) {
                         boardingScore = score
-                        boarding = BoardingCandidate(index, stop, walkMetres, walkSeconds, busSeconds)
+                        boarding = BoardingCandidate(index, stop, walkMetres, walkSeconds, busSeconds, chance)
                     }
                 }
                 if (boarding == null) continue
@@ -454,7 +469,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                     routeDistance(pattern, boarding.index, destinationIndex) / speed +
                     (destinationIndex - boarding.index) * DWELL_SECONDS_PER_STOP +
                     remainingWalk / WALKING_METRES_PER_SECOND
-                val score = walkingPreference.score(totalSeconds, boarding.walkMetres + remainingWalk)
+                val score = walkingPreference.score(totalSeconds, boarding.walkMetres + remainingWalk) +
+                    Reliability.penaltySeconds(boarding.chance)
                 if (score >= bestScore) continue
                 if (vehicleDistance < 0f) {
                     vehicleDistance = distance(latitude, longitude,
@@ -475,11 +491,13 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                     finalLongitude = destinationLongitude,
                     boardingEtaSeconds = boarding.busSeconds,
                     estimatedTotalSeconds = totalSeconds,
-                    turnaround = current.turnaround
+                    turnaround = current.turnaround,
+                    boardingChance = boarding.chance
                 )
             }
         }
 
+        best = best?.let { withBackup(it, fleet, earliestStartSeconds, walkingDistance(it.boardAt)) }
         onDirectJourney?.invoke(best)
         context.ensureActive()
         if (directOnly) return best
@@ -530,7 +548,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 val walkSeconds = walk / WALKING_METRES_PER_SECOND
                 val busSeconds = firstArrivals[boardIndex]
                 if (canCatch(earliestStartSeconds, walkSeconds, busSeconds)) {
-                    reachable.add(BoardingCandidate(boardIndex, board, walk, walkSeconds, busSeconds))
+                    reachable.add(BoardingCandidate(boardIndex, board, walk, walkSeconds, busSeconds,
+                        boardingChance(first, earliestStartSeconds, walkSeconds, busSeconds)))
                 }
                 if (reachable.isEmpty()) continue
                 // The boarding stop is chosen for this exit, so walk preference applies here too.
@@ -541,7 +560,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                     val arrival = maxOf(earliestStartSeconds + candidate.walkSeconds, candidate.busSeconds) +
                         routeDistance(pattern, candidate.index, exitIndex) / firstSpeed +
                         (exitIndex - candidate.index) * DWELL_SECONDS_PER_STOP
-                    val score = walkingPreference.score(arrival, candidate.walkMetres)
+                    val score = walkingPreference.score(arrival, candidate.walkMetres) +
+                        Reliability.penaltySeconds(candidate.chance)
                     if (score < boardingScore) {
                         boardingScore = score
                         boarding = candidate
@@ -550,7 +570,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 }
                 // Nothing after this point can score better than this: the journey cannot
                 // end before the first bus does, nor walk less than the walk to board it.
-                if (walkingPreference.score(firstArrival, boarding.walkMetres) >= bestScore) continue
+                if (walkingPreference.score(firstArrival, boarding.walkMetres) +
+                    Reliability.penaltySeconds(boarding.chance) >= bestScore) continue
                 val exitStop = pattern.stops[exitIndex]
                 for ((stopId, transferWalk) in transferStops[exitStop.id].orEmpty()) {
                     for ((second, secondBoardIndex) in vehiclesByStop[stopId].orEmpty()) {
@@ -575,8 +596,14 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             routeDistance(second.pattern, secondBoardIndex, destinationIndex) / second.speed +
                             (destinationIndex - secondBoardIndex) * DWELL_SECONDS_PER_STOP +
                             destinationWalk / WALKING_METRES_PER_SECOND
+                        val transferSeconds = streetTransferWalk / WALKING_METRES_PER_SECOND
+                        val transferChance = Reliability.chance(secondArrival - firstArrival - transferSeconds,
+                            Reliability.combine(first.arrivalSigma(firstArrival),
+                                second.arrivalSigma(secondArrival), Reliability.walkSigma(transferSeconds)))
                         val score = walkingPreference.score(
-                            total, boarding.walkMetres + streetTransferWalk + destinationWalk)
+                            total, boarding.walkMetres + streetTransferWalk + destinationWalk) +
+                            Reliability.penaltySeconds(boarding.chance) +
+                            Reliability.penaltySeconds(transferChance)
                         if (score >= bestScore) continue
                         bestScore = score
                         best = JourneyChoice(
@@ -599,13 +626,51 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                                 destinationIndex - secondBoardIndex, second.turnaround != null),
                             transferAt = exitStop,
                             transferWalkMetres = streetTransferWalk,
-                            turnaround = first.turnaround
+                            turnaround = first.turnaround,
+                            boardingChance = boarding.chance,
+                            transferChance = transferChance
                         )
                     }
                 }
             }
         }
-        return best
+        return best?.let { withBackup(it, fleet, earliestStartSeconds, walkingDistance(it.boardAt)) }
+    }
+
+    private fun boardingChance(
+        bus: TrackedVehicle,
+        freeAtSeconds: Float,
+        walkSeconds: Float,
+        busSeconds: Float
+    ) = Reliability.chance(busSeconds - (freeAtSeconds + walkSeconds),
+        Reliability.combine(bus.arrivalSigma(busSeconds), Reliability.walkSigma(walkSeconds)))
+
+    /**
+     * Adds the next bus to the journey: the first other vehicle that gets to the same boarding stop
+     * (on this line or another that serves both that stop and where the first bus is left) after
+     * the planned one, and that the rider could still walk to in time.
+     */
+    private fun withBackup(
+        choice: JourneyChoice,
+        fleet: List<TrackedVehicle>,
+        freeAtSeconds: Float,
+        walkMetres: Float
+    ): JourneyChoice {
+        val exit = choice.transferAt ?: choice.destination
+        val walkSeconds = walkMetres / WALKING_METRES_PER_SECOND
+        var next: BackupBus? = null
+        for (other in fleet) {
+            if (other.vehicle.id == choice.vehicle.id) continue
+            val stops = other.pattern.stops
+            val boardIndex = (other.progress + 1 until stops.size).firstOrNull { stops[it].id == choice.boardAt.id }
+                ?: continue
+            val eta = other.arrivalSeconds[boardIndex]
+            if (eta <= choice.boardingEtaSeconds + MIN_BACKUP_GAP_SECONDS ||
+                !canCatch(freeAtSeconds, walkSeconds, eta) ||
+                (boardIndex + 1 until stops.size).none { stops[it].id == exit.id }) continue
+            if (next == null || eta < next.etaSeconds) next = BackupBus(other.pattern.route, other.vehicle, eta)
+        }
+        return if (next == null) choice else choice.copy(backup = next)
     }
 
     private data class BoardingCandidate(
@@ -613,7 +678,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         val stop: TransitStop,
         val walkMetres: Float,
         val walkSeconds: Float,
-        val busSeconds: Float
+        val busSeconds: Float,
+        val chance: Float = 1f
     )
 
     /**
@@ -1132,6 +1198,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         private const val STALE_MIN_VEHICLES = 10
         private const val STALE_MAX_KNOWN_SHARE = 0.25
         private const val SECONDS_PER_DAY = 86_400L
+        // A bus this close behind the planned one is hardly a second chance.
+        private const val MIN_BACKUP_GAP_SECONDS = 30f
         private const val SEGMENT_SLACK_METRES = 150f
         private const val MAX_DETOUR_FACTOR = 2.5f
         private const val MAX_DETOUR_SLACK_METRES = 200f
