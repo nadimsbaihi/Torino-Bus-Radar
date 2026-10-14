@@ -103,60 +103,113 @@ class SavedPlacesScreenTest {
             binding.sharedDirections.text.isNullOrEmpty())
     }
 
-    private fun longPress(activity: MainActivity, binding: ActivityMainBinding, point: GeoPoint) {
+    private fun receiver(binding: ActivityMainBinding): org.osmdroid.events.MapEventsReceiver {
         val overlay = binding.map.overlays.filterIsInstance<org.osmdroid.views.overlay.MapEventsOverlay>().single()
-        val receiver = overlay.javaClass.getDeclaredField("mReceiver")
+        return overlay.javaClass.getDeclaredField("mReceiver")
             .apply { isAccessible = true }.get(overlay) as org.osmdroid.events.MapEventsReceiver
-        receiver.longPressHelper(point)
     }
 
-    @Test fun longPressOnTheMapAsksBeforeGoingThere() {
+    private fun longPress(binding: ActivityMainBinding, point: GeoPoint) {
+        receiver(binding).longPressHelper(point)
+    }
+
+    private fun pins(binding: ActivityMainBinding) =
+        binding.map.overlays.filterIsInstance<org.osmdroid.views.overlay.Marker>()
+
+    private fun bubbles(binding: ActivityMainBinding) =
+        org.osmdroid.views.overlay.infowindow.InfoWindow.getOpenedInfoWindowsOn(binding.map)
+
+    private fun directDestination(activity: MainActivity) =
+        MainActivity::class.java.getDeclaredField("directDestination")
+            .apply { isAccessible = true }.get(activity) as GeoPoint?
+
+    @Test fun longPressOnTheMapMarksTheSpotAndAsksThereBeforeGoing() {
         val (activity, binding) = screen()
 
-        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
+        longPress(binding, GeoPoint(45.07031, 7.68690))
 
-        val ask = dialog()
-        assertTrue(ask.isShowing)
+        // Marked on the map, with the question in a bubble on it, not in a dialog over everything.
+        assertNull(org.robolectric.shadows.ShadowDialog.getLatestDialog())
+        val pin = pins(binding).single()
+        assertEquals(45.07031, pin.position.latitude, 1e-9)
+        val bubble = bubbles(binding).single().view
         assertEquals(activity.getString(R.string.map_pin_confirm_title),
-            ask.findViewById<android.widget.TextView>(androidx.appcompat.R.id.alertTitle)!!.text.toString())
+            bubble.findViewById<android.widget.TextView>(org.osmdroid.library.R.id.bubble_title).text.toString())
+        assertEquals("45.07031, 7.68690",
+            bubble.findViewById<android.widget.TextView>(org.osmdroid.library.R.id.bubble_description).text.toString())
+        // Nothing has started yet.
         assertTrue(binding.destinationInput.text.isNullOrEmpty())
-        assertNull(MainActivity::class.java.getDeclaredField("directDestination")
-            .apply { isAccessible = true }.get(activity))
-    }
-
-    @Test fun decliningTheLongPressLeavesTheScreenAlone() {
-        val (activity, binding) = screen()
-        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
-
-        dialog().getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
-
-        assertTrue(binding.destinationInput.text.isNullOrEmpty())
-        assertNull(MainActivity::class.java.getDeclaredField("directDestination")
-            .apply { isAccessible = true }.get(activity))
+        assertNull(directDestination(activity))
     }
 
     @LooperMode(LooperMode.Mode.PAUSED)
-    @Test fun confirmingTheLongPressStartsAJourneyToThatSpot() {
+    @Test fun sayingGoOnTheBubbleStartsAJourneyToThatSpot() {
         val (activity, binding) = screen()
-        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
+        longPress(binding, GeoPoint(45.07031, 7.68690))
 
-        dialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        bubbles(binding).single().view.findViewById<View>(R.id.spotGo).performClick()
         shadowOf(android.os.Looper.getMainLooper()).idle()
 
         assertEquals("45.07031, 7.68690", binding.destinationInput.text.toString())
-        assertEquals(45.07031, (MainActivity::class.java.getDeclaredField("directDestination")
-            .apply { isAccessible = true }.get(activity) as GeoPoint).latitude, 1e-9)
+        assertEquals(45.07031, directDestination(activity)!!.latitude, 1e-9)
+        assertTrue("the question is over", bubbles(binding).isEmpty())
     }
 
-    @Test fun aSecondLongPressReplacesTheFirstQuestion() {
+    @Test fun sayingCancelOnTheBubbleTakesTheMarkBackAndLeavesTheScreenAlone() {
         val (activity, binding) = screen()
-        longPress(activity, binding, GeoPoint(45.07031, 7.68690))
-        val first = dialog()
+        longPress(binding, GeoPoint(45.07031, 7.68690))
 
-        longPress(activity, binding, GeoPoint(45.06, 7.67))
+        bubbles(binding).single().view.findViewById<View>(R.id.spotCancel).performClick()
 
-        assertFalse(first.isShowing)
-        assertTrue(dialog().isShowing)
+        assertTrue(pins(binding).isEmpty())
+        assertTrue(bubbles(binding).isEmpty())
+        assertTrue(binding.destinationInput.text.isNullOrEmpty())
+        assertNull(directDestination(activity))
+    }
+
+    @Test fun tappingElsewhereOnTheMapDismissesTheQuestion() {
+        val (activity, binding) = screen()
+        longPress(binding, GeoPoint(45.07031, 7.68690))
+
+        assertTrue(receiver(binding).singleTapConfirmedHelper(GeoPoint(45.08, 7.70)))
+
+        assertTrue(pins(binding).isEmpty())
+        assertTrue(bubbles(binding).isEmpty())
+        assertNull(directDestination(activity))
+        // With no question open, a tap is left for the rest of the map.
+        assertFalse(receiver(binding).singleTapConfirmedHelper(GeoPoint(45.08, 7.70)))
+    }
+
+    @Test fun aSecondLongPressMovesTheMarkAndTheQuestion() {
+        val (_, binding) = screen()
+        longPress(binding, GeoPoint(45.07031, 7.68690))
+
+        longPress(binding, GeoPoint(45.06, 7.67))
+
+        assertEquals(45.06, pins(binding).single().position.latitude, 1e-9)
+        assertEquals(1, bubbles(binding).size)
+    }
+
+    @Test fun theQuestionSurvivesTheBusRefresh() {
+        val (activity, binding) = screen()
+        longPress(binding, GeoPoint(45.07031, 7.68690))
+
+        MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }.invoke(activity)
+
+        assertEquals(45.07031, pins(binding).single().position.latitude, 1e-9)
+        assertEquals(1, bubbles(binding).size)
+    }
+
+    @LooperMode(LooperMode.Mode.PAUSED)
+    @Test fun choosingAnotherDestinationWithdrawsTheQuestion() {
+        val (activity, binding) = screen()
+        longPress(binding, GeoPoint(45.07031, 7.68690))
+
+        invoke(activity, "goToMapPoint", GeoPoint(45.06, 7.67))
+
+        assertTrue(bubbles(binding).isEmpty())
+        MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }.invoke(activity)
+        assertTrue("the old mark must not come back", pins(binding).none { it.position.latitude == 45.07031 })
     }
 
     @Test fun removingTheNamedDestinationLeavesAPinThatStillWorks() {

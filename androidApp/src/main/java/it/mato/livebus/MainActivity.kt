@@ -39,7 +39,6 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -347,6 +346,10 @@ class MainActivity : AppCompatActivity() {
         controller.setCenter(currentLocation)
         overlays.add(0, MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(point: GeoPoint?): Boolean {
+                if (askedSpot != null) {
+                    clearAskedSpot()
+                    return true
+                }
                 if (highlightedVehicleId == null) return false
                 clearHighlightedCourse()
                 return true
@@ -355,7 +358,7 @@ class MainActivity : AppCompatActivity() {
             override fun longPressHelper(point: GeoPoint?): Boolean {
                 if (point == null) return false
                 binding.map.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                confirmMapPoint(point)
+                askAboutMapPoint(point)
                 return true
             }
         }))
@@ -477,6 +480,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDestination(place: OfflinePlace) {
+        clearAskedSpot()
         directDestination = GeoPoint(place.latitude, place.longitude)
         binding.map.overlays.removeAll { it is Marker || it is Polyline }
         addYouMarker()
@@ -488,17 +492,35 @@ class MainActivity : AppCompatActivity() {
         findDestinationRoute()
     }
 
-    private var mapPointDialog: AlertDialog? = null
+    // The pin on a spot the rider pressed and held, while its bubble asks whether to go there.
+    private var askedSpot: Marker? = null
 
-    /** A press that lingers is easily an accident, so ask before a journey replaces what is on screen. */
-    private fun confirmMapPoint(point: GeoPoint) {
-        mapPointDialog?.dismiss()
-        mapPointDialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.map_pin_confirm_title)
-            .setMessage(MapPin.format(point.latitude, point.longitude))
-            .setPositiveButton(R.string.map_pin_confirm_action) { _, _ -> goToMapPoint(point) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+    /** A press that lingers is easily an accident: mark the spot and ask there before going. */
+    private fun askAboutMapPoint(point: GeoPoint) {
+        clearAskedSpot()
+        val pin = Marker(binding.map).apply {
+            position = point
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            title = getString(R.string.map_pin_confirm_title)
+            snippet = MapPin.format(point.latitude, point.longitude)
+            icon = destinationPinIcon()
+            setInfoWindow(SpotInfoWindow(binding.map,
+                onGo = { askedSpot?.position?.let(::goToMapPoint) },
+                onCancel = ::clearAskedSpot))
+        }
+        askedSpot = pin
+        binding.map.overlays.add(pin)
+        pin.showInfoWindow()
+        binding.map.controller.animateTo(point)
+        binding.map.invalidate()
+    }
+
+    private fun clearAskedSpot() {
+        val pin = askedSpot ?: return
+        askedSpot = null
+        pin.closeInfoWindow()
+        binding.map.overlays.remove(pin)
+        binding.map.invalidate()
     }
 
     /** Press and hold on the map: go there, whether or not the city data has an address for it. */
@@ -1074,6 +1096,8 @@ class MainActivity : AppCompatActivity() {
             directDestination?.let { addExactDestinationMarker(it.latitude, it.longitude) }
         }
         addYouMarker()
+        // The same pin, so its bubble stays open through the redraw.
+        askedSpot?.let { binding.map.overlays.add(it) }
 
         // The course's stop dots stay under the buses; only journey markers rise above them.
         val journeyMarkers = binding.map.overlays.filterIsInstance<Marker>().filter { it !in courseOverlays }
@@ -1091,6 +1115,7 @@ class MainActivity : AppCompatActivity() {
                 relatedObject = vehicle
                 icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute)
                 setOnMarkerClickListener { clickedMarker, mapView ->
+                    clearAskedSpot()
                     // Tapping the bus whose course is showing leaves the course again.
                     if (highlightedVehicleId == vehicle.id) {
                         clearHighlightedCourse()
@@ -1418,22 +1443,21 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun destinationPinIcon() = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(getColor(R.color.lime))
+        setStroke((4 * resources.displayMetrics.density).roundToInt(), getColor(R.color.deep_green))
+        val size = (28 * resources.displayMetrics.density).roundToInt()
+        setSize(size, size)
+    }
+
     private fun addExactDestinationMarker(latitude: Double, longitude: Double) {
         binding.map.overlays.add(Marker(binding.map).apply {
             position = GeoPoint(latitude, longitude)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             title = getString(R.string.final_destination)
             snippet = binding.destinationInput.text.toString()
-            icon = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(getColor(R.color.lime))
-                setStroke(
-                    (4 * resources.displayMetrics.density).roundToInt(),
-                    getColor(R.color.deep_green)
-                )
-                val size = (28 * resources.displayMetrics.density).roundToInt()
-                setSize(size, size)
-            }
+            icon = destinationPinIcon()
         })
     }
 
