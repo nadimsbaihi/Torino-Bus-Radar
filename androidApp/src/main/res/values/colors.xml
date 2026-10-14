@@ -22,4 +22,8 @@
     <color name="bubble_ink">#172020</color>
     <color name="bubble_muted">#697472</color>
     <color name="bubble_accent">#176B62</color>
+    <!-- Material fills selected chips, switch tracks and the like with these; unset, they are purple. -->
+    <color name="green_container">#CDEBE6</color>
+    <color name="on_green_container">#0B3B36</color>
+    <color name="surface_variant">#E6E9E4</color>
 </resources>

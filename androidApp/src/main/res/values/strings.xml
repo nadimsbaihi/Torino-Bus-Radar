@@ -14,8 +14,6 @@
     <string name="appearance_system">Follow phone setting</string>
     <string name="appearance_light">Light</string>
     <string name="appearance_dark">Dark</string>
-    <string name="trains_label">TRAINS</string>
-    <string name="include_label">Include</string>
     <string name="include_trains">Include trains in journeys</string>
     <string name="enter_destination">Enter a place or address in Torino</string>
     <string name="direction_estimated_short">Estimated direction</string>

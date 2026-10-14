@@ -15,8 +15,7 @@ class LocalizationTest {
     fun italianDeviceLocaleUsesItalianStringsAndPlurals() {
         val context = RuntimeEnvironment.getApplication()
 
-        assertEquals("TRENI", context.getString(R.string.trains_label))
-        assertEquals("Includi", context.getString(R.string.include_label))
+        assertEquals("Includi i treni nei percorsi", context.getString(R.string.include_trains))
         assertEquals("A piedi · ~12 min", context.getString(R.string.walk_summary, 12))
         assertEquals("A piedi · 12 min", context.getString(R.string.walk_option, 12))
         assertEquals("Salva questa destinazione", context.getString(R.string.save_destination))

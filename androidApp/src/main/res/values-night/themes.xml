@@ -5,6 +5,13 @@
         <item name="colorPrimary">@color/deep_green</item>
         <item name="colorOnPrimary">@color/warm_white</item>
         <item name="colorSecondary">@color/deep_green</item>
+        <item name="colorPrimaryContainer">@color/green_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_green_container</item>
+        <item name="colorSecondaryContainer">@color/green_container</item>
+        <item name="colorOnSecondaryContainer">@color/on_green_container</item>
+        <item name="colorTertiary">@color/deep_green</item>
+        <item name="colorSurfaceVariant">@color/surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/muted</item>
         <item name="colorSurface">@color/card</item>
         <item name="colorOnSurface">@color/ink</item>
         <item name="android:navigationBarColor">@color/warm_white</item>

@@ -14,8 +14,6 @@
     <string name="appearance_system">Come le impostazioni del telefono</string>
     <string name="appearance_light">Chiaro</string>
     <string name="appearance_dark">Scuro</string>
-    <string name="trains_label">TRENI</string>
-    <string name="include_label">Includi</string>
     <string name="include_trains">Includi i treni nei percorsi</string>
     <string name="enter_destination">Inserisci un luogo o un indirizzo a Torino</string>
     <string name="direction_estimated_short">Direzione stimata</string>
