@@ -1,6 +1,8 @@
 package it.mato.livebus
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,5 +38,16 @@ class AlertDistanceTest {
         AlertPreferences.save(application, BusAlert("5", "gtt:5", "p", "Centro", null, "s", "Stop", 45.0, 7.6,
             thresholdMetres = 500))
         assertEquals(500, AlertPreferences.load(application)!!.thresholdMetres)
+    }
+
+    @Test fun anAlertLeftRunningForHoursIsNotBroughtBack() {
+        AlertPreferences.save(application, BusAlert("5", "gtt:5", "p", "Centro", null, "s", "Stop", 45.0, 7.6,
+            startedAt = System.currentTimeMillis() - AlertPreferences.MAX_AGE_MILLIS - 1))
+        assertNull(AlertPreferences.load(application))
+    }
+
+    @Test fun aFreshAlertIsKept() {
+        AlertPreferences.save(application, BusAlert("5", "gtt:5", "p", "Centro", null, "s", "Stop", 45.0, 7.6))
+        assertNotNull(AlertPreferences.load(application))
     }
 }

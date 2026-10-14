@@ -14,5 +14,8 @@
     <color name="shared_bg">#26352D</color>
     <color name="map_casing">#161A19</color>
     <color name="map_face">#1C2321</color>
+    <!-- Tiles still being drawn: the map theme's own background, so they blend in. -->
+    <color name="map_loading">#1B1F22</color>
+    <color name="map_loading_line">#262B2F</color>
     <color name="map_on_accent">#0B1F1C</color>
 </resources>

@@ -79,7 +79,6 @@
     <string name="refresh_live_positions">Refresh live positions</string>
     <string name="alert_me">Notify me</string>
     <string name="stop_alert">Stop approach alert</string>
-    <string name="alert_enabled">Alert active · notify within %1$d m</string>
     <string name="alert_distance_title">Notify me when the bus is within</string>
     <string name="alert_distance_option">%1$d m</string>
     <string name="alert_requires_direction">Choose a destination or bus direction first.</string>
@@ -89,6 +88,13 @@
     <string name="bus_approaching_detail">Towards %1$s · %2$d m from %3$s</string>
     <string name="monitor_channel">Active bus monitoring</string>
     <string name="approach_channel">Bus approach alerts</string>
+    <string name="alert_stop_action">Stop</string>
+    <string name="bus_distance_status">Nearest bus %1$s from %2$s</string>
+    <string name="bus_near_status">Bus %1$s away · head to %2$s</string>
+    <string name="on_board_status">On board · you\'ll be told at the transfer at %1$s</string>
+    <string name="distance_metres">%1$d m</string>
+    <string name="distance_kilometres">%1$.1f km</string>
+    <string name="notifications_blocked">Notifications are off for this app. Turn them on in Settings to get bus alerts.</string>
     <string name="transfer_reached">Transfer reached: %1$s</string>
     <string name="tap_to_replan">Tap to recalculate the fastest live bus from here.</string>
     <string name="selected_bus_passed">Your selected bus passed the stop</string>

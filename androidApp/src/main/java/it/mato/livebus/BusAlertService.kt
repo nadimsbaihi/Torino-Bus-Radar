@@ -42,10 +42,14 @@ class BusAlertService : Service() {
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var pollingJob: Job? = null
     private val previousDistances = mutableMapOf<String, Float>()
-    private val notifiedVehicles = mutableSetOf<String>()
+    // One heads-up per journey leg: the bus to catch is announced once, not every bus behind it.
+    private var approachNotifiedAt: Long? = null
     // Vehicle IDs are reused all day, so "has passed" is per trip and forgotten after a while.
     private val passedVehicles = mutableMapOf<String, Long>()
     private var transferNotified = false
+    // Once on the bus only the transfer is still worth watching.
+    private var boarded = false
+    private var lastStatus = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -54,22 +58,38 @@ class BusAlertService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            finish()
+            return START_NOT_STICKY
+        }
         val alert = AlertPreferences.load(this)
         if (alert == null) {
             stopSelf()
             return START_NOT_STICKY
         }
+        lastStatus = getString(R.string.watching_stop, alert.stopName)
         ServiceCompat.startForeground(
             this,
             ONGOING_ID,
-            ongoingNotification(alert),
+            ongoingNotification(alert, lastStatus),
             if (Build.VERSION.SDK_INT >= 29)
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
         )
+        previousDistances.clear()
+        approachNotifiedAt = null
+        boarded = false
+        transferNotified = false
         pollingJob?.cancel()
         pollingJob = scope.launch { poll(alert) }
         return START_STICKY
+    }
+
+    /** Ends the alert for good: nothing is left to restart it, and its notification goes away. */
+    private fun finish() {
+        AlertPreferences.clear(this)
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private suspend fun poll(initialAlert: BusAlert) {
@@ -80,7 +100,23 @@ class BusAlertService : Service() {
         while (scope.isActive) {
             nextDelay = POLL_MILLIS
             try {
-                checkTransferArrival(alert)
+                if (checkTransferArrival(alert)) {
+                    finish()
+                    return
+                }
+                // With no transfer ahead, the job ends once the bus has been announced and had time
+                // to come; a rider who missed it is caught below when it passes the stop.
+                val announcedAt = approachNotifiedAt
+                if (announcedAt != null && alert.transferLatitude == null &&
+                    SystemClock.elapsedRealtime() - announcedAt > AFTER_APPROACH_MILLIS
+                ) {
+                    finish()
+                    return
+                }
+                if (boarded) {
+                    delay(POLL_MILLIS)
+                    continue
+                }
                 val allVehicles = transitIndex.inService(repository.vehicles())
                 if (needsFullReplan) {
                     val replanned = replanCompleteJourney(alert, allVehicles)
@@ -122,6 +158,16 @@ class BusAlertService : Service() {
                     )
                 if (selectedPassed) {
                     passedVehicles[passedKey(selected.first)] = SystemClock.elapsedRealtime()
+                    if (isOnBoard(selected.first, alert)) {
+                        if (alert.transferLatitude == null) {
+                            finish()
+                            return
+                        }
+                        boarded = true
+                        updateStatus(alert, getString(R.string.on_board_status, alert.transferName))
+                        delay(POLL_MILLIS)
+                        continue
+                    }
                     needsFullReplan = true
                     val replanned = replanCompleteJourney(alert, allVehicles)
                     if (replanned != null) {
@@ -135,8 +181,7 @@ class BusAlertService : Service() {
                         AlertPreferences.save(this, waiting)
                         alert = waiting
                         notifyJourneyReplanUnavailable(alert)
-                        getSystemService(NotificationManager::class.java)
-                            .notify(ONGOING_ID, ongoingNotification(alert))
+                        updateStatus(alert, getString(R.string.watching_stop, alert.stopName))
                         delay(POLL_MILLIS)
                         continue
                     }
@@ -160,12 +205,17 @@ class BusAlertService : Service() {
                     closest = minOf(closest, distance)
                     val previous = previousDistances.put(vehicle.id, distance)
                     val approaching = previous == null || distance < previous - 8
-                    if (distance <= alert.thresholdMetres && approaching &&
-                        notifiedVehicles.add(vehicle.id)
-                    ) {
+                    if (distance <= alert.thresholdMetres && approaching && approachNotifiedAt == null) {
+                        approachNotifiedAt = SystemClock.elapsedRealtime()
                         notifyApproaching(alert, distance)
                     }
                 }
+                updateStatus(alert, when {
+                    closest == Float.MAX_VALUE -> getString(R.string.watching_stop, alert.stopName)
+                    approachNotifiedAt != null ->
+                        getString(R.string.bus_near_status, formatDistance(closest), alert.stopName)
+                    else -> getString(R.string.bus_distance_status, formatDistance(closest), alert.stopName)
+                })
                 previousDistances.keys.retainAll(watchedVehicles.mapTo(mutableSetOf()) { it.first.id })
                 nextDelay = if (closest <= NEAR_METRES) NEAR_POLL_MILLIS else POLL_MILLIS
             } catch (cancelled: CancellationException) {
@@ -216,14 +266,14 @@ class BusAlertService : Service() {
             finalLongitude = finalLongitude,
             transferName = choice.transferAt?.let { TransitIndex.cleanStopName(it.name) },
             transferLatitude = choice.transferAt?.latitude,
-            transferLongitude = choice.transferAt?.longitude
+            transferLongitude = choice.transferAt?.longitude,
+            startedAt = alert.startedAt
         )
         AlertPreferences.save(this, updated)
         previousDistances.clear()
-        notifiedVehicles.clear()
+        approachNotifiedAt = null
         notifyJourneyReplanned(updated)
-        getSystemService(NotificationManager::class.java)
-            .notify(ONGOING_ID, ongoingNotification(updated))
+        updateStatus(updated, getString(R.string.watching_stop, updated.stopName))
         return updated
     }
 
@@ -252,11 +302,12 @@ class BusAlertService : Service() {
         }
     }
 
-    private suspend fun checkTransferArrival(alert: BusAlert) {
-        val transferLat = alert.transferLatitude ?: return
-        val transferLon = alert.transferLongitude ?: return
-        if (transferNotified) return
-        val location = lastKnownLocation() ?: return
+    /** True once the rider has been told they reached the transfer, which is the alert's last job. */
+    private suspend fun checkTransferArrival(alert: BusAlert): Boolean {
+        val transferLat = alert.transferLatitude ?: return false
+        val transferLon = alert.transferLongitude ?: return false
+        if (transferNotified) return true
+        val location = lastKnownLocation() ?: return false
         val result = FloatArray(1)
         Location.distanceBetween(
             location.latitude, location.longitude, transferLat, transferLon, result
@@ -266,7 +317,25 @@ class BusAlertService : Service() {
             transferNotified = true
             notifyReplan(alert)
         }
+        return transferNotified
     }
+
+    /**
+     * Whether a bus that just passed the boarding stop took the rider with it: someone on board is
+     * nearer the bus than the stop, someone who missed it is still standing at the stop.
+     */
+    private suspend fun isOnBoard(vehicle: LiveVehicle, alert: BusAlert): Boolean {
+        val location = lastKnownLocation() ?: return false
+        val toBus = FloatArray(1)
+        val toStop = FloatArray(1)
+        Location.distanceBetween(location.latitude, location.longitude, vehicle.latitude, vehicle.longitude, toBus)
+        Location.distanceBetween(location.latitude, location.longitude, alert.latitude, alert.longitude, toStop)
+        return toStop[0] > ON_BOARD_MIN_METRES && toBus[0] < toStop[0]
+    }
+
+    private fun formatDistance(metres: Float): String =
+        if (metres < 1_000f) getString(R.string.distance_metres, (metres / 10).roundToInt() * 10)
+        else getString(R.string.distance_kilometres, metres / 1_000f)
 
     private fun passedKey(vehicle: LiveVehicle) = "${vehicle.id}|${vehicle.tripId.orEmpty()}"
 
@@ -287,15 +356,33 @@ class BusAlertService : Service() {
         return result[0]
     }
 
-    private fun ongoingNotification(alert: BusAlert) =
+    /** Keeps the one live notification current, as navigation apps do, without buzzing for it. */
+    private fun updateStatus(alert: BusAlert, status: String) {
+        if (status == lastStatus) return
+        lastStatus = status
+        getSystemService(NotificationManager::class.java).notify(ONGOING_ID, ongoingNotification(alert, status))
+    }
+
+    private fun ongoingNotification(alert: BusAlert, status: String) =
         NotificationCompat.Builder(this, MONITOR_CHANNEL)
             .setSmallIcon(R.drawable.ic_bus_notification)
             .setContentTitle(getString(R.string.watching_bus, alert.route, alert.headsign))
-            .setContentText(getString(R.string.watching_stop, alert.stopName))
+            .setContentText(status)
             .setContentIntent(openAppIntent())
+            .addAction(R.drawable.ic_close, getString(R.string.alert_stop_action), stopIntent())
+            .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setSilent(true)
             .build()
+
+    private fun stopIntent(): PendingIntent = PendingIntent.getService(
+        this,
+        0,
+        Intent(this, BusAlertService::class.java).setAction(ACTION_STOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
 
     private fun notifyApproaching(alert: BusAlert, distance: Float) {
         val notification = NotificationCompat.Builder(this, APPROACH_CHANNEL)
@@ -310,8 +397,11 @@ class BusAlertService : Service() {
                 )
             )
             .setContentIntent(openAppIntent())
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            // Old news once the bus has come; don't leave it in the shade.
+            .setTimeoutAfter(AFTER_APPROACH_MILLIS)
             .build()
         getSystemService(NotificationManager::class.java).notify(APPROACH_ID, notification)
     }
@@ -409,6 +499,10 @@ class BusAlertService : Service() {
         private const val NEAR_POLL_MILLIS = 15_000L
         private const val NEAR_METRES = 1_500f
         private const val PASSED_MEMORY_MILLIS = 20 * 60_000L
+        private const val AFTER_APPROACH_MILLIS = 10 * 60_000L
+        // Closer than this to the stop, GPS can't tell the rider from someone still waiting.
+        private const val ON_BOARD_MIN_METRES = 60f
+        const val ACTION_STOP = "it.mato.livebus.STOP_ALERT"
         const val ACTION_REPLAN = "it.mato.livebus.REPLAN"
         const val EXTRA_FINAL_ADDRESS = "final_address"
     }

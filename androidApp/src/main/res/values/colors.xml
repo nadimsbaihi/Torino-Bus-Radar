@@ -14,6 +14,9 @@
     <color name="shared_bg">#E9F6C4</color>
     <color name="map_casing">#FFFFFF</color>
     <color name="map_face">#FFFFFF</color>
+    <!-- Tiles still being drawn: the map theme's own background, so they blend in. -->
+    <color name="map_loading">#F5F4F0</color>
+    <color name="map_loading_line">#E5E5E0</color>
     <color name="map_on_accent">#FFFFFF</color>
     <!-- osmdroid's map bubbles are white in both themes, so their text keeps day colours. -->
     <color name="bubble_ink">#172020</color>

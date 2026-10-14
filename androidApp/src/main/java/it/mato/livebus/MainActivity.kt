@@ -40,6 +40,7 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.DrawableCompat
@@ -163,7 +164,7 @@ class MainActivity : AppCompatActivity() {
     }
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) enableAlert() }
+    ) { granted -> if (granted) enableAlert() else showNotificationsBlocked() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -188,7 +189,7 @@ class MainActivity : AppCompatActivity() {
         binding.locationSettingsButton.setOnClickListener { openLocationSettings() }
         binding.findRouteButton.setOnClickListener { findDestinationRoute() }
         binding.liveStatus.setOnClickListener { startRefreshing(forceRefresh = true) }
-        binding.alertButton.setOnClickListener { requestAlert() }
+        binding.alertButton.setOnClickListener { if (isAlertActive()) stopAlert() else requestAlert() }
         binding.walkButton.setOnClickListener { selectWalkingMode() }
         binding.busAnywayButton.setOnClickListener { selectBusMode() }
         binding.boardStopDirectionsButton.setOnClickListener {
@@ -384,10 +385,17 @@ class MainActivity : AppCompatActivity() {
         binding.sharedDirections.visibility = View.VISIBLE
     }
 
+    /** Tiles still being drawn take the map theme's background, so at night they are not a light grid. */
+    private fun tintLoadingTiles() = binding.map.overlayManager.tilesOverlay.run {
+        setLoadingBackgroundColor(getColor(R.color.map_loading))
+        setLoadingLineColor(getColor(R.color.map_loading_line))
+    }
+
     private fun setupMap() = with(binding.map) {
         setMultiTouchControls(true)
         setUseDataConnection(false)
         setTilesScaledToDpi(false)
+        tintLoadingTiles()
         controller.setZoom(16.0)
         controller.setCenter(currentLocation)
         overlays.add(0, MapEventsOverlay(object : MapEventsReceiver {
@@ -422,6 +430,8 @@ class MainActivity : AppCompatActivity() {
                 offlineMapSource = source
                 val provider = MapsForgeTileProvider(SimpleRegisterReceiver(this@MainActivity), source, null)
                 setTileProvider(provider)
+                // A new provider brings a new tiles overlay with osmdroid's light grid again.
+                tintLoadingTiles()
                 setUseDataConnection(false)
                 minZoomLevel = 11.0
                 maxZoomLevel = 20.0
@@ -1214,6 +1224,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         renderJourneyGuide(transitGuide!!)
         binding.alertButton.visibility =
             if (choice != null && trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
+        updateAlertButton()
         // A journey already pulled open stays open through live updates; a new one starts at the peek.
         showJourneySheet(if (wasShowingSteps) null else BottomSheetBehavior.STATE_COLLAPSED)
         renderVehicles()
@@ -1847,10 +1858,34 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 PackageManager.PERMISSION_GRANTED
             ) {
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+                showNotificationsBlocked()
             } else {
                 enableAlert()
             }
         }
+    }
+
+    private fun showNotificationsBlocked() {
+        binding.sharedDirections.text = getString(R.string.notifications_blocked)
+        binding.sharedDirections.visibility = View.VISIBLE
+    }
+
+    /** Whether the journey on screen is the one an alert is running for. */
+    private fun isAlertActive(): Boolean {
+        val pattern = selectedPattern ?: return false
+        return AlertPreferences.load(this)?.patternId == pattern.id
+    }
+
+    private fun stopAlert() {
+        AlertPreferences.clear(this)
+        stopService(Intent(this, BusAlertService::class.java))
+        updateAlertButton()
+    }
+
+    // The alert can end on its own, or from its notification, while the app is away.
+    private fun updateAlertButton() {
+        binding.alertButton.setText(if (isAlertActive()) R.string.stop_alert else R.string.alert_me)
     }
 
     /** Asks how far away the bus should be when it notifies; the last choice is preselected. */
@@ -1910,7 +1945,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             )
         )
         ContextCompat.startForegroundService(this, Intent(this, BusAlertService::class.java))
-        binding.alertButton.text = getString(R.string.alert_enabled, AlertPreferences.distance(this))
+        updateAlertButton()
     }
 
     private fun addYouMarker() {
@@ -2240,6 +2275,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         transitGuide?.let(::renderJourneyGuide)
         binding.alertButton.visibility =
             if (trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
+        updateAlertButton()
         renderVehicles()
         frameCurrentJourney()
     }
@@ -2309,6 +2345,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     override fun onResume() {
         super.onResume()
         binding.map.onResume()
+        updateAlertButton()
     }
 
     override fun onPause() {

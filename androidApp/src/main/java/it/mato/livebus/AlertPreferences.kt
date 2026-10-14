@@ -18,7 +18,9 @@ data class BusAlert(
     val finalLongitude: Double? = null,
     val transferName: String? = null,
     val transferLatitude: Double? = null,
-    val transferLongitude: Double? = null
+    val transferLongitude: Double? = null,
+    // Replans keep this, so the whole journey, not each leg, is what ages out.
+    val startedAt: Long = System.currentTimeMillis()
 )
 
 object AlertPreferences {
@@ -27,6 +29,8 @@ object AlertPreferences {
     private const val SETTINGS = "bus_alert_settings"
     const val DEFAULT_DISTANCE = 700
     val DISTANCES = listOf(300, 500, DEFAULT_DISTANCE, 1000)
+    // No bus journey in Turin takes this long; an alert still around is one that was never ended.
+    const val MAX_AGE_MILLIS = 2 * 60 * 60_000L
 
     /** How close, in metres along the route, a bus must be before the rider is notified. */
     fun distance(context: Context): Int {
@@ -59,12 +63,20 @@ object AlertPreferences {
             .putString("transferName", alert.transferName)
             .putLong("transferLatitude", alert.transferLatitude?.toBits() ?: 0)
             .putLong("transferLongitude", alert.transferLongitude?.toBits() ?: 0)
+            .putLong("startedAt", alert.startedAt)
             .apply()
     }
 
     fun load(context: Context): BusAlert? {
         val prefs = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
         if (!prefs.getBoolean("enabled", false)) return null
+        // A restarted service must not bring back yesterday's alert; one saved before this was
+        // recorded has no start time and is stale too.
+        val startedAt = prefs.getLong("startedAt", 0)
+        if (System.currentTimeMillis() - startedAt !in 0..MAX_AGE_MILLIS) {
+            clear(context)
+            return null
+        }
         return BusAlert(
             route = prefs.getString("route", null) ?: return null,
             routeId = prefs.getString("routeId", null) ?: return null,
@@ -85,7 +97,8 @@ object AlertPreferences {
             transferLatitude = prefs.getLong("transferLatitude", 0)
                 .takeIf { it != 0L }?.let(Double::fromBits),
             transferLongitude = prefs.getLong("transferLongitude", 0)
-                .takeIf { it != 0L }?.let(Double::fromBits)
+                .takeIf { it != 0L }?.let(Double::fromBits),
+            startedAt = startedAt
         )
     }
 

@@ -79,7 +79,6 @@
     <string name="refresh_live_positions">Aggiorna le posizioni dei bus</string>
     <string name="alert_me">Avvisami</string>
     <string name="stop_alert">Disattiva l’avviso</string>
-    <string name="alert_enabled">Avviso attivo · quando il bus è a meno di %1$d m</string>
     <string name="alert_distance_title">Avvisami quando il bus è a meno di</string>
     <string name="alert_distance_option">%1$d m</string>
     <string name="alert_requires_direction">Scegli prima una destinazione o la direzione del bus.</string>
@@ -89,6 +88,13 @@
     <string name="bus_approaching_detail">Verso %1$s · a %2$d m da %3$s</string>
     <string name="monitor_channel">Avvisi bus attivi</string>
     <string name="approach_channel">Bus in arrivo</string>
+    <string name="alert_stop_action">Interrompi</string>
+    <string name="bus_distance_status">Bus più vicino a %1$s da %2$s</string>
+    <string name="bus_near_status">Bus a %1$s · vai a %2$s</string>
+    <string name="on_board_status">A bordo · ti avviseremo al cambio a %1$s</string>
+    <string name="distance_metres">%1$d m</string>
+    <string name="distance_kilometres">%1$.1f km</string>
+    <string name="notifications_blocked">Le notifiche sono disattivate per questa app. Attivale nelle Impostazioni per ricevere gli avvisi dei bus.</string>
     <string name="transfer_reached">Sei al punto di cambio: %1$s</string>
     <string name="tap_to_replan">Tocca per ricalcolare il percorso da qui.</string>
     <string name="selected_bus_passed">Il bus scelto ha già superato la fermata</string>
