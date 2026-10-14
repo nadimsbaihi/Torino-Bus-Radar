@@ -131,6 +131,9 @@ class MainActivity : AppCompatActivity() {
     private val busIconCache = mutableMapOf<Triple<Boolean, Int, String>, BitmapDrawable>()
     private val journeySheet get() = BottomSheetBehavior.from(binding.journeyCard)
     private var mapInsets = 0 to 0
+    private var stopWindow: StopArrivalsWindow? = null
+    private var openStop: TransitStop? = null
+    private var stopJob: Job? = null
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -284,6 +287,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun closeJourney() {
         planningJob?.cancel()
+        stopWindow?.close()
         journeyChoice = null
         trainJourneyChoice = null
         mixedJourneyChoice = null
@@ -371,6 +375,10 @@ class MainActivity : AppCompatActivity() {
             override fun singleTapConfirmedHelper(point: GeoPoint?): Boolean {
                 if (askedSpot != null) {
                     clearAskedSpot()
+                    return true
+                }
+                if (openStop != null) {
+                    stopWindow?.close()
                     return true
                 }
                 if (highlightedVehicleId == null) return false
@@ -522,6 +530,7 @@ class MainActivity : AppCompatActivity() {
     /** A press that lingers is easily an accident: mark the spot and ask there before going. */
     private fun askAboutMapPoint(point: GeoPoint) {
         clearAskedSpot()
+        stopWindow?.close()
         val pin = Marker(binding.map).apply {
             position = point
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -1100,6 +1109,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     renderVehicles()
                 }
+                refreshStopArrivals()
             }
             .onFailure {
                 if (it is CancellationException) return
@@ -1107,6 +1117,7 @@ class MainActivity : AppCompatActivity() {
                 liveVehicles = emptyList()
                 liveStatusFetchedAt = null
                 renderVehicles()
+                refreshStopArrivals()
                 setLiveStatus(getString(R.string.feed_unavailable), R.color.warning)
             }
     }
@@ -1241,6 +1252,36 @@ class MainActivity : AppCompatActivity() {
         binding.map.invalidate()
     }
 
+    /** Opens the bubble of buses heading to [stop], over the point [offsetDp] above where it sits. */
+    private fun showStopArrivals(stop: TransitStop, offsetDp: Int) {
+        // One question or answer over the map at a time.
+        clearAskedSpot()
+        org.osmdroid.views.overlay.infowindow.InfoWindow.closeAllInfoWindowsOn(binding.map)
+        val window = stopWindow ?: StopArrivalsWindow(binding.map) {
+            openStop = null
+            stopJob?.cancel()
+        }.also { stopWindow = it }
+        openStop = stop
+        window.render(TransitIndex.cleanStopName(stop.name), null)
+        window.open(stop, GeoPoint(stop.latitude, stop.longitude), 0,
+            -(offsetDp * resources.displayMetrics.density).roundToInt())
+        refreshStopArrivals()
+    }
+
+    /** Redraws the open stop bubble from the latest buses; a no-op when none is open. */
+    private fun refreshStopArrivals() {
+        val stop = openStop ?: return
+        val window = stopWindow ?: return
+        stopJob?.cancel()
+        stopJob = lifecycleScope.launch {
+            val vehicles = liveVehicles
+            val tracked = withContext(Dispatchers.Default) { transitIndex.trackVehicles(vehicles) }
+            if (openStop == stop) {
+                window.render(TransitIndex.cleanStopName(stop.name), StopArrivals.upcoming(tracked, stop.id))
+            }
+        }
+    }
+
     private fun visibleVehicles(): List<LiveVehicle> {
         val selectedIds = setOfNotNull(journeyChoice?.vehicle?.id, journeyChoice?.secondLeg?.vehicle?.id)
         return when {
@@ -1314,6 +1355,10 @@ class MainActivity : AppCompatActivity() {
             position = GeoPoint(stop.latitude, stop.longitude)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             title = TransitIndex.cleanStopName(stop.name)
+            setOnMarkerClickListener { _, _ ->
+                showStopArrivals(stop, STOP_DOT_DP / 2)
+                true
+            }
             icon = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(getColor(R.color.map_face))
@@ -1455,8 +1500,8 @@ class MainActivity : AppCompatActivity() {
                 outlinePaint.strokeCap = Paint.Cap.ROUND
             })
         }
-        addJourneyStopMarker(train.boardAt.asTransitStop(), getString(R.string.board_train_here), getColor(R.color.train_blue))
-        addJourneyStopMarker(train.destination.asTransitStop(), getString(R.string.exit_train_here), getColor(R.color.train_blue), 18)
+        addJourneyStopMarker(train.boardAt.asTransitStop(), getString(R.string.board_train_here), getColor(R.color.train_blue), busStop = false)
+        addJourneyStopMarker(train.destination.asTransitStop(), getString(R.string.exit_train_here), getColor(R.color.train_blue), 18, busStop = false)
         if (showFinalDestination) addExactDestinationMarker(destination.latitude, destination.longitude)
     }
 
@@ -1519,13 +1564,19 @@ class MainActivity : AppCompatActivity() {
         stop: TransitStop,
         label: String,
         color: Int,
-        sizeDp: Int = 14
+        sizeDp: Int = 14,
+        busStop: Boolean = true
     ) {
         binding.map.overlays.add(Marker(binding.map).apply {
             position = GeoPoint(stop.latitude, stop.longitude)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             title = label
             snippet = TransitIndex.cleanStopName(stop.name)
+            // Buses can be listed only for a bus stop; a station keeps its plain label.
+            if (busStop) setOnMarkerClickListener { _, _ ->
+                showStopArrivals(stop, sizeDp)
+                true
+            }
             icon = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(color)

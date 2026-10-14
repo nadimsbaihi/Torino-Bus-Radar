@@ -158,4 +158,7 @@
     <string name="map_pin_confirm_action">Go</string>
     <string name="no_saved_places">No saved places yet. Search for a place and tap the bookmark, or press and hold on the map to go anywhere.</string>
     <string name="save_needs_known_place">Choose a place from the suggestions before saving it.</string>
+    <string name="stop_arrivals_none">No live buses on the way</string>
+    <string name="stop_arrival_eta">~%1$d min</string>
+    <string name="stop_arrival_row">Line %1$s towards %2$s, about %3$d minutes</string>
 </resources>

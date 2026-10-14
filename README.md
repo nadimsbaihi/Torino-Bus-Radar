@@ -21,6 +21,10 @@ destination and your search preferences.
   every 15 seconds while the app is open, with a note of how long ago they
   were fetched. Select a journey or line to focus the map, or tap a bus
   to highlight its whole course and the stops it has yet to reach.
+- **What is coming to a stop.** Tap a stop on a highlighted course, or the
+  boarding and exit stops of a journey, to see the next few buses heading there
+  with their line, direction and estimated minutes. The list updates with each
+  refresh while it is open.
 - **Bus and train journeys.** Find direct trips and connections, including
   bus-to-train and train-to-bus options.
 - **Journey steps, out of the way of the map.** Your journey opens as a short

@@ -158,4 +158,7 @@
     <string name="map_pin_confirm_action">Vai</string>
     <string name="no_saved_places">Nessun luogo salvato. Cerca un luogo e tocca il segnalibro, oppure tieni premuto sulla mappa per andare ovunque.</string>
     <string name="save_needs_known_place">Scegli un luogo tra i suggerimenti prima di salvarlo.</string>
+    <string name="stop_arrivals_none">Nessun bus in arrivo</string>
+    <string name="stop_arrival_eta">~%1$d min</string>
+    <string name="stop_arrival_row">Linea %1$s verso %2$s, tra circa %3$d minuti</string>
 </resources>
