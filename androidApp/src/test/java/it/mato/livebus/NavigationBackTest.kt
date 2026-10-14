@@ -341,9 +341,13 @@ class NavigationBackTest {
         val top = binding.topControls.height
         assertEquals("with no journey only the search box is in the way", top / 2, binding.map.mapCenterOffsetY)
 
+        binding.destinationInput.setText("Piazza Castello", false)
         show(activity)
 
-        val covered = minOf(peek(activity), binding.journeyCard.height)
+        // The start row, shown once there is a destination, is part of the peek.
+        assertEquals(View.VISIBLE, binding.startRow.visibility)
+        val startRow = activity.resources.getDimensionPixelSize(R.dimen.journey_start_row_height)
+        val covered = minOf(peek(activity) + startRow, binding.journeyCard.height)
         assertTrue("the sheet should reserve map space", covered > 0)
         assertEquals((top - covered) / 2, binding.map.mapCenterOffsetY)
 
