@@ -191,6 +191,7 @@ class MainActivity : AppCompatActivity() {
             stop?.let { openWalkingDirections(it) }
         }
         binding.closeJourneyButton.setOnClickListener { closeJourney() }
+        binding.refreshJourneyButton.setOnClickListener { refreshJourney() }
         consumeSharedDirections(intent)
         requestLocation()
         startRefreshing()
@@ -269,6 +270,16 @@ class MainActivity : AppCompatActivity() {
             }
             else -> false
         }
+    }
+
+    /**
+     * Fresh bus positions, then the journey planned again from them. A header button rather than
+     * pull-to-refresh: a pull down at the top of the list is how the sheet is dragged closed, and
+     * the sheet claims that gesture first.
+     */
+    private fun refreshJourney() {
+        startRefreshing(forceRefresh = true)
+        if (!binding.destinationInput.text.isNullOrBlank()) findDestinationRoute()
     }
 
     private fun closeJourney() {

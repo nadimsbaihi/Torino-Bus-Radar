@@ -318,6 +318,21 @@
                         android:textStyle="bold" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/refreshJourneyButton"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:contentDescription="@string/refresh_journey"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        app:icon="@drawable/ic_refresh"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconTint="@color/ink" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/closeJourneyButton"
                         style="@style/Widget.Material3.Button.IconButton"
                         android:layout_width="48dp"

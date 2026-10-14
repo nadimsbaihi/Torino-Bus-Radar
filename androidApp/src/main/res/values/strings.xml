@@ -108,6 +108,7 @@
     <string name="open_walking_directions">Open walking directions</string>
     <string name="journey_details">Journey details</string>
     <string name="step_directions">Walking directions in Maps</string>
+    <string name="refresh_journey">Refresh buses and replan</string>
     <string name="step_walk_to">Walk %1$d m to %2$s</string>
     <string name="step_walk_to_destination">Walk %1$d m to your destination</string>
     <string name="step_board_bus_eta">Board bus %1$s · arrives in ~%2$d min</string>
