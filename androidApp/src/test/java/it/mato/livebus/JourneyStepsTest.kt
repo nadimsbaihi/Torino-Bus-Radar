@@ -52,14 +52,29 @@ class JourneyStepsTest {
         assertEquals(listOf(StepKind.WALK, StepKind.BUS, StepKind.BUS, StepKind.WALK), guide.steps.map { it.kind })
     }
 
-    @Test fun onlyTheWalkToTheBoardingStopOffersDirections() {
+    @Test fun theFirstWalkStartsWhereTheJourneyDoesAndTheLastStartsAtTheExit() {
         val guide = JourneySteps.forBus(context, bus())
 
-        val target = guide.steps.first().target
-        assertNotNull(target)
-        assertEquals(board.latitude, target!!.latitude, 1e-9)
-        assertEquals(board.longitude, target.longitude, 1e-9)
-        assertTrue(guide.steps.drop(1).all { it.target == null })
+        val first = guide.steps.first()
+        assertEquals(board.latitude, first.target!!.latitude, 1e-9)
+        assertNull(first.origin)
+        val last = guide.steps.last()
+        assertEquals(exit.latitude, last.origin!!.latitude, 1e-9)
+        assertNotNull(last.target)
+        assertTrue(guide.steps.filter { it.kind != StepKind.WALK }.all { it.target == null })
+    }
+
+    @Test fun aTransferWalkGoesFromTheStopYouGetOffAtToTheNextBoardingStop() {
+        val transfer = TransitStop("x", "Corso Vittorio", 45.075, 7.685)
+        val next = TransitStop("n", "Corso Vittorio Nord", 45.076, 7.686)
+        val secondExit = TransitStop("y", "Piazza Statuto", 45.09, 7.7)
+        val second = TransitPattern("p2", "r9", "9", "Nord", "0", emptySet(), listOf(next, secondExit))
+        val leg = JourneyLeg(second, vehicle, next, secondExit, 1)
+        val walk = JourneySteps.forBus(context, bus(leg = leg, transfer = transfer, transferWalk = 80f))
+            .steps.first { it.text == "Walk 80 m to Corso Vittorio Nord" }
+
+        assertEquals(transfer.latitude, walk.origin!!.latitude, 1e-9)
+        assertEquals(next.latitude, walk.target!!.latitude, 1e-9)
     }
 
     @Test fun leaveByIsTheBusArrivalLessTheWalk() {
@@ -139,7 +154,8 @@ class JourneyStepsTest {
             "Walk 500 m to your destination"
         ), texts(guide))
         assertEquals(StepKind.WALK, guide.steps[3].kind)
-        assertNull(guide.steps[3].target)
+        assertEquals(exit.latitude, guide.steps[3].origin!!.latitude, 1e-9)
+        assertNotNull(guide.steps[3].target)
         assertTrue(guide.notes.contains("Train times: Regione Piemonte timetable."))
     }
 

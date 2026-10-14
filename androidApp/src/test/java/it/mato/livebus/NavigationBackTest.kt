@@ -300,6 +300,17 @@ class NavigationBackTest {
         assertEquals(activity.getString(R.string.directions_unavailable), message.text.toString())
     }
 
+    @Test fun aLegWithItsOwnStartOpensTheDirectionsPageWithThatOrigin() {
+        val (activity, _) = screen()
+
+        call(activity, "openWalkingDirections", GeoPoint(45.08, 7.69), GeoPoint(45.07, 7.68))
+
+        val intent = shadowOf(activity).nextStartedActivity
+        assertEquals("com.google.android.apps.maps", intent.`package`)
+        assertEquals("https://www.google.com/maps/dir/?api=1&origin=45.07,7.68" +
+            "&destination=45.08,7.69&travelmode=walking", intent.data.toString())
+    }
+
     @Test fun theMapIsCentredOnTheSpaceTheSheetLeavesFree() {
         val (activity, binding) = screen()
         val top = binding.topControls.height

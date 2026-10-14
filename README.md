@@ -56,6 +56,8 @@ destination and your search preferences.
 - **Walking directions.** Compare a ride with walking, then open Google Maps
   directions to the destination or boarding stop. Maps opens only when you tap
   a directions button, and the button stays so you can reopen the route.
+  Every walking step in the journey, such as the walk from where you get off
+  one bus to the next stop, has its own directions button for just that leg.
 - **Shared routes.** Share directions text from another app to find a bus line
   mentioned in it.
 

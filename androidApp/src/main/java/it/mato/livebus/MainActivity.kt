@@ -346,7 +346,8 @@ class MainActivity : AppCompatActivity() {
                 getColor(if (step.kind == StepKind.TRAIN) R.color.train_blue else R.color.deep_green)))
             step.target?.let { target ->
                 row.stepDirections.visibility = View.VISIBLE
-                row.stepDirections.setOnClickListener { openWalkingDirections(target) }
+                row.stepDirections.contentDescription = getString(R.string.step_directions_for, step.text)
+                row.stepDirections.setOnClickListener { openWalkingDirections(target, step.origin) }
             }
             binding.journeySteps.addView(row.root)
         }
@@ -1021,8 +1022,8 @@ class MainActivity : AppCompatActivity() {
         highlightedVehicleId = null
         val wasShowingSteps = binding.journeyCard.visibility == View.VISIBLE &&
             binding.journeySteps.childCount > 0
-        val guide = mixedJourneyChoice?.let { JourneySteps.forMixed(this, it) }
-            ?: trainJourneyChoice?.let { JourneySteps.forTrain(this, it) }
+        val guide = mixedJourneyChoice?.let { JourneySteps.forMixed(this, it, directDestination) }
+            ?: trainJourneyChoice?.let { JourneySteps.forTrain(this, it, directDestination) }
             ?: JourneySteps.forBus(this, requireNotNull(choice))
         val walkingFaster = walkingPreference != WalkingPreference.LESS && directWalkingSeconds < transitSeconds
         transitGuide = guide.copy(notes = listOfNotNull(
@@ -2033,21 +2034,26 @@ class MainActivity : AppCompatActivity() {
         return result[0] * WALKING_STREET_FACTOR
     }
 
-    private fun openWalkingDirections(destination: GeoPoint) {
-        val navigation = Uri.parse(
-            "google.navigation:q=${destination.latitude},${destination.longitude}&mode=w"
+    /** Walking directions in Maps; an [origin] sets where a leg starts, otherwise Maps starts from the rider. */
+    private fun openWalkingDirections(destination: GeoPoint) = openWalkingDirections(destination, null)
+
+    private fun openWalkingDirections(destination: GeoPoint, origin: GeoPoint?) {
+        val from = origin ?: currentLocation
+        val webDirections = Uri.parse(
+            "https://www.google.com/maps/dir/?api=1" +
+                "&origin=${from.latitude},${from.longitude}" +
+                "&destination=${destination.latitude},${destination.longitude}" +
+                "&travelmode=walking"
         )
+        // Navigation always starts at the rider's own position, so a leg that starts elsewhere
+        // goes through the directions page, which takes an origin.
+        val first = if (origin == null) {
+            Intent(Intent.ACTION_VIEW, Uri.parse(
+                "google.navigation:q=${destination.latitude},${destination.longitude}&mode=w"))
+        } else Intent(Intent.ACTION_VIEW, webDirections)
         try {
-            startActivity(Intent(Intent.ACTION_VIEW, navigation).apply {
-                setPackage(GOOGLE_MAPS_PACKAGE)
-            })
+            startActivity(first.setPackage(GOOGLE_MAPS_PACKAGE))
         } catch (_: ActivityNotFoundException) {
-            val webDirections = Uri.parse(
-                "https://www.google.com/maps/dir/?api=1" +
-                    "&origin=${currentLocation.latitude},${currentLocation.longitude}" +
-                    "&destination=${destination.latitude},${destination.longitude}" +
-                    "&travelmode=walking"
-            )
             try {
                 startActivity(Intent(Intent.ACTION_VIEW, webDirections))
             } catch (_: ActivityNotFoundException) {

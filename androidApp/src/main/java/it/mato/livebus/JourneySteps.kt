@@ -7,8 +7,16 @@ import kotlin.math.roundToInt
 
 enum class StepKind { WALK, BUS, TRAIN, TRANSFER }
 
-/** One line of a journey. A [target] marks a walk the rider can open as directions in Maps. */
-data class JourneyStep(val kind: StepKind, val text: String, val target: GeoPoint? = null)
+/**
+ * One line of a journey. A [target] marks a walk the rider can open as directions in Maps; its
+ * [origin] is where that leg starts, or null when it starts where the journey does.
+ */
+data class JourneyStep(
+    val kind: StepKind,
+    val text: String,
+    val target: GeoPoint? = null,
+    val origin: GeoPoint? = null
+)
 
 /** A journey broken into steps, plus the caveats that apply to all of them. */
 data class JourneyGuide(val steps: List<JourneyStep>, val notes: List<String> = emptyList())
@@ -31,36 +39,40 @@ object JourneySteps {
     fun forBus(context: Context, bus: JourneyChoice) = JourneyGuide(
         buildList {
             addAll(firstBusLeg(context, bus))
-            walkToDestination(context, bus.destinationWalkMetres)?.let(::add)
+            walkToDestination(context, bus.destinationWalkMetres, bus.lastStop,
+                GeoPoint(bus.finalLatitude, bus.finalLongitude))?.let(::add)
         },
         busNotes(context, bus)
     )
 
-    fun forTrain(context: Context, train: ScheduledTrainJourney) = JourneyGuide(
+    fun forTrain(context: Context, train: ScheduledTrainJourney, destination: GeoPoint? = null) = JourneyGuide(
         buildList {
-            walkTo(context, train.walkingMetres, train.boardAt, directions = true)?.let(::add)
+            walkTo(context, train.walkingMetres, train.boardAt)?.let(::add)
             addAll(trainLeg(context, train))
-            walkToDestination(context, train.destinationWalkMetres)?.let(::add)
+            walkToDestination(context, train.destinationWalkMetres, train.destination.asTransitStop(), destination)
+                ?.let(::add)
         },
         listOf(context.getString(R.string.train_timetable_note))
     )
 
-    fun forMixed(context: Context, mixed: MixedJourney): JourneyGuide {
+    fun forMixed(context: Context, mixed: MixedJourney, destination: GeoPoint? = null): JourneyGuide {
         val bus = mixed.bus
         val train = mixed.train
         val steps = buildList {
             if (mixed.busFirst) {
                 addAll(firstBusLeg(context, bus))
-                walkTo(context, bus.destinationWalkMetres, train.boardAt)?.let(::add)
+                walkTo(context, bus.destinationWalkMetres, train.boardAt, bus.lastStop)?.let(::add)
                 addAll(trainLeg(context, train))
-                walkToDestination(context, train.destinationWalkMetres)?.let(::add)
+                walkToDestination(context, train.destinationWalkMetres, train.destination.asTransitStop(),
+                    destination)?.let(::add)
             } else {
-                walkTo(context, train.walkingMetres, train.boardAt, directions = true)?.let(::add)
+                walkTo(context, train.walkingMetres, train.boardAt)?.let(::add)
                 addAll(trainLeg(context, train))
-                walkTo(context, bus.walkingMetres, bus.boardAt)?.let(::add)
+                walkTo(context, bus.walkingMetres, bus.boardAt, train.destination.asTransitStop())?.let(::add)
                 // The bus is judged against the clock when the train arrives, not now.
                 addAll(busLeg(context, bus, withEta = false))
-                walkToDestination(context, bus.destinationWalkMetres)?.let(::add)
+                walkToDestination(context, bus.destinationWalkMetres, bus.lastStop,
+                    destination ?: GeoPoint(bus.finalLatitude, bus.finalLongitude))?.let(::add)
             }
         }
         return JourneyGuide(steps, busNotes(context, bus) + context.getString(R.string.train_timetable_note))
@@ -77,7 +89,7 @@ object JourneySteps {
      * its arrival less the walk. It rides on the walk step, or on boarding when there is no walk.
      */
     private fun firstBusLeg(context: Context, bus: JourneyChoice): List<JourneyStep> {
-        val steps = listOfNotNull(walkTo(context, bus.walkingMetres, bus.boardAt, directions = true)) +
+        val steps = listOfNotNull(walkTo(context, bus.walkingMetres, bus.boardAt)) +
             busLeg(context, bus, withEta = true)
         val leave = leaveBy(context, bus)
         val first = steps.first()
@@ -99,10 +111,7 @@ object JourneySteps {
         val exit = bus.transferAt ?: bus.destination
         add(JourneyStep(StepKind.BUS, context.getString(R.string.step_get_off, stopName(exit.name))))
         bus.secondLeg?.let { leg ->
-            if (bus.transferWalkMetres >= MIN_WALK_METRES) {
-                add(JourneyStep(StepKind.WALK, context.getString(R.string.step_walk_to,
-                    bus.transferWalkMetres.roundToInt(), stopName(leg.boardAt.name))))
-            }
+            walkTo(context, bus.transferWalkMetres, leg.boardAt, exit)?.let(::add)
             add(JourneyStep(StepKind.TRANSFER, context.getString(R.string.step_change_bus,
                 leg.pattern.route, stopName(leg.boardAt.name))))
             add(JourneyStep(StepKind.BUS, context.getString(R.string.step_get_off, stopName(leg.exitAt.name))))
@@ -127,29 +136,28 @@ object JourneySteps {
         )
     }
 
-    private fun walkTo(context: Context, metres: Float, stop: TransitStop, directions: Boolean = false) =
-        walkTo(context, metres, stop.name, stop.latitude, stop.longitude, directions)
+    private fun walkTo(context: Context, metres: Float, stop: TransitStop, from: TransitStop? = null) =
+        walkTo(context, metres, stop.name, GeoPoint(stop.latitude, stop.longitude), from)
 
-    private fun walkTo(context: Context, metres: Float, stop: TrainStop, directions: Boolean = false) =
-        walkTo(context, metres, stop.name, stop.latitude, stop.longitude, directions)
+    private fun walkTo(context: Context, metres: Float, stop: TrainStop, from: TransitStop? = null) =
+        walkTo(context, metres, stop.name, GeoPoint(stop.latitude, stop.longitude), from)
 
-    private fun walkTo(
-        context: Context,
-        metres: Float,
-        name: String,
-        latitude: Double,
-        longitude: Double,
-        directions: Boolean
-    ): JourneyStep? {
+    private fun walkTo(context: Context, metres: Float, name: String, to: GeoPoint, from: TransitStop?): JourneyStep? {
         if (metres < MIN_WALK_METRES) return null
         return JourneyStep(StepKind.WALK,
             context.getString(R.string.step_walk_to, metres.roundToInt(), stopName(name)),
-            if (directions) GeoPoint(latitude, longitude) else null)
+            to, from?.let { GeoPoint(it.latitude, it.longitude) })
     }
 
-    private fun walkToDestination(context: Context, metres: Float): JourneyStep? =
+    private fun walkToDestination(context: Context, metres: Float, from: TransitStop, to: GeoPoint?): JourneyStep? =
         if (metres < MIN_WALK_METRES) null
-        else JourneyStep(StepKind.WALK, context.getString(R.string.step_walk_to_destination, metres.roundToInt()))
+        else JourneyStep(StepKind.WALK, context.getString(R.string.step_walk_to_destination, metres.roundToInt()),
+            to, GeoPoint(from.latitude, from.longitude))
+
+    private fun TrainStop.asTransitStop() = TransitStop(id, name, latitude, longitude)
+
+    /** Where the rider gets off the last bus. */
+    private val JourneyChoice.lastStop: TransitStop get() = secondLeg?.exitAt ?: destination
 
     private fun stopName(name: String) = TransitIndex.cleanStopName(name)
 }

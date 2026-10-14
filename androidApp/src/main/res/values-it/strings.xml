@@ -108,6 +108,7 @@
     <string name="open_walking_directions">Apri le indicazioni a piedi</string>
     <string name="journey_details">Dettagli del percorso</string>
     <string name="step_directions">Indicazioni a piedi in Google Maps</string>
+    <string name="step_directions_for">Indicazioni a piedi in Google Maps: %1$s</string>
     <string name="refresh_journey">Aggiorna i bus e ricalcola</string>
     <string name="step_walk_to">Cammina per %1$d m fino a %2$s</string>
     <string name="step_walk_to_destination">Cammina per %1$d m fino a destinazione</string>
