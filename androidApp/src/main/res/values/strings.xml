@@ -5,6 +5,11 @@
     <string name="walk_summary">Walk · ~%1$d min</string>
     <string name="walk_option">Walk · %1$d min</string>
     <string name="transit_option">Transit · %1$d min</string>
+    <string name="option_best">Best</string>
+    <string name="option_fewest_changes">Fewest changes</string>
+    <string name="option_fastest">Fastest</string>
+    <string name="option_least_walking">Least walking</string>
+    <string name="option_label">%1$s · %2$d min</string>
     <string name="appearance">Appearance</string>
     <string name="appearance_system">Follow phone setting</string>
     <string name="appearance_light">Light</string>

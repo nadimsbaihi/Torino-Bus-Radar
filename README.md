@@ -140,6 +140,17 @@ network behavior, and map interaction.
   so a slim connection loses to a safe one that is a little slower. The panel then adds
   "Missed it? Next bus ..." for the next vehicle that reaches the same boarding stop,
   and the same exit, after the planned one.
+- Journeys come from one round-based search (in the manner of RAPTOR) over every live bus
+  and the day's regional trains. Round k holds the best ways to reach each stop after k
+  vehicles; each round boards every run it can catch (a bus must still be ahead, with
+  walk plus 15% slack and 20 s to change, or 60 s after a train; a train needs 2 min),
+  then walks on to stops within 350 m (500 m between stop and station). The planner keeps
+  a few ways per stop rather than one, so a slower way with less walking or a safer
+  connection survives. The panel can show a bus, two buses, or a bus and a train in either
+  order; the search itself handles three vehicles, but the panel stops at two. Trains
+  more than three hours away are ignored and tomorrow's are only offered by the
+  train-only search. Beside the best journey, chips offer the one with fewest changes, the
+  soonest, and the one with least walking, when they differ.
 - Bus positions older than two minutes are faded and labeled as delayed;
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.

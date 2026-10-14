@@ -175,6 +175,10 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     var speeds = SpeedEstimator()
     // The last fix of each vehicle on its trip, to measure how far it got between two feeds.
     private val speedFixes = HashMap<String, SpeedSampler.Fix>()
+    /** Stops within [MAX_TRANSFER_WALK] (straight line) of a stop, with the distance, the stop itself included. */
+    internal fun transferNeighbours(stopId: String): List<Pair<String, Float>> =
+        transferStops[stopId].orEmpty()
+
     private val vehicleProgress = mutableMapOf<String, ObservedProgress>()
     private val vehicleMotion = mutableMapOf<String, VehicleMotion>()
     // One fix is matched many times per refresh (map, planner, alerts); remember the answer.
@@ -390,7 +394,43 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             Turnaround(current.pattern.id, departs), speed, current.positionAgeSeconds)
     }
 
+    /**
+     * The best journey by live buses alone: one bus, or two with a change. This is the
+     * [JourneyPlanner] round search restricted to buses, so the rider and the alert service see
+     * what the full planner would find without trains.
+     */
     suspend fun planLiveJourney(
+        latitude: Double,
+        longitude: Double,
+        destinationLatitude: Double,
+        destinationLongitude: Double,
+        vehicles: List<LiveVehicle>,
+        onDirectJourney: (suspend (JourneyChoice?) -> Unit)? = null,
+        walkFromOrigin: ((Double, Double) -> Float)? = null,
+        walkFromDestination: ((Double, Double) -> Float)? = null,
+        walkBetweenStops: ((Double, Double, Double, Double) -> Float)? = null,
+        earliestStartSeconds: Float = 0f,
+        maxDestinationWalkMetres: Float = Float.POSITIVE_INFINITY,
+        directOnly: Boolean = false,
+        walkingPreference: WalkingPreference = WalkingPreference.MORE,
+        tracked: List<TrackedVehicle>? = null
+    ): JourneyChoice? {
+        val options = JourneyPlanner(this, null).plan(JourneyQuery(
+            latitude, longitude, destinationLatitude, destinationLongitude, vehicles,
+            walkFromOrigin, walkFromDestination, walkBetweenStops, walkingPreference,
+            earliestStartSeconds = earliestStartSeconds,
+            maxDestinationWalkMetres = maxDestinationWalkMetres,
+            maxVehicles = if (directOnly) 1 else 2,
+            tracked = tracked), onDirectJourney)
+        return options.firstOrNull()?.bus
+    }
+
+    /**
+     * The original search: every vehicle against every pair of stops, then one change between two
+     * buses. Kept as the reference the round planner is compared with in the tests, and as a
+     * baseline for timing.
+     */
+    internal suspend fun planLiveJourneyNestedLoops(
         latitude: Double,
         longitude: Double,
         destinationLatitude: Double,
@@ -650,7 +690,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
      * (on this line or another that serves both that stop and where the first bus is left) after
      * the planned one, and that the rider could still walk to in time.
      */
-    private fun withBackup(
+    internal fun withBackup(
         choice: JourneyChoice,
         fleet: List<TrackedVehicle>,
         freeAtSeconds: Float,
@@ -1193,7 +1233,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             return hypot(px - (ax + t * dx), py - (ay + t * dy)) * METRES_PER_DEGREE
         }
 
-        private const val MAX_TRANSFER_WALK = 350f
+        internal const val MAX_TRANSFER_WALK = 350f
         private const val WALKING_METRES_PER_SECOND = 1.2f
         private const val STALE_MIN_VEHICLES = 10
         private const val STALE_MAX_KNOWN_SHARE = 0.25

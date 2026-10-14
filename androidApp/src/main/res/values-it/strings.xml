@@ -5,6 +5,11 @@
     <string name="walk_summary">A piedi · ~%1$d min</string>
     <string name="walk_option">A piedi · %1$d min</string>
     <string name="transit_option">Mezzi · %1$d min</string>
+    <string name="option_best">Migliore</string>
+    <string name="option_fewest_changes">Meno cambi</string>
+    <string name="option_fastest">Più veloce</string>
+    <string name="option_least_walking">Meno a piedi</string>
+    <string name="option_label">%1$s · %2$d min</string>
     <string name="appearance">Aspetto</string>
     <string name="appearance_system">Come le impostazioni del telefono</string>
     <string name="appearance_light">Chiaro</string>

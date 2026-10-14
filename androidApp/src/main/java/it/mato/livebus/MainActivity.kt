@@ -77,6 +77,7 @@ import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import android.content.DialogInterface
 import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import java.util.UUID
@@ -121,6 +122,10 @@ class MainActivity : AppCompatActivity() {
     private var journeyChoice: JourneyChoice? = null
     private var trainJourneyChoice: ScheduledTrainJourney? = null
     private var mixedJourneyChoice: MixedJourney? = null
+    // What the planner offered for the journey on screen, and which of those is showing.
+    private var journeyOptions: List<JourneyOption> = emptyList()
+    private var selectedOption = -1
+    private var plannedDestination: Pair<String, Pair<Double, Double>>? = null
     private var walkingMode = false
     private var directWalkingMetres = 0f
     private var directWalkingSeconds = 0f
@@ -986,6 +991,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             val started = SystemClock.elapsedRealtime()
             binding.findRouteButton.isEnabled = false
             binding.searchProgress.visibility = View.VISIBLE
+            journeyOptions = emptyList()
+            binding.journeyOptionsScroll.visibility = View.GONE
             journeyChoice = null
             trainJourneyChoice = null
             mixedJourneyChoice = null
@@ -1072,10 +1079,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     val (fromOrigin, fromDestination) = walkingTask.await()
                     walkingFromOrigin = fromOrigin
                     walkingFromDestination = fromDestination
-                    val busChoice = withContext(Dispatchers.Default) {
-                        timed("buses") {
+                    val options = withContext(Dispatchers.Default) {
+                        timed("journeys") {
                             hasMatchedVehicles = journeyVehicles.any { transitIndex.matchDirection(it) != null }
-                            transitIndex.planLiveJourney(
+                            journeyPlanner.plan(JourneyQuery(
                                 origin.latitude, origin.longitude, address.first, address.second,
                                 journeyVehicles,
                                 walkFromOrigin = fromOrigin::estimatedMetresTo,
@@ -1085,33 +1092,22 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                                         ?: Float.POSITIVE_INFINITY
                                 },
                                 walkingPreference = preference,
-                                onDirectJourney = { direct ->
-                                    withContext(Dispatchers.Main) {
-                                        val trainChoice = trainTask?.await()
-                                        if (direct != null || trainChoice != null) {
-                                            displayJourney(destination, address, direct, trainChoice, frame = true)
-                                            appendJourneyNote(getString(R.string.checking_transfers))
-                                            shown = true
-                                        }
+                                trainsAt = if (searchTrains) planningTime else null
+                            ), onDirectJourney = { direct ->
+                                withContext(Dispatchers.Main) {
+                                    val trainChoice = trainTask?.await()
+                                    if (direct != null || trainChoice != null) {
+                                        displayJourney(destination, address, direct, trainChoice, frame = true)
+                                        appendJourneyNote(getString(R.string.checking_transfers))
+                                        shown = true
                                     }
                                 }
-                            )
+                            })
                         }
                     }
                     val trainChoice = trainTask?.await()
-                    val mixedChoice = if (searchTrains) withContext(Dispatchers.Default) {
-                        timed("bus-train connections") {
-                            journeyPlanner.planMixedJourney(origin.latitude, origin.longitude,
-                                address.first, address.second, journeyVehicles, planningTime,
-                                fromOrigin::estimatedMetresTo,
-                                fromDestination::estimatedMetresTo,
-                                walkBetweenStops = { fromLat, fromLon, toLat, toLon ->
-                                    offlineCity.shortWalkMetres(fromLat, fromLon, toLat, toLon)
-                                        ?: Float.POSITIVE_INFINITY
-                                },
-                                walkingPreference = preference)
-                        }
-                    } else null
+                    val busChoice = options.firstOrNull { it.bus != null }?.bus
+                    val mixedChoice = options.firstOrNull { it.mixed != null }?.mixed
                     if (busChoice == null && trainChoice == null && mixedChoice == null) {
                         showJourneyMessage(getString(
                             if (vehicleResult.isFailure) R.string.journey_feed_unavailable
@@ -1122,8 +1118,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     } else {
                         val changed = mixedChoice != mixedJourneyChoice ||
                             (busChoice != journeyChoice && trainJourneyChoice == null)
-                        displayJourney(destination, address, busChoice, trainChoice,
-                            mixedChoice, frame = !shown || changed)
+                        showJourneyOptions(destination, address, options, trainChoice, frame = !shown || changed)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -1159,6 +1154,63 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         frame: Boolean
     ) = displayJourney(destination, address, busChoice, trainChoice, null, frame)
 
+    /**
+     * Shows the best journey among [options] (or the train, if that is better), with a chip for
+     * each alternative the planner offers beside it.
+     */
+    private fun showJourneyOptions(
+        destination: String,
+        address: Pair<Double, Double>,
+        options: List<JourneyOption>,
+        trainChoice: ScheduledTrainJourney?,
+        frame: Boolean
+    ) {
+        journeyOptions = options
+        plannedDestination = destination to address
+        displayJourney(destination, address, options.firstOrNull { it.bus != null }?.bus, trainChoice,
+            options.firstOrNull { it.mixed != null }?.mixed, frame)
+        selectedOption = options.indexOfFirst { option ->
+            if (mixedJourneyChoice != null) option.mixed == mixedJourneyChoice
+            else trainJourneyChoice == null && option.bus != null && option.bus == journeyChoice
+        }
+        renderJourneyOptionChips()
+    }
+
+    /** The rider picked another of the planner's options: show it, whatever the train would do. */
+    private fun selectJourneyOption(index: Int) {
+        val option = journeyOptions.getOrNull(index) ?: return
+        val (destination, address) = plannedDestination ?: return
+        if (index == selectedOption) return
+        displayJourney(destination, address, option.bus, null, option.mixed, frame = true, remember = false)
+        selectedOption = index
+        renderJourneyOptionChips()
+    }
+
+    private fun renderJourneyOptionChips() {
+        val group = binding.journeyOptions
+        group.setOnCheckedStateChangeListener(null)
+        group.removeAllViews()
+        // Not while a train alone is showing (selectedOption is -1 then), nor for a single option.
+        val show = journeyOptions.size > 1 && selectedOption >= 0
+        binding.journeyOptionsScroll.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show) return
+        journeyOptions.forEachIndexed { index, option ->
+            val chip = Chip(this, null, com.google.android.material.R.attr.chipStyle).apply {
+                id = View.generateViewId()
+                text = getString(R.string.option_label, getString(when (option.reason) {
+                    OptionReason.BEST -> R.string.option_best
+                    OptionReason.FEWEST_CHANGES -> R.string.option_fewest_changes
+                    OptionReason.FASTEST -> R.string.option_fastest
+                    OptionReason.LEAST_WALKING -> R.string.option_least_walking
+                }), minutes(option.totalSeconds))
+                isCheckable = true
+                isChecked = index == selectedOption
+            }
+            group.addView(chip)
+            chip.setOnClickListener { selectJourneyOption(index) }
+        }
+    }
+
     private fun displayJourney(
         destination: String,
         address: Pair<Double, Double>,
@@ -1166,11 +1218,21 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         trainChoice: ScheduledTrainJourney?,
         mixedChoice: MixedJourney?,
         frame: Boolean
+    ) = displayJourney(destination, address, busChoice, trainChoice, mixedChoice, frame, remember = true)
+
+    private fun displayJourney(
+        destination: String,
+        address: Pair<Double, Double>,
+        busChoice: JourneyChoice?,
+        trainChoice: ScheduledTrainJourney?,
+        mixedChoice: MixedJourney?,
+        frame: Boolean,
+        remember: Boolean
     ) {
         binding.destinationLayout.error = null
         binding.locationSettingsButton.visibility = View.GONE
         // Where the rider came from is not a place to remember going to.
-        if (destination.trim() != myLocationLabel) {
+        if (remember && destination.trim() != myLocationLabel) {
             saveLastDestination(destination.trim())
             recentDestinations.add(destination, address.first, address.second)
         }
@@ -2260,6 +2322,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         if (journeyChoice == null && trainJourneyChoice == null) return
         planningJob?.cancel()
         walkingMode = true
+        binding.journeyOptionsScroll.visibility = View.GONE
         binding.journeyTitle.text = getString(R.string.walk_summary, minutes(directWalkingSeconds))
         renderJourneyGuide(JourneySteps.forWalking(this, directWalkingMetres.roundToInt(),
             minutes(directWalkingSeconds), destination))
@@ -2275,6 +2338,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         if (journeyChoice == null && trainJourneyChoice == null) return
         planningJob?.cancel()
         walkingMode = false
+        renderJourneyOptionChips()
         binding.boardStopDirectionsButton.setText(R.string.walk_to_boarding_stop)
         binding.boardStopDirectionsButton.visibility = View.VISIBLE
         val transitSeconds = mixedJourneyChoice?.estimatedTotalSeconds
@@ -2291,6 +2355,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
 
     private fun hideTravelModeChoices() {
         walkingMode = false
+        journeyOptions = emptyList()
+        binding.journeyOptionsScroll.visibility = View.GONE
         binding.travelModeChoices.visibility = View.GONE
         binding.boardStopDirectionsButton.visibility = View.GONE
         binding.alertButton.visibility = View.GONE

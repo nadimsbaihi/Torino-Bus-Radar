@@ -126,7 +126,10 @@ class TrainIndex private constructor(private val trips: List<TrainTrip>) {
         return best
     }
 
-    private data class TrainTrip(
+    /** The scheduled runs of a service date, for planners that combine them with other vehicles. */
+    internal fun tripsOn(date: java.time.LocalDate): List<TrainTrip> = tripsByDate[date.format(DATE)].orEmpty()
+
+    internal data class TrainTrip(
         val number: String,
         val category: String,
         val headsign: String,
