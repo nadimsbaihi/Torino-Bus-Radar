@@ -105,6 +105,7 @@ class MainActivity : AppCompatActivity() {
     private var lastGeocodedAddress: Pair<String, Pair<Double, Double>>? = null
     private var lastResolvedPlace: OfflinePlace? = null
     private val savedPlaces by lazy { SavedPlaces(this) }
+    private val recentDestinations by lazy { RecentDestinations(this) }
     private lateinit var destinationAdapter: ArrayAdapter<OfflinePlace>
     private var liveVehicles: List<LiveVehicle> = emptyList()
     private var refreshJob: Job? = null
@@ -403,7 +404,7 @@ class MainActivity : AppCompatActivity() {
                         query.length < 2 -> emptyList()
                         else -> savedPlaces.search(query)
                     }
-                    val found = if (query.length < 2) emptyList() else try {
+                    val found = if (query.isBlank()) recentSuggestions() else if (query.length < 2) emptyList() else try {
                         offlineCity.search(query, currentLocation.latitude, currentLocation.longitude)
                     } catch (error: Exception) {
                         Log.e(TAG, "Offline destination search failed", error)
@@ -540,10 +541,18 @@ class MainActivity : AppCompatActivity() {
         showDestination(OfflinePlace(text, text, spot.first, spot.second, "pin", true))
     }
 
-    /** With nothing typed, the search box offers the saved places. */
+    /** Recent destinations, minus any the rider has since saved under a name. */
+    private fun recentSuggestions(): List<OfflinePlace> {
+        val saved = savedPlaces.all()
+        return recentDestinations.all().filter { recent ->
+            saved.none { it.isAt(recent.latitude, recent.longitude) || SavedPlaces.key(it.name) == SavedPlaces.key(recent.name) }
+        }
+    }
+
+    /** With nothing typed, the search box offers the saved places, then recent destinations. */
     private fun showSavedSuggestions() {
         val input = binding.destinationInput
-        if (!input.text.isNullOrBlank() || savedPlaces.isEmpty()) return
+        if (!input.text.isNullOrBlank() || (savedPlaces.isEmpty() && recentDestinations.all().isEmpty())) return
         destinationAdapter.filter.filter("") {
             if (input.hasFocus() && input.text.isNullOrBlank()) input.showDropDown()
         }
@@ -936,6 +945,7 @@ class MainActivity : AppCompatActivity() {
         binding.destinationLayout.error = null
         binding.locationSettingsButton.visibility = View.GONE
         saveLastDestination(destination.trim())
+        recentDestinations.add(destination, address.first, address.second)
         val busScore = busChoice?.let {
             walkingPreference.score(it.estimatedTotalSeconds, it.totalWalkingMetres)
         } ?: Float.POSITIVE_INFINITY

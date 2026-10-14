@@ -170,3 +170,47 @@ object MapPin {
         return if (abs(latitude) <= 90.0 && abs(longitude) <= 180.0) latitude to longitude else null
     }
 }
+
+/** The last few places the rider went to, newest first, offered when the search box is empty. */
+class RecentDestinations(context: Context) {
+    private val preferences =
+        context.applicationContext.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+
+    fun all(): List<OfflinePlace> {
+        val stored = preferences.getString(ITEMS, null) ?: return emptyList()
+        return try {
+            val array = JSONArray(stored)
+            List(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                val name = item.getString("name")
+                OfflinePlace(name, name, item.getDouble("lat"), item.getDouble("lon"), KIND, false)
+            }
+        } catch (_: JSONException) {
+            emptyList()
+        }
+    }
+
+    /** Puts [name] first; the same name or the same spot earlier in the list goes. */
+    @Synchronized
+    fun add(name: String, latitude: Double, longitude: Double) {
+        val text = SavedPlaces.clean(name)
+        if (text.isEmpty()) return
+        val kept = all().filter {
+            SavedPlaces.key(it.name) != SavedPlaces.key(text) &&
+                !(abs(it.latitude - latitude) < SAME_SPOT_DEGREES && abs(it.longitude - longitude) < SAME_SPOT_DEGREES)
+        }
+        val array = JSONArray()
+        (listOf(OfflinePlace(text, text, latitude, longitude, KIND, false)) + kept).take(MAX).forEach {
+            array.put(JSONObject().put("name", it.name).put("lat", it.latitude).put("lon", it.longitude))
+        }
+        preferences.edit().putString(ITEMS, array.toString()).apply()
+    }
+
+    companion object {
+        const val KIND = "recent"
+        const val MAX = 8
+        private const val STORE = "recent_destinations"
+        private const val ITEMS = "items"
+        private const val SAME_SPOT_DEGREES = 0.00004
+    }
+}

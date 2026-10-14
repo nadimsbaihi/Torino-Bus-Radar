@@ -18,7 +18,8 @@ destination and your search preferences.
 ## Features
 
 - **Live bus map.** See GTT vehicles across the city, with positions refreshed
-  every 15 seconds. Select a journey or line to focus the map, or tap a bus
+  every 15 seconds while the app is open, with a note of how long ago they
+  were fetched. Select a journey or line to focus the map, or tap a bus
   to highlight its whole course and the stops it has yet to reach.
 - **Bus and train journeys.** Find direct trips and connections, including
   bus-to-train and train-to-bus options.
@@ -33,8 +34,9 @@ destination and your search preferences.
   and regional stations without a connection or an API key.
 - **Saved places.** Tap the bookmark beside the search box to give any
   destination a name of your own, such as "Mum's" or "Work". Saved names come
-  first in search, and an empty search box lists them. Tap the bookmark again to
-  rename or remove one. Saved places stay on your phone.
+  first in search, and an empty search box lists them, followed by the last few
+  places you went to. Tap the bookmark again to rename or remove one. Saved and
+  recent places stay on your phone.
 - **Go anywhere from the map.** Press and hold on the map to plan a journey to
   that spot, even where the bundled data has no address. Bookmark it to keep it.
 - **Walking directions.** Compare a ride with walking, then open Google Maps
