@@ -1574,14 +1574,33 @@ class MainActivity : AppCompatActivity() {
             binding.sharedDirections.visibility = View.VISIBLE
             return
         }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            enableAlert()
+        chooseAlertDistance {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                enableAlert()
+            }
         }
+    }
+
+    /** Asks how far away the bus should be when it notifies; the last choice is preselected. */
+    private fun chooseAlertDistance(onChosen: () -> Unit) {
+        val options = AlertPreferences.DISTANCES
+        var selected = options.indexOf(AlertPreferences.distance(this))
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.alert_distance_title)
+            .setSingleChoiceItems(
+                options.map { getString(R.string.alert_distance_option, it) }.toTypedArray(), selected
+            ) { _, which -> selected = which }
+            .setPositiveButton(R.string.alert_me) { _, _ ->
+                AlertPreferences.setDistance(this, options[selected])
+                onChosen()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun enableAlert() {
@@ -1611,6 +1630,7 @@ class MainActivity : AppCompatActivity() {
                 stopName = TransitIndex.cleanStopName(stop.name),
                 latitude = stop.latitude,
                 longitude = stop.longitude,
+                thresholdMetres = AlertPreferences.distance(this),
                 finalAddress = binding.destinationInput.text.toString().trim()
                     .takeIf { it.isNotEmpty() },
                 finalLatitude = journeyChoice?.finalLatitude,
@@ -1623,7 +1643,7 @@ class MainActivity : AppCompatActivity() {
             )
         )
         ContextCompat.startForegroundService(this, Intent(this, BusAlertService::class.java))
-        binding.alertButton.text = getString(R.string.alert_enabled)
+        binding.alertButton.text = getString(R.string.alert_enabled, AlertPreferences.distance(this))
     }
 
     private fun addYouMarker() {

@@ -12,7 +12,7 @@ data class BusAlert(
     val stopName: String,
     val latitude: Double,
     val longitude: Double,
-    val thresholdMetres: Int = 700,
+    val thresholdMetres: Int = AlertPreferences.DEFAULT_DISTANCE,
     val finalAddress: String? = null,
     val finalLatitude: Double? = null,
     val finalLongitude: Double? = null,
@@ -23,6 +23,22 @@ data class BusAlert(
 
 object AlertPreferences {
     private const val STORE = "bus_alert"
+    // Apart from STORE, which is wiped whenever an alert ends; this is the rider's standing choice.
+    private const val SETTINGS = "bus_alert_settings"
+    const val DEFAULT_DISTANCE = 700
+    val DISTANCES = listOf(300, 500, DEFAULT_DISTANCE, 1000)
+
+    /** How close, in metres along the route, a bus must be before the rider is notified. */
+    fun distance(context: Context): Int {
+        val stored = context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE)
+            .getInt("distance", DEFAULT_DISTANCE)
+        return stored.takeIf { it in DISTANCES } ?: DEFAULT_DISTANCE
+    }
+
+    fun setDistance(context: Context, metres: Int) {
+        if (metres !in DISTANCES) return
+        context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit().putInt("distance", metres).apply()
+    }
 
     fun save(context: Context, alert: BusAlert) {
         context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit()
@@ -59,7 +75,7 @@ object AlertPreferences {
             stopName = prefs.getString("stopName", null) ?: return null,
             latitude = Double.fromBits(prefs.getLong("latitude", 0)),
             longitude = Double.fromBits(prefs.getLong("longitude", 0)),
-            thresholdMetres = prefs.getInt("threshold", 700),
+            thresholdMetres = prefs.getInt("threshold", DEFAULT_DISTANCE),
             finalAddress = prefs.getString("finalAddress", null),
             finalLatitude = prefs.getLong("finalLatitude", 0)
                 .takeIf { it != 0L }?.let(Double::fromBits),

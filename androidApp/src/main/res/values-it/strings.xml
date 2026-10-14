@@ -74,7 +74,9 @@
     <string name="refresh_live_positions">Aggiorna le posizioni dei bus</string>
     <string name="alert_me">Avvisami</string>
     <string name="stop_alert">Disattiva l’avviso</string>
-    <string name="alert_enabled">Avviso attivo · quando il bus è a meno di 700 m</string>
+    <string name="alert_enabled">Avviso attivo · quando il bus è a meno di %1$d m</string>
+    <string name="alert_distance_title">Avvisami quando il bus è a meno di</string>
+    <string name="alert_distance_option">%1$d m</string>
     <string name="alert_requires_direction">Scegli prima una destinazione o la direzione del bus.</string>
     <string name="watching_bus">Avviso attivo · linea %1$s → %2$s</string>
     <string name="watching_stop">Avviso per la fermata %1$s</string>

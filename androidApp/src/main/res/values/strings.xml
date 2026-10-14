@@ -74,7 +74,9 @@
     <string name="refresh_live_positions">Refresh live positions</string>
     <string name="alert_me">Notify me</string>
     <string name="stop_alert">Stop approach alert</string>
-    <string name="alert_enabled">Alert active · notify within 700 m</string>
+    <string name="alert_enabled">Alert active · notify within %1$d m</string>
+    <string name="alert_distance_title">Notify me when the bus is within</string>
+    <string name="alert_distance_option">%1$d m</string>
     <string name="alert_requires_direction">Choose a destination or bus direction first.</string>
     <string name="watching_bus">Watching route %1$s → %2$s</string>
     <string name="watching_stop">Approach alert for %1$s</string>

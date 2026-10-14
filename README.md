@@ -28,6 +28,9 @@ destination and your search preferences.
   map stays in view. Pull the panel up for every step, or swipe it down to
   close it. The back button closes things one level at a time: the expanded
   panel, a highlighted bus, then the journey, before it leaves the app.
+- **Approach alerts.** Tap Notify me to get a notification when your bus is
+  300, 500, 700, or 1000 metres from your boarding stop. The app remembers your
+  choice.
 - **Your choice of walking.** Favor less walking, a balance, or faster trips
   with more walking. Include or exclude regional trains.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
