@@ -11,4 +11,5 @@
     <color name="train_blue">#2267A8</color>
     <color name="course_magenta">#D81B60</color>
     <color name="warning">#B3482C</color>
+    <color name="shared_bg">#E9F6C4</color>
 </resources>
