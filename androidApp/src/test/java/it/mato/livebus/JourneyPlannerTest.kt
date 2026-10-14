@@ -15,8 +15,8 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33], application = Application::class)
 class JourneyPlannerTest {
     private val trains by lazy { TrainIndex.load(RuntimeEnvironment.getApplication()) }
-    private val portaNuova get() = trains.stations.first { it.name == "TORINO PORTA NUOVA F.S." }
-    private val lingotto get() = trains.stations.first { it.name == "TORINO LINGOTTO F.S." }
+    private val portaNuova get() = trains.stations.first { it.name == "Torino Porta Nuova" }
+    private val lingotto get() = trains.stations.first { it.name == "Torino Lingotto" }
 
     @Test fun moreWalkingAllowsAStationOutsideTheShortWalkingPreset() = runBlocking {
         val station = portaNuova
@@ -28,7 +28,7 @@ class JourneyPlannerTest {
         val destinationWalk = { lat: Double, lon: Double ->
             distance(destination.latitude, destination.longitude, lat, lon)
         }
-        val now = LocalDateTime.of(2026, 9, 24, 9, 15)
+        val now = LocalDateTime.of(2026, 10, 15, 9, 15)
         assertNull(trains.planScheduledJourney(originLatitude, station.longitude,
             destination.latitude, destination.longitude, now, originWalk, destinationWalk,
             boardStopId = station.id, exitStopId = destination.id,
@@ -42,7 +42,7 @@ class JourneyPlannerTest {
     @Test fun trainNeedsTwoMinutesForBoardingAfterTheWalk() = runBlocking {
         val station = portaNuova
         val destination = lingotto
-        val now = LocalDateTime.of(2026, 9, 24, 9, 24)
+        val now = LocalDateTime.of(2026, 10, 15, 9, 24)
         suspend fun journeyAfterWalking(metres: Float) = trains.planScheduledJourney(
             station.latitude, station.longitude, destination.latitude, destination.longitude,
             now, walkFromOrigin = { _, _ -> metres },
@@ -62,7 +62,7 @@ class JourneyPlannerTest {
         val destination = lingotto
         val late = trains.planScheduledJourney(
             station.latitude, station.longitude, destination.latitude, destination.longitude,
-            LocalDateTime.of(2026, 9, 24, 23, 58, 0),
+            LocalDateTime.of(2026, 10, 15, 23, 58, 0),
             walkFromOrigin = { _, _ -> 0f }, walkFromDestination = { _, _ -> 0f },
             boardStopId = station.id, exitStopId = destination.id)
         assertNotNull("Tomorrow's timetable is in the bundled data", late)
@@ -101,7 +101,7 @@ class JourneyPlannerTest {
         ))
         val choice = planner(route).planMixedJourney(
             45.08, station.longitude, destination.latitude, destination.longitude,
-            listOf(vehicle(route)), LocalDateTime.of(2026, 9, 24, 9, 15),
+            listOf(vehicle(route)), LocalDateTime.of(2026, 10, 15, 9, 15),
             { lat, lon -> distance(45.08, station.longitude, lat, lon) },
             { lat, lon -> distance(destination.latitude, destination.longitude, lat, lon) },
             ::distance)
@@ -124,7 +124,7 @@ class JourneyPlannerTest {
         ))
         val choice = planner(route).planMixedJourney(
             45.09, station.longitude, destination.latitude, destination.longitude,
-            listOf(vehicle(route)), LocalDateTime.of(2026, 9, 24, 9, 20),
+            listOf(vehicle(route)), LocalDateTime.of(2026, 10, 15, 9, 20),
             { lat, lon -> distance(45.09, station.longitude, lat, lon) },
             { lat, lon -> distance(destination.latitude, destination.longitude, lat, lon) },
             ::distance)
@@ -142,7 +142,7 @@ class JourneyPlannerTest {
             stop("board", station.latitude, station.longitude),
             destination
         ))
-        val time = LocalDateTime.of(2026, 9, 24, 9, 26)
+        val time = LocalDateTime.of(2026, 10, 15, 9, 26)
         val catchable = planner(route).planMixedJourney(
             portaNuova.latitude, portaNuova.longitude,
             destination.latitude, destination.longitude,

@@ -203,6 +203,34 @@ class TrainIndexTest(unittest.TestCase):
         self.assertEqual(25 * 3600 + 10 * 60, trip['stops'][0]['arrival'])
 
 
+    def test_national_feed_keeps_local_trains_inside_the_area(self):
+        stops = ("stop_id,stop_name,stop_lat,stop_lon,location_type\n"
+                 "A,TORINO PORTA SUSA,45.07,7.66,0\nB,COLLEGNO,45.08,7.57,0\n"
+                 "C,SUSA,45.13,7.05,0\nS,TORINO PORTA SUSA,45.07,7.66,1\n")
+        routes = ("route_id,route_short_name,route_long_name,route_type\n"
+                  "sfm,0083_SFM,sfm,2\nfr,0083_FR,Frecciarossa,2\nbus,0083_BUS,Autobus,3\n")
+        calendar = ("service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,"
+                    "start_date,end_date\nwk,1,1,1,1,1,0,0,20261012,20261016\n")
+        trips = ("route_id,trip_id,service_id,trip_short_name,trip_headsign\n"
+                 "sfm,local,wk,10235,\nfr,fast,wk,9500,\nbus,coach,wk,1,\nsfm,away,wk,7,\n")
+        times = "trip_id,stop_sequence,stop_id,arrival_time,departure_time\n" + "".join(
+            f"{trip},{n},{stop},08:0{n}:00,08:0{n}:00\n"
+            for trip, path in (("local", "ABC"), ("fast", "AB"), ("coach", "AB"), ("away", "AC"))
+            for n, stop in enumerate(path, 1))
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory, 'rail.zip'), Path(directory, 'out.json')
+            write_zip(source, {'stops.txt': stops, 'routes.txt': routes, 'trips.txt': trips,
+                               'calendar.txt': calendar, 'stop_times.txt': times})
+            run('build_train_index.py', source, output, '44.9,7.4,45.2,7.9')
+            found = json.loads(output.read_text())['trips']
+        # Only the local train calls twice in the area; long-distance trains and coaches go.
+        self.assertEqual(['10235'], [trip['number'] for trip in found])
+        trip = found[0]
+        self.assertEqual('SFM', trip['category'])
+        self.assertEqual('Susa', trip['headsign'], "the last station, though outside the area")
+        self.assertEqual(['A', 'B'], [stop['id'] for stop in trip['stops']])
+
+
 class OfflineCityGeometryTest(unittest.TestCase):
     def test_only_walkable_highways_become_footpaths(self):
         self.assertTrue(city.pedestrian_way({'highway': 'residential'}))

@@ -4,6 +4,10 @@
 Usage: python3 tools/build_offline_city.py SOURCE_DIR ASSET_DIR TRANSIT_INDEX TRAIN_INDEX
 SOURCE_DIR contains Turin.osm.gz and Turin.osm.mapsforge-osm.zip.
 TRANSIT_INDEX and TRAIN_INDEX are the bundled GTFS-derived JSON indexes.
+
+       python3 tools/build_offline_city.py --stations ASSET_DIR TRAIN_INDEX
+replaces only the train stations in an existing search database, for a new train timetable
+without a new map extract.
 Only the Python standard library is required; no tile server is scraped.
 """
 import gzip
@@ -24,6 +28,81 @@ def normalize(value):
     text = unicodedata.normalize('NFD', value).lower()
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
     return ' '.join(re.findall(r'[^\W_]+', text))
+
+
+TRAIN_SOURCE = 'Trenitalia rail GTFS stations'
+TRAIN_LABEL = 'Regional train station'
+TRAIN_NOTICE = ('Train stations: Trenitalia timetable (CCISS National Access Point), converted to GTFS\n'
+                'by Clement Desouche, https://github.com/deryclem/trenitalia-gtfs, CC BY 4.0.\n')
+
+
+def station_rows(train_index, bounds):
+    """Each station of the train index inside the map once: (name, lat, lon)."""
+    seen = set()
+    for trip in json.loads(Path(train_index).read_text(encoding='utf-8'))['trips']:
+        for stop in trip['stops']:
+            lat, lon = stop['lat'], stop['lon']
+            if stop['id'] in seen or not (bounds['minlat'] <= lat <= bounds['maxlat'] and
+                                          bounds['minlon'] <= lon <= bounds['maxlon']):
+                continue
+            seen.add(stop['id'])
+            yield stop['name'].strip(), lat, lon
+
+
+def notice(source_note):
+    return (source_note + '\nSearch database and pedestrian graph include data from the BBBike OSM extract.\n'
+            'OSM-derived records are under ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/\n'
+            'Bus stops: GTT S.p.A. - Gruppo Torinese Trasporti, https://www.gtt.to.it\n'
+            'GTT GTFS terms: https://www.gtt.to.it/gtt_gtfs_license.html\n'
+            + TRAIN_NOTICE +
+            'Builder: tools/build_offline_city.py in the Torino Bus Radar source.\n')
+
+
+def refresh_stations(output, train_index):
+    """Swaps the train stations of a built search database for those of [train_index]."""
+    output, train_index = Path(output), Path(train_index)
+    manifest = json.loads((output / 'manifest.json').read_text())
+    database = sqlite3.connect(output / 'places.sqlite')
+    stale = [row[0] for row in database.execute("SELECT id FROM places WHERE kind = 'train_station'")]
+    database.executemany('DELETE FROM search WHERE rowid = ?', [(i,) for i in stale])
+    database.execute("DELETE FROM places WHERE kind = 'train_station'")
+    next_id = database.execute('SELECT COALESCE(MAX(id), 0) FROM places').fetchone()[0]
+    seen = set()
+    for name, lat, lon in station_rows(train_index, manifest['bounds']):
+        key = (normalize(name), round(lat, 4), round(lon, 4))
+        if key in seen:
+            continue
+        seen.add(key)
+        next_id += 1
+        database.execute('INSERT INTO places VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                         (next_id, name, f'{name} · {TRAIN_LABEL}', normalize(name), '',
+                          'train_station', lat, lon))
+        database.execute('INSERT INTO search(rowid, tokens) VALUES (?, ?)',
+                         (next_id, normalize(f'{name} Torino')))
+    database.execute("INSERT INTO search(search) VALUES ('optimize')")
+    database.commit()
+    database.execute('VACUUM')
+    database.close()
+    sources = {name: count for name, count in manifest['searchSources'].items()
+               if 'rail' not in name.lower()}
+    sources[TRAIN_SOURCE] = len(seen)
+    manifest['searchSources'] = sources
+    manifest['places'] = sum(sources.values())
+    database_file = output / 'places.sqlite'
+    manifest['files']['places.sqlite'] = {
+        'bytes': database_file.stat().st_size,
+        'sha256': hashlib.sha256(database_file.read_bytes()).hexdigest()}
+    hashes = {name: value for name, value in manifest['sourceSha256'].items()
+              if name not in ('trenitalia_rail_index.json', train_index.name)}
+    hashes[train_index.name] = hashlib.sha256(train_index.read_bytes()).hexdigest()
+    manifest['sourceSha256'] = hashes
+    (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    text = (output / 'NOTICE.txt').read_text()
+    start = text.index('Regional train stations:') if 'Regional train stations:' in text \
+        else text.index('Train stations:')
+    end = text.index('Builder:')
+    (output / 'NOTICE.txt').write_text(text[:start] + TRAIN_NOTICE + text[end:])
+    print(json.dumps(manifest['searchSources'], indent=2))
 
 
 # Ways a person can plausibly walk along. An allow-list: new or odd highway values
@@ -316,8 +395,7 @@ def build(source, output, transit_index, train_index):
     source_counts = {'OpenStreetMap': count}
     for index_path, collection, kind, label, source_name in (
         (transit_index, 'patterns', 'bus_stop', 'GTT stop', 'GTT GTFS stops'),
-        (train_index, 'trips', 'train_station', 'Regional train station',
-         'Regione Piemonte rail GTFS stations'),
+        (train_index, 'trips', 'train_station', TRAIN_LABEL, TRAIN_SOURCE),
     ):
         seen_ids = set()
         before = count
@@ -357,15 +435,12 @@ def build(source, output, transit_index, train_index):
         },
     }
     (output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
-    (output / 'NOTICE.txt').write_text(source_note + '\nSearch database and pedestrian graph include data from the BBBike OSM extract.\n'
-                                    'OSM-derived records are under ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/\n'
-                                    'Bus stops: GTT S.p.A. - Gruppo Torinese Trasporti, https://www.gtt.to.it\n'
-                                    'GTT GTFS terms: https://www.gtt.to.it/gtt_gtfs_license.html\n'
-                                    'Regional train stations: Regione Piemonte regional rail GTFS, CC BY 4.0.\n'
-                                    'Source: https://www.dati.gov.it/node/view-dataset/dataset?id=cf9f3c52-e423-4307-b4d7-6e2978ad7a07\n'
-                                    'Builder: tools/build_offline_city.py in the Torino Bus Radar source.\n')
+    (output / 'NOTICE.txt').write_text(notice(source_note))
     print(json.dumps(manifest, indent=2))
 
 
 if __name__ == '__main__':
-    build(*sys.argv[1:])
+    if sys.argv[1] == '--stations':
+        refresh_stations(*sys.argv[2:])
+    else:
+        build(*sys.argv[1:])

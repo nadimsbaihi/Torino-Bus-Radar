@@ -9,11 +9,11 @@
     "maxlat": 45.21,
     "maxlon": 7.929
   },
-  "places": 163695,
+  "places": 163710,
   "searchSources": {
     "OpenStreetMap": 159370,
     "GTT GTFS stops": 4313,
-    "Regione Piemonte rail GTFS stations": 12
+    "Trenitalia rail GTFS stations": 27
   },
   "files": {
     "torino.map": {
@@ -21,8 +21,8 @@
       "sha256": "4fabdc83c25ac350e382f4bd72bcfae965a55385cdf88987720a3e0f9d30eb44"
     },
     "places.sqlite": {
-      "bytes": 34861056,
-      "sha256": "fc26bea8abfd67cac143fe072289b7ac9062d8067ee55b304c8fe5af775b41fb"
+      "bytes": 34865152,
+      "sha256": "de5eb45ffd232af1665180cd1f8ec467ee5a2748ccf710462f5b42b1add25e65"
     },
     "walk_graph.bin": {
       "bytes": 17182188,
@@ -37,6 +37,6 @@
     "Turin.osm.gz": "b9d8bfc2191685fa60388df83c6b6faa0324590707f5cf889cc75355a8260994",
     "Turin.osm.mapsforge-osm.zip": "e19cbcce0f4dddfdb21a7a75d40e92ef0cabe06cb37b410e859ea191ebb9f9b6",
     "transit_index.json": "ec8eb98aaccd3101893510affb7a53f86275829944594b9ba4a2653228fb3e48",
-    "trenitalia_rail_index.json": "cf1d8cc6a321480a53a3a06494b02dc00b03293cb1d7adc8a733c32aea07b3c9"
+    "trenitalia_rail_index.json": "03500dfad8bd616b2b7261a3a09fffed11ff4f2eaf79c783a5369770bd2842ed"
   }
 }

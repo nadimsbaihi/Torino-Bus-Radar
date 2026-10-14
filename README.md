@@ -26,7 +26,8 @@ destination and whether to include trains.
   with their line, direction and estimated minutes. The list updates with each
   refresh while it is open.
 - **Bus and train journeys.** Find direct trips and connections, including
-  bus-to-train and train-to-bus options.
+  bus-to-train and train-to-bus options. Trains include the SFM suburban lines
+  (such as the airport and Venaria line), Regionale and Regionale Veloce.
 - **Journey steps, out of the way of the map.** Your journey opens as a short
   list of steps (walk, board, get off, walk) in a panel at the bottom, so the
   map stays in view. Pull the panel up for every step, or swipe it down to
@@ -178,7 +179,8 @@ the workflow run number sets the version code.
 - **GTT:** live vehicle positions and static routes, stops, and route shapes.
 - **OpenStreetMap contributors:** the offline map, places, addresses, and walking
   network, using a [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/).
-- **Regione Piemonte:** published GTFS timetables for Trenitalia regional trains.
+- **Trenitalia:** train timetables from the national NeTEx feed (CCISS National Access Point),
+  converted to GTFS by [Clément Desouche](https://github.com/deryclem/trenitalia-gtfs), CC BY 4.0.
 - **Mapsforge and osmdroid:** offline map rendering.
 
 Source details and license links are in the bundled
@@ -192,7 +194,7 @@ bounds, source hashes, and file checksums.
 The September 20, 2026 map extract covers latitude 44.941–45.210 and longitude
 7.430–7.929. It includes a 15.1 MB vector map, a 17.2 MB walking graph, and a
 34.9 MB search database with 159,370 OpenStreetMap entries, 4,313 GTT stops, and
-12 regional train stations. Files are compressed in the APK and copied to
+27 train stations. Files are compressed in the APK and copied to
 private, non-backed-up storage on first use.
 
 To rebuild, download `Turin.osm.mapsforge-osm.zip`, `Turin.osm.gz`, `Turin.poly`,
@@ -225,6 +227,20 @@ than 500 m from every road of its line. A bus with no trip that is simply waitin
 terminus between runs stays.
 Trip IDs change when GTT publishes a new feed, and the app matches live buses to routes by
 trip ID, so refresh this index when live buses stop matching it.
+
+The train index comes from the Trenitalia GTFS
+(`https://github.com/deryclem/trenitalia-gtfs/raw/main/gtfs-trenitalia.zip`, updated weekly).
+Only local trains (SFM, Regionale, Regionale Veloce) that call at two or more stations in the
+area are kept, and only those stations. Its timetable ends at the next timetable change
+(December 12, 2026); rebuild it after that, then swap the stations in the search database
+without rebuilding the map:
+
+```sh
+python3 tools/build_train_index.py gtfs-trenitalia.zip \
+  androidApp/src/main/assets/trenitalia_rail_index.json 44.92,7.41,45.23,7.95
+python3 tools/build_offline_city.py --stations androidApp/src/main/assets/offline \
+  androidApp/src/main/assets/trenitalia_rail_index.json
+```
 
 The live GTT feed is
 `https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx`.

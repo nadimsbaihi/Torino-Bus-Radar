@@ -144,6 +144,7 @@ class JourneyStepsTest {
     @Test fun trainCategoriesAreAbbreviated() {
         assertEquals("R", JourneySteps.trainCategory("REGIONALE"))
         assertEquals("RV", JourneySteps.trainCategory("REGIONALE VELOCE"))
+        assertEquals("SFM", JourneySteps.trainCategory("SFM"))
         assertEquals("Intercity", JourneySteps.trainCategory("INTERCITY"))
     }
 

@@ -32,11 +32,11 @@ class OfflineCityTest {
     }
 
     @Test fun regionalTrainStationsAreSearchableAsDestinations() {
-        val station = city.search("Torino Lingotto F.S.")
+        val station = city.search("Torino Lingotto")
             .first { it.kind == "train_station" }
         assertTrue(station.label.contains("Regional train station"))
-        assertEquals(45.026779, station.latitude, 0.00001)
-        assertEquals(7.657283, station.longitude, 0.00001)
+        assertEquals(45.026604, station.latitude, 0.00001)
+        assertEquals(7.65747, station.longitude, 0.00001)
         assertTrue(city.search("Fossata").any { it.kind == "train_station" })
     }
 
