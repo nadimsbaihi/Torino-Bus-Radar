@@ -170,4 +170,6 @@
     <string name="swap_start_destination">Inverti partenza e destinazione</string>
     <string name="planned_from_note">Avviso spento: partenza diversa</string>
     <string name="faster">più veloce</string>
+    <string name="at_terminus_leaves_in">Al capolinea · riparte tra ~%1$d min</string>
+    <string name="at_terminus_leaving">Al capolinea · riparte a momenti</string>
 </resources>

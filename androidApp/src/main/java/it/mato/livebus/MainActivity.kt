@@ -1476,17 +1476,24 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                         return@setOnMarkerClickListener true
                     }
                     val pattern = transitIndex.matchDirection(vehicle)
-                    val direction = if (pattern == null) {
-                        getString(R.string.bus_direction_unavailable)
-                    } else {
-                        getString(R.string.bus_destination, pattern.headsign) +
+                    val layover = transitIndex.layoverOf(vehicle)
+                    val direction = when {
+                        layover != null -> null
+                        pattern == null -> getString(R.string.bus_direction_unavailable)
+                        else -> getString(R.string.bus_destination, pattern.headsign) +
                             if (vehicle.tripId !in pattern.tripIds) {
                                 " · " + getString(R.string.direction_estimated_short)
                             } else ""
                     }
+                    // Waiting at the terminus, where it will go next and when is all there is to say.
+                    if (layover != null) {
+                        val minutes = (layover.departsInSeconds / 60f).roundToInt()
+                        clickedMarker.snippet = if (minutes < 1) getString(R.string.at_terminus_leaving)
+                            else getString(R.string.at_terminus_leaves_in, minutes)
+                    }
                     // The fleet number is for the curious, so it sits last, small and grey.
-                    clickedMarker.subDescription = TextUtils.htmlEncode(direction) +
-                        "<br/><small><font color=\"#8A8A8A\">" +
+                    clickedMarker.subDescription = (direction?.let { TextUtils.htmlEncode(it) + "<br/>" } ?: "") +
+                        "<small><font color=\"#8A8A8A\">" +
                         TextUtils.htmlEncode(getString(R.string.bus_fleet_number, vehicle.fleetNumber)) +
                         "</font></small>"
                     highlightCourse(vehicle, pattern)

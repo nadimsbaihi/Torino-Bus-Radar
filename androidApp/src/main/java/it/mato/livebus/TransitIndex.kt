@@ -46,6 +46,9 @@ class PatternSuccessor(
 )
 
 /** A bus still on its previous run, planned as the next one: it reaches the start in [departsInSeconds]. */
+/** A bus standing at the end of its line between two runs, due to set off in [departsInSeconds]. */
+data class Layover(val terminus: TransitStop, val departsInSeconds: Float)
+
 data class Turnaround(
     val previousPatternId: String,
     val departsInSeconds: Float,
@@ -284,6 +287,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             val progress = progressIndex(vehicle, pattern) ?: return@mapNotNull null
             val position = routePosition(vehicle, pattern, progress)
             learnSpeed(vehicle, pattern, progress, position)
+            // Every feed, so the wait at a terminus is timed from when the bus got there.
+            layover(vehicle, pattern, progress, nowSeconds)
             val speed = speedOf(pattern, nowSeconds)
             TrackedVehicle(vehicle, pattern, progress,
                 arrivalSeconds(vehicle, pattern, progress, nowSeconds, speed, position), speed = speed,
@@ -372,6 +377,54 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
 
     private val patternsById by lazy { patterns.associateBy { it.id } }
 
+    // The usual wait at the start of a pattern: what the run before it says it waits there.
+    private val waitBeforeStart: Map<String, Int> by lazy {
+        patterns.mapNotNull { pattern -> pattern.next?.let { it.patternId to it.waitSeconds } }.toMap()
+    }
+
+    // Where and since when (by the feed's clock) each bus has stood at a terminus; dropped when it leaves.
+    private val layoverSince = HashMap<String, Pair<String, Long>>()
+
+    /** Whether [vehicle] stands at a terminus between two runs, and when it should set off again. */
+    fun layoverOf(vehicle: LiveVehicle, nowSeconds: Long = System.currentTimeMillis() / 1000): Layover? {
+        val pattern = matchDirection(vehicle) ?: return forgetLayover(vehicle)
+        return layover(vehicle, pattern, progressIndex(vehicle, pattern), nowSeconds)
+    }
+
+    /**
+     * A bus at the last stop of a run the timetable says continues, or at the first stop of its
+     * next run before setting off, is waiting to start again. It should go once the usual wait
+     * there has passed since it was first seen standing; a bus already there when the app
+     * started is timed from then, so its wait is if anything overstated.
+     */
+    private fun layover(vehicle: LiveVehicle, pattern: TransitPattern, progress: Int?, nowSeconds: Long): Layover? {
+        val last = pattern.stops.last()
+        val first = pattern.stops.first()
+        val (terminus, wait) = when {
+            progress != null && progress >= pattern.stops.lastIndex - 1 && isAt(vehicle, last) -> {
+                val next = pattern.next?.takeIf { vehicle.tripId in it.tripIds } ?: return forgetLayover(vehicle)
+                last to next.waitSeconds
+            }
+            (progress ?: -1) <= 0 && isAt(vehicle, first) ->
+                first to (waitBeforeStart[pattern.id] ?: return forgetLayover(vehicle))
+            else -> return forgetLayover(vehicle)
+        }
+        val since = synchronized(layoverSince) {
+            layoverSince[vehicle.id]?.takeIf { it.first == terminus.id }?.second
+                ?: vehicle.timestampSeconds.also { layoverSince[vehicle.id] = terminus.id to it }
+        }
+        val left = maxOf(wait, MIN_TURNAROUND_SECONDS) - (nowSeconds - since)
+        return Layover(terminus, left.coerceAtLeast(0).toFloat())
+    }
+
+    private fun forgetLayover(vehicle: LiveVehicle): Layover? {
+        synchronized(layoverSince) { layoverSince.remove(vehicle.id) }
+        return null
+    }
+
+    private fun isAt(vehicle: LiveVehicle, stop: TransitStop) =
+        distance(vehicle.latitude, vehicle.longitude, stop) <= AT_TERMINUS_METRES
+
     /**
      * A bus nearing the end of its line will, on most trips, set off again the other way after a
      * short wait. Until then it is not on that run, but it is a bus that is coming, and when
@@ -385,7 +438,13 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         val next = patternsById[successor.patternId] ?: return null
         val toTerminus = current.arrivalSeconds[current.pattern.stops.lastIndex].coerceAtLeast(0f)
         if (toTerminus > MAX_TURNAROUND_LOOKAHEAD_SECONDS) return null
-        val departs = toTerminus + maxOf(successor.waitSeconds, MIN_TURNAROUND_SECONDS) + TURNAROUND_BUFFER_SECONDS
+        // A bus already standing at the terminus has done some of its wait.
+        val terminusId = current.pattern.stops.last().id
+        val waited = synchronized(layoverSince) {
+            layoverSince[current.vehicle.id]?.takeIf { it.first == terminusId }?.let { nowSeconds - it.second }
+        } ?: 0L
+        val wait = (maxOf(successor.waitSeconds, MIN_TURNAROUND_SECONDS) - waited).coerceAtLeast(0)
+        val departs = toTerminus + wait + TURNAROUND_BUFFER_SECONDS
         val speed = speedOf(next, nowSeconds)
         val arrivals = FloatArray(next.stops.size) { index ->
             departs + routeDistance(next, 0, index) / speed + index * DWELL_SECONDS_PER_STOP
@@ -1287,6 +1346,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         private const val MIN_TURNAROUND_SECONDS = 60
         // A scheduled wait is the plan, not a promise; lean towards the later departure.
         private const val TURNAROUND_BUFFER_SECONDS = 90f
+        // Termini are bus bays and squares: a bus waiting there can stand well away from the pole.
+        private const val AT_TERMINUS_METRES = 60f
         private const val MAX_BOARDING_HEADING_CHECK_METRES = 2_000f
         private const val MAX_FORWARD_BEARING_DIFFERENCE = 100.0
         private const val AMBIGUOUS_SCORE_MARGIN = 75.0

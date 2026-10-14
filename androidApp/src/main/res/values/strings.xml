@@ -170,4 +170,6 @@
     <string name="swap_start_destination">Swap start and destination</string>
     <string name="planned_from_note">Alert off: different start</string>
     <string name="faster">faster</string>
+    <string name="at_terminus_leaves_in">At the terminus · leaves in ~%1$d min</string>
+    <string name="at_terminus_leaving">At the terminus · leaving shortly</string>
 </resources>

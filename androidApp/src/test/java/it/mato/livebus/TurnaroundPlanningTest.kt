@@ -47,6 +47,40 @@ class TurnaroundPlanningTest {
         assertFalse("the bus really is on the timetable's trip", choice.directionEstimated)
     }
 
+    @Test fun aBusStandingAtTheTerminusSaysWhenItSetsOffAgain() {
+        val (out, back) = line(45.02)
+        val index = index(out, back)
+        val arrived = System.currentTimeMillis() / 1000 - 120
+        // Seen standing at C two minutes ago, and still there.
+        val first = LiveVehicle("bus", "r", "out", 45.0199, 7.0, null, arrived)
+        assertEquals(300f, index.layoverOf(first, nowSeconds = arrived)!!.departsInSeconds)
+        val later = first.copy(timestampSeconds = arrived + 120)
+        val layover = index.layoverOf(later, nowSeconds = arrived + 120)!!
+
+        assertEquals("C", layover.terminus.id)
+        assertEquals(180f, layover.departsInSeconds)
+        // Once its wait is over it is about to go, not overdue by a negative amount.
+        assertEquals(0f, index.layoverOf(later, nowSeconds = arrived + 900)!!.departsInSeconds)
+    }
+
+    @Test fun aBusOnItsWayIsNotAtTheTerminus() {
+        val (out, back) = line(45.02)
+        assertNull(index(out, back).layoverOf(bus("bus", "out", 45.01)))
+    }
+
+    @Test fun aBusEndingItsDutyAtTheTerminusIsNotSaidToSetOffAgain() {
+        val (out, back) = line(45.02, continuing = setOf("some-other-trip"))
+        assertNull(index(out, back).layoverOf(bus("bus", "out", 45.0199)))
+    }
+
+    @Test fun aBusWaitingAtTheStartOfItsNextRunUsesTheWaitBeforeIt() {
+        val (out, back) = line(45.02, wait = 240)
+        val layover = index(out, back).layoverOf(bus("bus", "back", 45.0199))!!
+
+        assertEquals("C2", layover.terminus.id)
+        assertEquals(240f, layover.departsInSeconds, 5f)
+    }
+
     @Test fun nothingComesBackWhenTheTimetableHasNoSuccessor() = runBlocking {
         val (out, back) = line(45.02)
         assertNull(index(out.copy(next = null), back).planLiveJourney(45.0095, 7.0, 45.001, 7.0,
