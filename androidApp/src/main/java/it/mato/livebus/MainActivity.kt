@@ -1052,6 +1052,7 @@ class MainActivity : AppCompatActivity() {
                 liveVehicles = it
                 liveStatusFetchedAt = SystemClock.elapsedRealtime()
                 updateLiveStatus()
+                warnIfDataOutOfDate(it)
                 if (activeBusNeedsReplan(it)) {
                     requestAutomaticReplan()
                 } else {
@@ -1066,6 +1067,16 @@ class MainActivity : AppCompatActivity() {
                 renderVehicles()
                 setLiveStatus(getString(R.string.feed_unavailable), R.color.warning)
             }
+    }
+
+    /** Tells the rider once per app version that the bundled bus data no longer matches the feed. */
+    private fun warnIfDataOutOfDate(vehicles: List<LiveVehicle>) {
+        if (!transitIndex.looksOutOfDate(vehicles)) return
+        val preferences = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
+        if (preferences.getInt(STALE_NOTICE_VERSION, 0) == BuildConfig.VERSION_CODE) return
+        preferences.edit().putInt(STALE_NOTICE_VERSION, BuildConfig.VERSION_CODE).apply()
+        Snackbar.make(binding.coordinator, R.string.data_out_of_date, Snackbar.LENGTH_INDEFINITE)
+            .setAction(android.R.string.ok) {}.show()
     }
 
     private fun updateLiveStatus() {
@@ -2039,6 +2050,7 @@ class MainActivity : AppCompatActivity() {
         const val JOURNEY_STORE = "active_journey"
         const val MAX_SUGGESTIONS = 12
         const val LAST_DESTINATION = "last_destination"
+        const val STALE_NOTICE_VERSION = "stale_notice_version"
         const val INCLUDE_TRAINS = "include_trains"
         const val WALKING_PREFERENCE = "walking_preference"
         const val WALKING_METRES_PER_SECOND = 1.2f

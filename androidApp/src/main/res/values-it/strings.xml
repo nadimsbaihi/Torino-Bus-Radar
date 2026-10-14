@@ -28,6 +28,7 @@
     <string name="updated_minutes_ago">aggiornato %1$d min fa</string>
     <string name="no_bus_positions">Nessuna posizione aggiornata disponibile</string>
     <string name="delayed_bus_positions">%1$d bus · posizioni di massimo %2$d min fa</string>
+    <string name="data_out_of_date">I dati dei bus potrebbero essere obsoleti: molti bus in servizio non corrispondono agli orari dell’app. Aggiorna l’app per percorsi accurati.</string>
     <string name="bus_position_age">Ultima posizione: %1$d min fa</string>
     <string name="bus_fleet_number">Bus n. %1$s</string>
     <string name="delayed_bus_journey">Le posizioni dei bus risalgono fino a %1$d min fa. Le stime tengono conto del ritardo, ma la posizione attuale potrebbe essere diversa.</string>

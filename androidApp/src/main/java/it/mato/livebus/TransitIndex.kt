@@ -203,6 +203,18 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         !isOffItsLine(vehicle)
     }
 
+    /**
+     * Whether the bundled timetable looks out of date: GTT publishes new trip IDs with each GTFS
+     * release, so a feed full of trips the index has never heard of means the app needs updating.
+     * A handful of strangers (extra runs) is normal; too few buses says nothing either way.
+     */
+    fun looksOutOfDate(vehicles: List<LiveVehicle>): Boolean {
+        val withTrips = vehicles.filter { it.tripId != null }
+        if (withTrips.size < STALE_MIN_VEHICLES) return false
+        val known = withTrips.count { it.tripId in patternsByTripId }
+        return known < withTrips.size * STALE_MAX_KNOWN_SHARE
+    }
+
     private fun hasFinishedItsDuty(vehicle: LiveVehicle): Boolean {
         val lastTrip = lastTripOf[vehicle.id]?.takeIf { it in dutyEndTrips } ?: return false
         // A trip ID that goes missing halfway along the last trip is the feed stuttering, not the
@@ -998,6 +1010,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
 
         private const val MAX_TRANSFER_WALK = 350f
         private const val WALKING_METRES_PER_SECOND = 1.2f
+        private const val STALE_MIN_VEHICLES = 10
+        private const val STALE_MAX_KNOWN_SHARE = 0.25
         private const val BUS_METRES_PER_SECOND = 6.0f
         private const val DWELL_SECONDS_PER_STOP = 18f
         private const val WALK_SLACK = 0.15f

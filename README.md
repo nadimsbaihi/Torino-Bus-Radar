@@ -62,7 +62,9 @@ estimates use the data bundled with the app, so some places or addresses may
 be missing.
 
 Live bus positions require internet and come from GTT. Delayed positions are
-marked, and the app reports feed outages. **Regional train times are scheduled,
+marked, and the app reports feed outages. If most live buses stop matching the
+bundled timetable, which happens when GTT publishes a new one, the app tells you
+once that its data may be out of date and should be updated. **Regional train times are scheduled,
 not live:** train delays and positions are not available. Connections are
 estimates and can change as new bus positions arrive.
 
