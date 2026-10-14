@@ -136,7 +136,8 @@ class MainActivity : AppCompatActivity() {
     private var automaticReplanPending = false
     private var missingBusRefreshes = 0
     private var includeTrains = true
-    private var walkingPreference = WalkingPreference.BALANCED
+    // The journey options offer the least walking and the fastest trip; the first pick weighs both.
+    private val walkingPreference = WalkingPreference.BALANCED
     private val busIconCache = mutableMapOf<Triple<Boolean, Int, String>, BitmapDrawable>()
     /** Where walking is measured from and the journey is drawn from. */
     private val startPoint get() = customStart?.point ?: currentLocation
@@ -764,41 +765,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun setupSearchPresets() {
         val preferences = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
         includeTrains = preferences.getBoolean(INCLUDE_TRAINS, true)
-        walkingPreference = WalkingPreference.entries.firstOrNull {
-            it.name == preferences.getString(WALKING_PREFERENCE, null)
-        } ?: WalkingPreference.BALANCED
         binding.includeTrainsSwitch.isChecked = includeTrains
-        updateWalkingPresetButton()
         binding.includeTrainsSwitch.setOnCheckedChangeListener { _, checked ->
             includeTrains = checked
             preferences.edit().putBoolean(INCLUDE_TRAINS, checked).apply()
             replanForPreset()
-        }
-        binding.walkingPresetButton.setOnClickListener { anchor ->
-            PopupMenu(this, anchor).apply {
-                WalkingPreference.entries.forEach { option ->
-                    menu.add(1, option.ordinal + 1, option.ordinal, getString(when (option) {
-                        WalkingPreference.LESS -> R.string.walking_option_less
-                        WalkingPreference.BALANCED -> R.string.walking_option_balanced
-                        WalkingPreference.MORE -> R.string.walking_option_more
-                    })).apply {
-                        isCheckable = true
-                        isChecked = option == walkingPreference
-                    }
-                }
-                menu.setGroupCheckable(1, true, true)
-                setOnMenuItemClickListener { item ->
-                    val selected = WalkingPreference.entries[item.itemId - 1]
-                    if (selected != walkingPreference) {
-                        walkingPreference = selected
-                        preferences.edit().putString(WALKING_PREFERENCE, selected.name).apply()
-                        updateWalkingPresetButton()
-                        replanForPreset()
-                    }
-                    true
-                }
-                show()
-            }
         }
     }
 
@@ -956,14 +927,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             showDestination(OfflinePlace(newDestination.name, newDestination.name,
                 spot.first, spot.second, "pin", true))
         }
-    }
-
-    private fun updateWalkingPresetButton() {
-        binding.walkingPresetButton.setText(when (walkingPreference) {
-            WalkingPreference.LESS -> R.string.walking_preset_less
-            WalkingPreference.BALANCED -> R.string.walking_preset_balanced
-            WalkingPreference.MORE -> R.string.walking_preset_more
-        })
     }
 
     private fun replanForPreset() {
@@ -1267,7 +1230,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val guide = mixedJourneyChoice?.let { JourneySteps.forMixed(this, it, directDestination) }
             ?: trainJourneyChoice?.let { JourneySteps.forTrain(this, it, directDestination) }
             ?: JourneySteps.forBus(this, requireNotNull(choice))
-        val walkingFaster = walkingPreference != WalkingPreference.LESS && directWalkingSeconds < transitSeconds
+        val walkingFaster = directWalkingSeconds < transitSeconds
         transitGuide = guide.copy(notes = listOfNotNull(
             if (walkingFaster) getString(R.string.walking_is_faster, minutes(directWalkingSeconds),
                 directWalkingMetres.roundToInt(), minutes(transitSeconds)) else null
@@ -2443,7 +2406,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         const val LAST_DESTINATION = "last_destination"
         const val STALE_NOTICE_VERSION = "stale_notice_version"
         const val INCLUDE_TRAINS = "include_trains"
-        const val WALKING_PREFERENCE = "walking_preference"
         const val WALKING_METRES_PER_SECOND = 1.2f
         const val WALKING_STREET_FACTOR = 1.2f
         const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"

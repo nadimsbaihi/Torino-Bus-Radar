@@ -13,7 +13,7 @@ with walking or regional trains, and get directions to your boarding stop.
 3. Choose a journey, then open walking directions to your boarding stop in Google Maps.
 
 Your phone's location is the starting point unless you pick another. The app remembers your last
-destination and your search preferences.
+destination and whether to include trains.
 
 ## Features
 
@@ -46,8 +46,9 @@ destination and your search preferences.
   journey, the walking estimates and the directions all start from there, and
   the approach alert is off, since you are not at that start. Closing the
   journey goes back to your location.
-- **Your choice of walking.** Favor less walking, a balance, or faster trips
-  with more walking. Include or exclude regional trains.
+- **Other ways to go.** The app picks the journey that best weighs time against
+  walking. When another journey has fewer changes, arrives sooner, or walks less,
+  a button beside it shows that one instead. Include or exclude regional trains.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
   and regional stations without a connection or an API key.
 - **Dark mode.** The app and its offline map follow your phone's dark-mode
@@ -115,7 +116,7 @@ network behavior, and map interaction.
   When no connected path is available, the app uses an approximate distance
   and omits the walking line.
 - Train journeys allow two minutes for boarding. The maximum walk to a boarding
-  station is 1.5 km for Less walking, 2.5 km for Balanced, and 5 km for More walking.
+  station is 2.5 km.
   Timetables use Europe/Rome time; once the day's trains have gone, the first
   trains tomorrow are offered, marked "(+1)".
 - Bus arrival estimates add 18 s per stop to the drive between stops. Distances

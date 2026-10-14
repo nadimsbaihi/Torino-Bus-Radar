@@ -17,13 +17,6 @@
     <string name="trains_label">TRAINS</string>
     <string name="include_label">Include</string>
     <string name="include_trains">Include trains in journeys</string>
-    <string name="walking_label">WALKING</string>
-    <string name="walking_preset_less">Less ▾</string>
-    <string name="walking_preset_balanced">Balanced ▾</string>
-    <string name="walking_preset_more">More ▾</string>
-    <string name="walking_option_less">Less walking</string>
-    <string name="walking_option_balanced">Balanced</string>
-    <string name="walking_option_more">More walking, faster trips</string>
     <string name="enter_destination">Enter a place or address in Torino</string>
     <string name="direction_estimated_short">Estimated direction</string>
     <string name="bus_turnaround_note">Bus %1$s is still finishing its previous run; by the timetable it sets off from %2$s in ~%3$d min, so this time is an estimate.</string>

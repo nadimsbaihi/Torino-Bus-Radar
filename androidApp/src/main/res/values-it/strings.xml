@@ -17,13 +17,6 @@
     <string name="trains_label">TRENI</string>
     <string name="include_label">Includi</string>
     <string name="include_trains">Includi i treni nei percorsi</string>
-    <string name="walking_label">Quanto vuoi camminare?</string>
-    <string name="walking_preset_less">Poco ▾</string>
-    <string name="walking_preset_balanced">Abbastanza ▾</string>
-    <string name="walking_preset_more">Molto ▾</string>
-    <string name="walking_option_less">Camminare meno</string>
-    <string name="walking_option_balanced">Una camminata moderata</string>
-    <string name="walking_option_more">Camminare di più per arrivare prima</string>
     <string name="enter_destination">Inserisci un luogo o un indirizzo a Torino</string>
     <string name="direction_estimated_short">Direzione stimata</string>
     <string name="bus_turnaround_note">Il bus %1$s sta ancora finendo la corsa precedente; secondo l\'orario riparte da %2$s tra circa %3$d min, quindi è una stima.</string>

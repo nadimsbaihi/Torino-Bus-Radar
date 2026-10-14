@@ -11,7 +11,6 @@ import org.osmdroid.views.overlay.Polyline
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowPopupMenu
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = MatoApplication::class)
@@ -22,27 +21,15 @@ class BusMapVisibilityTest {
         val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
         set(activity, "binding", binding)
         val preferences = activity.getSharedPreferences("active_journey", 0)
-        preferences.edit().putBoolean("include_trains", false)
-            .putString("walking_preference", WalkingPreference.LESS.name).commit()
+        preferences.edit().putBoolean("include_trains", false).commit()
         MainActivity::class.java.getDeclaredMethod("setupSearchPresets").apply {
             isAccessible = true
             invoke(activity)
         }
 
         assertFalse(binding.includeTrainsSwitch.isChecked)
-        assertEquals(activity.getString(R.string.walking_preset_less),
-            binding.walkingPresetButton.text.toString())
         binding.includeTrainsSwitch.isChecked = true
         assertTrue(preferences.getBoolean("include_trains", false))
-        binding.walkingPresetButton.performClick()
-        val popup = ShadowPopupMenu.getLatestPopupMenu()
-        val moreWalking = popup.menu.findItem(WalkingPreference.MORE.ordinal + 1)
-        assertTrue(moreWalking.isCheckable)
-        org.robolectric.Shadows.shadowOf(popup).onMenuItemClickListener.onMenuItemClick(moreWalking)
-        assertEquals(WalkingPreference.MORE.name,
-            preferences.getString("walking_preference", null))
-        assertEquals(activity.getString(R.string.walking_preset_more),
-            binding.walkingPresetButton.text.toString())
         binding.map.onDetach()
     }
 
@@ -395,7 +382,7 @@ class BusMapVisibilityTest {
         binding.journeySteps.getChildAt(it).findViewById<android.widget.TextView>(R.id.stepText).text.toString()
     }
 
-    @Test fun walkingPresetChangesTheDisplayedJourney() {
+    @Test fun theDisplayedJourneyWeighsWalkingAgainstTime() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
         activity.setTheme(R.style.Theme_MatoLiveBus)
         val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
@@ -418,13 +405,13 @@ class BusMapVisibilityTest {
             isAccessible = true
         }
 
-        set(activity, "walkingPreference", WalkingPreference.LESS)
+        // The bus is quicker, but its 550 m walk at the end costs more than the train's extra 200 s.
         display.invoke(activity, "Final", finalStop.latitude to finalStop.longitude, bus, train, false)
         assertEquals(train, get(activity, "trainJourneyChoice"))
 
-        set(activity, "walkingPreference", WalkingPreference.MORE)
-        display.invoke(activity, "Final", finalStop.latitude to finalStop.longitude, bus, train, false)
-        assertEquals(bus, get(activity, "journeyChoice"))
+        val busToTheDoor = bus.copy(destinationWalkMetres = 0f)
+        display.invoke(activity, "Final", finalStop.latitude to finalStop.longitude, busToTheDoor, train, false)
+        assertEquals(busToTheDoor, get(activity, "journeyChoice"))
         binding.map.onDetach()
     }
 
