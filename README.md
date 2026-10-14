@@ -118,9 +118,16 @@ network behavior, and map interaction.
   station is 1.5 km for Less walking, 2.5 km for Balanced, and 5 km for More walking.
   Timetables use Europe/Rome time; once the day's trains have gone, the first
   trains tomorrow are offered, marked "(+1)".
-- Bus arrival estimates assume 6 m/s, 18 s per stop, and roads 15% longer than the
-  straight line between stops. A walker needs 15% slack on the walk to a stop and
-  20 s to change buses.
+- Bus arrival estimates add 18 s per stop to the drive between stops, and the drive
+  uses speeds learned from the live feed: between two refreshes, how far each bus got
+  along its line, with the time at stops taken out. Standing, jittering,
+  off-line, turned-around, and implausible samples are dropped. The app keeps a
+  robust running average per line and part of the day (night, morning peak, midday,
+  evening peak, evening), pulled towards the city-wide figure for that part of the day while a
+  line has few samples, and towards 5.5 m/s (20 km/h between stops, about
+  16 km/h with stops) while the city has few. Old samples fade with a two-week
+  half-life, and the figures live in a small private file, `bus_speeds.txt`.
+  A walker needs 15% slack on the walk to a stop and 20 s to change buses.
 - Bus positions older than two minutes are faded and labeled as delayed;
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.

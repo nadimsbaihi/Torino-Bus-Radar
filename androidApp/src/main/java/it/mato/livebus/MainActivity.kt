@@ -1269,6 +1269,14 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
+    /** Every feed shows how far each bus got since the last one; the planner's speeds learn from that. */
+    private fun learnBusSpeeds(vehicles: List<LiveVehicle>) {
+        lifecycleScope.launch(Dispatchers.Default) {
+            runCatching { transitIndex.trackVehicles(vehicles) }
+            BusSpeedStore.save(applicationContext)
+        }
+    }
+
     private suspend fun fetchVehicles(forceRefresh: Boolean) {
         liveStatusFetchedAt = null
         setLiveStatus(getString(R.string.connecting), R.color.ink)
@@ -1278,6 +1286,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 liveStatusFetchedAt = SystemClock.elapsedRealtime()
                 updateLiveStatus()
                 warnIfDataOutOfDate(it)
+                learnBusSpeeds(it)
                 if (activeBusNeedsReplan(it)) {
                     requestAutomaticReplan()
                 } else {
@@ -2349,6 +2358,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     override fun onPause() {
+        BusSpeedStore.save(applicationContext, force = true)
         binding.map.onPause()
         super.onPause()
     }
