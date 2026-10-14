@@ -42,6 +42,7 @@ data class SavedPlace(
 
 /** The riders' named places, kept on the device and searched along with the bundled city. */
 class SavedPlaces(context: Context) {
+    private val appContext = context.applicationContext
     private val preferences =
         context.applicationContext.getSharedPreferences(STORE, Context.MODE_PRIVATE)
 
@@ -128,7 +129,11 @@ class SavedPlaces(context: Context) {
                 .put("lon", place.longitude))
         }
         preferences.edit().putString(PLACES, array.toString()).apply()
+        PlaceShortcuts.publish(appContext, places.sortedBy { key(it.name) })
     }
+
+    /** Re-publishes the home-screen shortcuts, for places saved before there were any. */
+    fun publishShortcuts() = PlaceShortcuts.publish(appContext, all())
 
     companion object {
         const val MAX_NAME_LENGTH = 60

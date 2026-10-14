@@ -157,7 +157,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val handlingReplan = intent.action == BusAlertService.ACTION_REPLAN
+        val handlingReplan = intent.action == BusAlertService.ACTION_REPLAN ||
+            intent.action == PlaceShortcuts.ACTION_GO_TO_PLACE
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.root.requestFocus()
@@ -194,6 +195,8 @@ class MainActivity : AppCompatActivity() {
         requestLocation()
         startRefreshing()
         consumeReplan(intent)
+        consumeGoToPlace(intent)
+        savedPlaces.publishShortcuts()
         if (savedInstanceState == null && !handlingReplan) restoreLastJourney()
     }
 
@@ -202,6 +205,7 @@ class MainActivity : AppCompatActivity() {
         setIntent(intent)
         consumeSharedDirections(intent)
         consumeReplan(intent)
+        consumeGoToPlace(intent)
     }
 
     private fun setupJourneySheet() {
@@ -1825,6 +1829,20 @@ class MainActivity : AppCompatActivity() {
         selectedPattern = null
         showJourneyMessage(getString(R.string.shared_route_found, route))
         renderVehicles()
+    }
+
+    /** A home-screen shortcut for a saved place: plan a journey there. */
+    private fun consumeGoToPlace(intent: Intent?) {
+        if (intent?.action != PlaceShortcuts.ACTION_GO_TO_PLACE) return
+        intent.action = null
+        val name = intent.getStringExtra(PlaceShortcuts.EXTRA_NAME)?.takeIf { it.isNotBlank() } ?: return
+        if (!intent.hasExtra(PlaceShortcuts.EXTRA_LATITUDE)) return
+        val latitude = intent.getDoubleExtra(PlaceShortcuts.EXTRA_LATITUDE, 0.0)
+        val longitude = intent.getDoubleExtra(PlaceShortcuts.EXTRA_LONGITUDE, 0.0)
+        // Follow the saved place if it was moved since the shortcut was made.
+        val place = savedPlaces.byName(name)?.asOfflinePlace(exactMatch = true)
+            ?: OfflinePlace(name, name, latitude, longitude, SavedPlace.KIND, true)
+        chooseDestination(place)
     }
 
     private fun consumeReplan(intent: Intent?) {

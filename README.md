@@ -37,6 +37,8 @@ destination and your search preferences.
   first in search, and an empty search box lists them, followed by the last few
   places you went to. Tap the bookmark again to rename or remove one. Saved and
   recent places stay on your phone.
+- **Home-screen shortcuts.** Your first four saved places appear when you press
+  and hold the app icon; tap one to plan a journey there.
 - **Go anywhere from the map.** Press and hold on the map to plan a journey to
   that spot, even where the bundled data has no address. Bookmark it to keep it.
 - **Walking directions.** Compare a ride with walking, then open Google Maps
