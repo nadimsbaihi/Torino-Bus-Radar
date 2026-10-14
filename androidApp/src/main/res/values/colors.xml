@@ -15,4 +15,8 @@
     <color name="map_casing">#FFFFFF</color>
     <color name="map_face">#FFFFFF</color>
     <color name="map_on_accent">#FFFFFF</color>
+    <!-- osmdroid's map bubbles are white in both themes, so their text keeps day colours. -->
+    <color name="bubble_ink">#172020</color>
+    <color name="bubble_muted">#697472</color>
+    <color name="bubble_accent">#176B62</color>
 </resources>
