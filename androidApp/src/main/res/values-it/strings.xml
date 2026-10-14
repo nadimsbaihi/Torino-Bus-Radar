@@ -24,6 +24,8 @@
     <string name="retry_gtt_connection">Riprova a caricare i dati GTT</string>
     <string name="live_status_retry">%1$s. Riprova a caricare i dati GTT</string>
     <string name="live_bus_count">● %1$d bus in tempo reale</string>
+    <string name="updated_seconds_ago">aggiornato %1$d s fa</string>
+    <string name="updated_minutes_ago">aggiornato %1$d min fa</string>
     <string name="no_bus_positions">Nessuna posizione aggiornata disponibile</string>
     <string name="delayed_bus_positions">%1$d bus · posizioni di massimo %2$d min fa</string>
     <string name="bus_position_age">Ultima posizione: %1$d min fa</string>

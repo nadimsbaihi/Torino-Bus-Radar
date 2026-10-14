@@ -24,6 +24,8 @@
     <string name="retry_gtt_connection">Retry GTT connection</string>
     <string name="live_status_retry">%1$s. Retry GTT connection</string>
     <string name="live_bus_count">● %1$d live buses</string>
+    <string name="updated_seconds_ago">updated %1$d s ago</string>
+    <string name="updated_minutes_ago">updated %1$d min ago</string>
     <string name="no_bus_positions">No recent bus positions</string>
     <string name="delayed_bus_positions">%1$d buses · up to %2$d min old</string>
     <string name="bus_position_age">Position %1$d min ago</string>

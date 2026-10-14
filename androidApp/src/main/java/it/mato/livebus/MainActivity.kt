@@ -108,6 +108,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var destinationAdapter: ArrayAdapter<OfflinePlace>
     private var liveVehicles: List<LiveVehicle> = emptyList()
     private var refreshJob: Job? = null
+    /** Elapsed-realtime of the last successful fetch while the chip shows live data, else null. */
+    private var liveStatusFetchedAt: Long? = null
     private var selectedRoute: String? = null
     private var selectedPattern: TransitPattern? = null
     private var highlightedVehicleId: String? = null
@@ -1011,6 +1013,12 @@ class MainActivity : AppCompatActivity() {
             var forceNextFetch = forceRefresh
             // Polling stops in the background (BusAlertService does its own) and fetches at once on return.
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    while (isActive) {
+                        delay(FRESHNESS_TICK_MILLIS)
+                        if (liveStatusFetchedAt != null) updateLiveStatus()
+                    }
+                }
                 while (isActive) {
                     fetchVehicles(forceNextFetch)
                     forceNextFetch = false
@@ -1021,10 +1029,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private suspend fun fetchVehicles(forceRefresh: Boolean) {
+        liveStatusFetchedAt = null
         setLiveStatus(getString(R.string.connecting), R.color.ink)
         runCatching { transitIndex.inService(repository.vehicles(forceRefresh)) }
             .onSuccess {
                 liveVehicles = it
+                liveStatusFetchedAt = SystemClock.elapsedRealtime()
                 updateLiveStatus()
                 if (activeBusNeedsReplan(it)) {
                     requestAutomaticReplan()
@@ -1036,6 +1046,7 @@ class MainActivity : AppCompatActivity() {
                 if (it is CancellationException) return
                 Log.e(TAG, "Unable to refresh GTT live positions", it)
                 liveVehicles = emptyList()
+                liveStatusFetchedAt = null
                 renderVehicles()
                 setLiveStatus(getString(R.string.feed_unavailable), R.color.warning)
             }
@@ -1043,13 +1054,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateLiveStatus() {
         val oldest = liveVehicles.maxOfOrNull { it.ageSeconds } ?: 0
+        val ago = liveStatusFetchedAt?.let { freshnessSuffix((SystemClock.elapsedRealtime() - it) / 1000) }.orEmpty()
         val status = when {
             liveVehicles.isEmpty() -> getString(R.string.no_bus_positions)
             oldest > 120 -> getString(R.string.delayed_bus_positions, liveVehicles.size, (oldest + 59) / 60)
             else -> getString(R.string.live_bus_count, liveVehicles.size)
-        }
+        } + ago
         setLiveStatus(status,
             if (liveVehicles.isEmpty() || oldest > 120) R.color.warning else R.color.live_green)
+    }
+
+    /** " · updated 12 s ago"; quiet for the first few seconds so a fresh fetch reads as plain "live". */
+    private fun freshnessSuffix(seconds: Long): String = when {
+        seconds < FRESHNESS_QUIET_SECONDS -> ""
+        seconds < 60 -> " · " + getString(R.string.updated_seconds_ago, seconds.toInt())
+        else -> " · " + getString(R.string.updated_minutes_ago, (seconds / 60).toInt())
     }
 
     private fun setLiveStatus(status: String, color: Int) {
@@ -1960,6 +1979,8 @@ class MainActivity : AppCompatActivity() {
         const val WALKING_STREET_FACTOR = 1.2f
         const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"
         const val MISSING_REFRESHES_BEFORE_REPLAN = 3
+        const val FRESHNESS_TICK_MILLIS = 5_000L
+        const val FRESHNESS_QUIET_SECONDS = 5
         const val STOP_DOT_DP = 9
         const val TURNAROUND_GRACE_MILLIS = 5 * 60_000L
         val TRAILING_LETTERS = Regex("[A-Za-z]+$")
