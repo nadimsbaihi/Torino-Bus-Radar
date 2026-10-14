@@ -53,6 +53,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.gms.location.LocationServices
 import it.mato.livebus.databinding.ActivityMainBinding
+import it.mato.livebus.databinding.DialogPickStartBinding
 import it.mato.livebus.databinding.DialogSavePlaceBinding
 import it.mato.livebus.databinding.ItemJourneyStepBinding
 import kotlinx.coroutines.Job
@@ -86,6 +87,8 @@ import org.osmdroid.views.overlay.Polyline
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.coroutines.resume
+
+private data class CustomStart(val name: String, val point: GeoPoint)
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -129,8 +132,13 @@ class MainActivity : AppCompatActivity() {
     private var includeTrains = true
     private var walkingPreference = WalkingPreference.BALANCED
     private val busIconCache = mutableMapOf<Triple<Boolean, Int, String>, BitmapDrawable>()
+    /** Where walking is measured from and the journey is drawn from. */
+    private val startPoint get() = customStart?.point ?: currentLocation
+    private val myLocationLabel get() = getString(R.string.start_my_location)
     private val journeySheet get() = BottomSheetBehavior.from(binding.journeyCard)
     private var mapInsets = 0 to 0
+    // A start other than the rider's own position, set from the journey panel and gone with the journey.
+    private var customStart: CustomStart? = null
     private var stopWindow: StopArrivalsWindow? = null
     private var openStop: TransitStop? = null
     private var stopJob: Job? = null
@@ -172,6 +180,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         setupDestinationPicker()
         setupSearchPresets()
+        setupStartRow()
         setupAppearanceMenu()
         binding.locationButton.setOnClickListener {
             if (deviceLocationEnabled()) requestLocation() else openLocationSettings()
@@ -252,7 +261,7 @@ class MainActivity : AppCompatActivity() {
     /** Undoes the innermost thing the rider opened. False once the map is back at rest. */
     private fun stepBack(): Boolean {
         val journeyOpen = binding.journeyCard.visibility == View.VISIBLE
-        val peek = resources.getDimensionPixelSize(R.dimen.journey_peek_height)
+        val peek = journeyPeek()
         return when {
             binding.destinationInput.isPopupShowing -> {
                 binding.destinationInput.dismissDropDown()
@@ -288,6 +297,9 @@ class MainActivity : AppCompatActivity() {
     private fun closeJourney() {
         planningJob?.cancel()
         stopWindow?.close()
+        customStart = null
+        // After a swap the box holds "My location", which is no destination to leave behind.
+        if (binding.destinationInput.text.toString().trim() == myLocationLabel) binding.destinationInput.setText("")
         journeyChoice = null
         trainJourneyChoice = null
         mixedJourneyChoice = null
@@ -311,6 +323,7 @@ class MainActivity : AppCompatActivity() {
             journeySheet.state == BottomSheetBehavior.STATE_HIDDEN
         }
         if (target != null) journeySheet.state = target
+        updateStartRow()
         updateMapInsets()
     }
 
@@ -318,6 +331,7 @@ class MainActivity : AppCompatActivity() {
         // Gone is enough: there is nothing to animate once it is out of sight, and the next
         // journey sets the state it wants. A swipe has already left the sheet hidden.
         binding.journeyCard.visibility = View.GONE
+        updateStartRow()
         updateMapInsets()
     }
 
@@ -329,10 +343,15 @@ class MainActivity : AppCompatActivity() {
         binding.map.setMapCenterOffset(0, (insets.first - insets.second) / 2)
     }
 
+    /** What shows of the sheet before it is pulled up: the handle, title and first step, and the start row when there is one. */
+    private fun journeyPeek() = resources.getDimensionPixelSize(R.dimen.journey_peek_height) +
+        if (binding.startRow.visibility == View.VISIBLE)
+            resources.getDimensionPixelSize(R.dimen.journey_start_row_height) else 0
+
     /** The height of map the sheet covers at rest: its peek, or less when the content is short. */
     private fun journeyInset(): Int {
         if (binding.journeyCard.visibility != View.VISIBLE) return 0
-        val peek = resources.getDimensionPixelSize(R.dimen.journey_peek_height)
+        val peek = journeyPeek()
         return if (binding.journeyCard.height > 0) minOf(peek, binding.journeyCard.height) else peek
     }
 
@@ -418,50 +437,54 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupDestinationPicker() {
-        val adapter = object : ArrayAdapter<OfflinePlace>(
-            this, android.R.layout.simple_dropdown_item_1line
-        ) {
-            private val searchFilter = object : Filter() {
-                override fun performFiltering(constraint: CharSequence?): FilterResults {
-                    val query = constraint?.toString().orEmpty()
-                    // Nothing typed lists every saved place; one letter is too vague to search.
-                    val saved = when {
-                        query.isBlank() -> savedPlaces.all()
-                        query.length < 2 -> emptyList()
-                        else -> savedPlaces.search(query)
-                    }
-                    val found = if (query.isBlank()) recentSuggestions() else if (query.length < 2) emptyList() else try {
-                        offlineCity.search(query, currentLocation.latitude, currentLocation.longitude)
-                    } catch (error: Exception) {
-                        Log.e(TAG, "Offline destination search failed", error)
-                        emptyList()
-                    }
-                    val matches = SavedPlaces.merge(saved, found, query, MAX_SUGGESTIONS)
-                    return FilterResults().apply { values = matches; count = matches.size }
+    /** The search suggestions: the rider's saved places first, then the bundled city. */
+private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapter<OfflinePlace>(
+        this, android.R.layout.simple_dropdown_item_1line
+    ) {
+        private val searchFilter = object : Filter() {
+            override fun performFiltering(constraint: CharSequence?): FilterResults {
+                val query = constraint?.toString().orEmpty()
+                // Nothing typed lists every saved place; one letter is too vague to search.
+                val saved = when {
+                    query.isBlank() -> savedPlaces.all()
+                    query.length < 2 -> emptyList()
+                    else -> savedPlaces.search(query)
                 }
-
-                override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
-                    @Suppress("UNCHECKED_CAST")
-                    val matches = results?.values as? List<OfflinePlace> ?: emptyList()
-                    setNotifyOnChange(false)
-                    clear()
-                    addAll(matches)
-                    notifyDataSetChanged()
+                val found = if (query.isBlank()) recentSuggestions() else if (query.length < 2) emptyList() else try {
+                    offlineCity.search(query, currentLocation.latitude, currentLocation.longitude)
+                } catch (error: Exception) {
+                    Log.e(TAG, "Offline destination search failed", error)
+                    emptyList()
                 }
-
-                override fun convertResultToString(resultValue: Any?) =
-                    (resultValue as? OfflinePlace)?.label.orEmpty()
+                val matches = SavedPlaces.merge(saved, found, query, MAX_SUGGESTIONS)
+                return FilterResults().apply { values = matches; count = matches.size }
             }
 
-            override fun getFilter(): Filter = searchFilter
+            override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+                @Suppress("UNCHECKED_CAST")
+                val matches = results?.values as? List<OfflinePlace> ?: emptyList()
+                setNotifyOnChange(false)
+                clear()
+                addAll(matches)
+                notifyDataSetChanged()
+            }
+
+            override fun convertResultToString(resultValue: Any?) =
+                (resultValue as? OfflinePlace)?.label.orEmpty()
         }
+
+        override fun getFilter(): Filter = searchFilter
+    }
+
+    private fun setupDestinationPicker() {
+        val adapter = placeSuggestions()
         destinationAdapter = adapter
         binding.destinationInput.setAdapter(adapter)
         binding.destinationInput.threshold = 2
         binding.destinationInput.doAfterTextChanged {
             binding.destinationLayout.error = null
             refreshSavedPlaceButton()
+            updateStartRow()
         }
         // An empty search box offers the saved places. The clear-text icon relies on the
         // field's own focus listener, so keep it and add to it.
@@ -793,6 +816,133 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** The "From" row sits in the journey panel: it needs a journey to apply to, and goes with it. */
+    private fun updateStartRow() {
+        val shown = binding.journeyCard.visibility == View.VISIBLE && !binding.destinationInput.text.isNullOrBlank()
+        binding.startRow.visibility = if (shown) View.VISIBLE else View.GONE
+        journeySheet.peekHeight = journeyPeek()
+        val name = customStart?.name ?: myLocationLabel
+        binding.startButton.text = getString(R.string.start_from, name)
+        binding.startButton.contentDescription = getString(R.string.start_change, name)
+    }
+
+    private fun setupStartRow() {
+        binding.startButton.setOnClickListener { anchor ->
+            PopupMenu(this, anchor).apply {
+                menu.add(1, 1, 0, R.string.start_my_location).apply {
+                    isCheckable = true
+                    isChecked = customStart == null
+                }
+                menu.add(1, 2, 1, R.string.start_pick_saved)
+                menu.add(1, 3, 2, R.string.start_pick_search)
+                if (recentSuggestions().isNotEmpty()) menu.add(1, 4, 3, R.string.start_pick_recent)
+                setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> chooseStart(null)
+                        2 -> pickSavedStart()
+                        4 -> pickRecentStart()
+                        else -> searchForStart()
+                    }
+                    true
+                }
+                show()
+            }
+        }
+        binding.swapStartButton.setOnClickListener { swapStartAndDestination() }
+    }
+
+    /** Plans the journey again from [start], or from the rider's own position when it is null. */
+    private fun chooseStart(start: CustomStart?) {
+        if (start == customStart) return
+        customStart = start
+        updateStartRow()
+        replanForPreset()
+    }
+
+    private fun pickSavedStart() {
+        val places = savedPlaces.all()
+        if (places.isEmpty()) {
+            Snackbar.make(binding.coordinator, R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.saved_places_title)
+            .setItems(places.map { it.label }.toTypedArray()) { _, position ->
+                chooseStart(CustomStart(places[position].name,
+                    GeoPoint(places[position].latitude, places[position].longitude)))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun pickRecentStart() {
+        val places = recentSuggestions()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.start_pick_recent)
+            .setItems(places.map { it.name }.toTypedArray()) { _, position ->
+                chooseStart(CustomStart(places[position].name,
+                    GeoPoint(places[position].latitude, places[position].longitude)))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun searchForStart() {
+        val form = DialogPickStartBinding.inflate(layoutInflater)
+        val adapter = placeSuggestions()
+        form.pickStartInput.setAdapter(adapter)
+        form.pickStartInput.threshold = 2
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.start_pick_search)
+            .setView(form.root)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+        fun pick(place: OfflinePlace) {
+            dialog.dismiss()
+            chooseStart(CustomStart(place.name, GeoPoint(place.latitude, place.longitude)))
+        }
+        form.pickStartInput.setOnItemClickListener { _, _, position, _ -> adapter.getItem(position)?.let(::pick) }
+        form.pickStartInput.setOnEditorActionListener { _, _, _ ->
+            if (adapter.count > 0) adapter.getItem(0)?.let(::pick)
+            true
+        }
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        dialog.show()
+        // Nothing typed offers the saved places and recent destinations, as the search box does.
+        form.pickStartInput.setOnClickListener {
+            if (form.pickStartInput.text.isNullOrBlank()) adapter.filter.filter("") { form.pickStartInput.showDropDown() }
+        }
+    }
+
+    /** The destination becomes the start and the start the destination, then the journey is planned again. */
+    private fun swapStartAndDestination() {
+        val point = directDestination ?: return
+        val typed = binding.destinationInput.text.toString().trim()
+        val destination = StartSwap.Place(typed.substringBefore(" · "), point.latitude, point.longitude,
+            isMyLocation = customStart != null && typed == myLocationLabel)
+        val start = customStart?.let { StartSwap.Place(it.name, it.point.latitude, it.point.longitude) }
+        lifecycleScope.launch {
+            // Only a swap away from My location needs a fix, to make it the destination.
+            val here = if (start != null) null else {
+                val fix = obtainLocation()
+                if (fix == null) {
+                    showLocationHint()
+                    return@launch
+                }
+                StartSwap.Place(myLocationLabel, fix.latitude, fix.longitude, isMyLocation = true)
+            }
+            val (newStart, newDestination) = StartSwap.swap(start, destination, here) ?: return@launch
+            customStart = newStart?.let { CustomStart(it.name, GeoPoint(it.latitude, it.longitude)) }
+            val spot = newDestination.latitude to newDestination.longitude
+            lastGeocodedAddress = newDestination.name to spot
+            lastResolvedPlace = null
+            binding.destinationInput.dismissDropDown()
+            binding.destinationInput.setText(newDestination.name, false)
+            showDestination(OfflinePlace(newDestination.name, newDestination.name,
+                spot.first, spot.second, "pin", true))
+        }
+    }
+
     private fun updateWalkingPresetButton() {
         binding.walkingPresetButton.setText(when (walkingPreference) {
             WalkingPreference.LESS -> R.string.walking_preset_less
@@ -841,7 +991,15 @@ class MainActivity : AppCompatActivity() {
             renderVehicles()
             try {
                 coroutineScope {
-                    val originTask = async { timed("location") { obtainLocation() } }
+                    val chosenStart = customStart
+                    val originTask = async {
+                        timed("location") {
+                            chosenStart?.let { Location("custom").apply {
+                                latitude = it.point.latitude
+                                longitude = it.point.longitude
+                            } } ?: obtainLocation()
+                        }
+                    }
                     val addressTask = async { timed("geocode") { geocode(destination) } }
                     val vehiclesTask = async {
                         timed("vehicles") {
@@ -873,7 +1031,7 @@ class MainActivity : AppCompatActivity() {
                         return@coroutineScope
                     }
                     // One origin snapshot is used for both planners and their walking legs.
-                    currentLocation = GeoPoint(origin.latitude, origin.longitude)
+                    if (chosenStart == null) currentLocation = GeoPoint(origin.latitude, origin.longitude)
                     val walkingTask = async(Dispatchers.Default) {
                         timed("walking") {
                             val city = offlineCity
@@ -1001,8 +1159,11 @@ class MainActivity : AppCompatActivity() {
     ) {
         binding.destinationLayout.error = null
         binding.locationSettingsButton.visibility = View.GONE
-        saveLastDestination(destination.trim())
-        recentDestinations.add(destination, address.first, address.second)
+        // Where the rider came from is not a place to remember going to.
+        if (destination.trim() != myLocationLabel) {
+            saveLastDestination(destination.trim())
+            recentDestinations.add(destination, address.first, address.second)
+        }
         val busScore = busChoice?.let {
             walkingPreference.score(it.estimatedTotalSeconds, it.totalWalkingMetres)
         } ?: Float.POSITIVE_INFINITY
@@ -1039,7 +1200,8 @@ class MainActivity : AppCompatActivity() {
             if (walkingFaster) getString(R.string.walking_is_faster, minutes(directWalkingSeconds),
                 directWalkingMetres.roundToInt(), minutes(transitSeconds)) else null
         ) + guide.notes + listOfNotNull(
-            if ((originLocation?.accuracy ?: 0f) > 200f) getString(R.string.location_approximate) else null
+            customStart?.let { getString(R.string.planned_from_note, it.name) }
+                ?: if ((originLocation?.accuracy ?: 0f) > 200f) getString(R.string.location_approximate) else null
         ))
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
         binding.walkButton.text = getString(R.string.walk_option, minutes(directWalkingSeconds))
@@ -1050,7 +1212,8 @@ class MainActivity : AppCompatActivity() {
         binding.boardStopDirectionsButton.setText(R.string.walk_to_boarding_stop)
         binding.boardStopDirectionsButton.visibility = View.VISIBLE
         renderJourneyGuide(transitGuide!!)
-        binding.alertButton.visibility = if (choice != null && trainJourneyChoice == null) View.VISIBLE else View.GONE
+        binding.alertButton.visibility =
+            if (choice != null && trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
         // A journey already pulled open stays open through live updates; a new one starts at the peek.
         showJourneySheet(if (wasShowingSteps) null else BottomSheetBehavior.STATE_COLLAPSED)
         renderVehicles()
@@ -1380,7 +1543,7 @@ class MainActivity : AppCompatActivity() {
     private fun drawJourneyLine() {
         if (walkingMode) {
             val destination = directDestination ?: return
-            addWalkingConnector(currentLocation, destination)
+            addWalkingConnector(startPoint, destination)
             addExactDestinationMarker(destination.latitude, destination.longitude)
             return
         }
@@ -1389,21 +1552,21 @@ class MainActivity : AppCompatActivity() {
             val stationPoint = GeoPoint(station.latitude, station.longitude)
             val destination = directDestination ?: stationPoint
             if (mixed.busFirst) {
-                drawBusJourneyLine(mixed.bus, currentLocation, stationPoint, false)
+                drawBusJourneyLine(mixed.bus, startPoint, stationPoint, false)
                 drawTrainJourneyLine(mixed.train, stationPoint, destination, true)
             } else {
-                drawTrainJourneyLine(mixed.train, currentLocation, stationPoint, false)
+                drawTrainJourneyLine(mixed.train, startPoint, stationPoint, false)
                 drawBusJourneyLine(mixed.bus, stationPoint, destination, true)
             }
             return
         }
         trainJourneyChoice?.let { train ->
-            drawTrainJourneyLine(train, currentLocation,
+            drawTrainJourneyLine(train, startPoint,
                 directDestination ?: GeoPoint(train.destination.latitude, train.destination.longitude), true)
             return
         }
         val choice = journeyChoice ?: return
-        drawBusJourneyLine(choice, currentLocation,
+        drawBusJourneyLine(choice, startPoint,
             GeoPoint(choice.finalLatitude, choice.finalLongitude), true)
     }
 
@@ -1511,8 +1674,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun walkingPath(from: GeoPoint, to: GeoPoint): List<GeoPoint>? {
         val route = when {
-            from.latitude == currentLocation.latitude &&
-                from.longitude == currentLocation.longitude ->
+            from.latitude == startPoint.latitude &&
+                from.longitude == startPoint.longitude ->
                 walkingFromOrigin?.routeTo(to.latitude, to.longitude)
             to.latitude == directDestination?.latitude &&
                 to.longitude == directDestination?.longitude ->
@@ -1608,15 +1771,15 @@ class MainActivity : AppCompatActivity() {
     private fun frameCurrentJourney() {
         val destination = directDestination ?: return
         val walkingPoints = if (walkingMode) {
-            walkingPath(currentLocation, destination).orEmpty()
+            walkingPath(startPoint, destination).orEmpty()
         } else if (mixedJourneyChoice != null) {
             emptyList()
         } else {
             trainJourneyChoice?.let { train ->
-                walkingPath(currentLocation, GeoPoint(train.boardAt.latitude, train.boardAt.longitude)).orEmpty() +
+                walkingPath(startPoint, GeoPoint(train.boardAt.latitude, train.boardAt.longitude)).orEmpty() +
                     walkingPath(GeoPoint(train.destination.latitude, train.destination.longitude), destination).orEmpty()
             } ?: journeyChoice?.let { choice ->
-                walkingPath(currentLocation, GeoPoint(choice.boardAt.latitude, choice.boardAt.longitude)).orEmpty() +
+                walkingPath(startPoint, GeoPoint(choice.boardAt.latitude, choice.boardAt.longitude)).orEmpty() +
                     walkingPath(GeoPoint(choice.destination.latitude, choice.destination.longitude), destination).orEmpty() +
                     (choice.secondLeg?.let { leg ->
                         choice.transferAt?.let { transfer ->
@@ -1638,7 +1801,7 @@ class MainActivity : AppCompatActivity() {
                 journeyPoints(choice) + secondLegPoints(choice)
             }.orEmpty()
         }
-        val points = transitPoints + walkingPoints + listOf(currentLocation, destination)
+        val points = transitPoints + walkingPoints + listOf(startPoint, destination)
         binding.topControls.doOnLayout {
             binding.map.controller.stopAnimation(false)
             val padding = (32 * resources.displayMetrics.density).roundToInt()
@@ -1751,6 +1914,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addYouMarker() {
+        customStart?.let { start ->
+            binding.map.overlays.add(Marker(binding.map).apply {
+                position = start.point
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                title = start.name
+                icon = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(getColor(R.color.deep_green))
+                    setStroke((3 * resources.displayMetrics.density).roundToInt(), getColor(R.color.map_casing))
+                    val size = (20 * resources.displayMetrics.density).roundToInt()
+                    setSize(size, size)
+                }
+            })
+            return
+        }
         val location = originLocation ?: return
         binding.map.overlays.add(Marker(binding.map).apply {
             position = GeoPoint(location.latitude, location.longitude)
@@ -1853,7 +2031,7 @@ class MainActivity : AppCompatActivity() {
     private fun distanceTo(vehicle: LiveVehicle): Float {
         val output = FloatArray(1)
         Location.distanceBetween(
-            currentLocation.latitude, currentLocation.longitude,
+            startPoint.latitude, startPoint.longitude,
             vehicle.latitude, vehicle.longitude, output
         )
         return output[0]
@@ -1996,6 +2174,7 @@ class MainActivity : AppCompatActivity() {
         intent.action = null
         AlertPreferences.clear(this)
         stopService(Intent(this, BusAlertService::class.java))
+        customStart = null
         binding.destinationInput.setText(finalAddress)
         journeyChoice = null
         trainJourneyChoice = null
@@ -2059,7 +2238,8 @@ class MainActivity : AppCompatActivity() {
             ?: journeyChoice!!.estimatedTotalSeconds
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
         transitGuide?.let(::renderJourneyGuide)
-        binding.alertButton.visibility = if (trainJourneyChoice == null) View.VISIBLE else View.GONE
+        binding.alertButton.visibility =
+            if (trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
         renderVehicles()
         frameCurrentJourney()
     }
@@ -2075,8 +2255,8 @@ class MainActivity : AppCompatActivity() {
         walkingFromOrigin?.let { return it.estimatedMetresTo(latitude, longitude) }
         val result = FloatArray(1)
         Location.distanceBetween(
-            currentLocation.latitude,
-            currentLocation.longitude,
+            startPoint.latitude,
+            startPoint.longitude,
             latitude,
             longitude,
             result
@@ -2089,7 +2269,7 @@ class MainActivity : AppCompatActivity() {
     private fun openWalkingDirections(destination: GeoPoint) = openWalkingDirections(destination, null)
 
     private fun openWalkingDirections(destination: GeoPoint, origin: GeoPoint?) {
-        val from = origin ?: currentLocation
+        val from = origin ?: startPoint
         val webDirections = Uri.parse(
             "https://www.google.com/maps/dir/?api=1" +
                 "&origin=${from.latitude},${from.longitude}" +
@@ -2098,7 +2278,7 @@ class MainActivity : AppCompatActivity() {
         )
         // Navigation always starts at the rider's own position, so a leg that starts elsewhere
         // goes through the directions page, which takes an origin.
-        val first = if (origin == null) {
+        val first = if (origin == null && customStart == null) {
             Intent(Intent.ACTION_VIEW, Uri.parse(
                 "google.navigation:q=${destination.latitude},${destination.longitude}&mode=w"))
         } else Intent(Intent.ACTION_VIEW, webDirections)

@@ -161,4 +161,13 @@
     <string name="stop_arrivals_none">No live buses on the way</string>
     <string name="stop_arrival_eta">~%1$d min</string>
     <string name="stop_arrival_row">Line %1$s towards %2$s, about %3$d minutes</string>
+    <string name="start_my_location">My location</string>
+    <string name="start_from">From: %1$s</string>
+    <string name="start_change">Starting point: %1$s. Tap to change.</string>
+    <string name="start_pick_saved">A saved place…</string>
+    <string name="start_pick_search">Search for a place…</string>
+    <string name="start_pick_recent">A recent destination…</string>
+    <string name="start_search_hint">Start from</string>
+    <string name="swap_start_destination">Swap start and destination</string>
+    <string name="planned_from_note">Planned from %1$s, not from your location. The approach alert is off.</string>
 </resources>

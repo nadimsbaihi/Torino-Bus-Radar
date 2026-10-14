@@ -311,6 +311,31 @@ class NavigationBackTest {
             "&destination=45.08,7.69&travelmode=walking", intent.data.toString())
     }
 
+    @Test fun theFromRowBelongsToAJourneyAndGoesWithIt() {
+        val (activity, binding) = screen()
+        assertEquals(View.GONE, binding.startRow.visibility)
+
+        binding.destinationInput.setText("Piazza Castello", false)
+        show(activity)
+        assertEquals(View.VISIBLE, binding.startRow.visibility)
+        assertEquals(activity.getString(R.string.start_from, activity.getString(R.string.start_my_location)),
+            binding.startButton.text.toString())
+        assertNotNull(binding.swapStartButton.contentDescription)
+        assertEquals(View.VISIBLE, binding.alertButton.visibility)
+
+        val start = Class.forName("it.mato.livebus.CustomStart").declaredConstructors.first()
+            .apply { isAccessible = true }.newInstance("Casa", GeoPoint(45.0, 7.0))
+        MainActivity::class.java.getDeclaredField("customStart").apply { isAccessible = true }.set(activity, start)
+        show(activity)
+        // Nobody is walking to the stop from there, so the approach alert is not offered.
+        assertEquals(View.GONE, binding.alertButton.visibility)
+
+        call(activity, "closeJourney")
+        settle()
+        assertEquals(View.GONE, binding.startRow.visibility)
+        assertNull(field(activity, "customStart"))
+    }
+
     @Test fun theMapIsCentredOnTheSpaceTheSheetLeavesFree() {
         val (activity, binding) = screen()
         val top = binding.topControls.height

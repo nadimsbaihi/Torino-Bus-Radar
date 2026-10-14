@@ -161,4 +161,13 @@
     <string name="stop_arrivals_none">Nessun bus in arrivo</string>
     <string name="stop_arrival_eta">~%1$d min</string>
     <string name="stop_arrival_row">Linea %1$s verso %2$s, tra circa %3$d minuti</string>
+    <string name="start_my_location">La mia posizione</string>
+    <string name="start_from">Da: %1$s</string>
+    <string name="start_change">Punto di partenza: %1$s. Tocca per cambiarlo.</string>
+    <string name="start_pick_saved">Un luogo salvato…</string>
+    <string name="start_pick_search">Cerca un luogo…</string>
+    <string name="start_pick_recent">Una destinazione recente…</string>
+    <string name="start_search_hint">Parti da</string>
+    <string name="swap_start_destination">Inverti partenza e destinazione</string>
+    <string name="planned_from_note">Percorso calcolato da %1$s, non dalla tua posizione. L\'avviso di arrivo è disattivato.</string>
 </resources>

@@ -12,7 +12,7 @@ with walking or regional trains, and get directions to your boarding stop.
 2. Allow location access and search for a destination.
 3. Choose a journey, then open walking directions to your boarding stop in Google Maps.
 
-Your phone's location is the starting point. The app remembers your last
+Your phone's location is the starting point unless you pick another. The app remembers your last
 destination and your search preferences.
 
 ## Features
@@ -40,6 +40,12 @@ destination and your search preferences.
 - **Leave-by time.** The walk to your boarding stop says when to set off, such
   as "leave in ~3 min", or "leave now" when the bus is about as far away as
   your walk.
+- **Start somewhere else.** Once a journey is on screen, its panel says "From:
+  My location". Tap it to plan from a saved place or any place you search for,
+  or use the arrows to swap start and destination and plan the way back. The
+  journey, the walking estimates and the directions all start from there, and
+  the approach alert is off, since you are not at that start. Closing the
+  journey goes back to your location.
 - **Your choice of walking.** Favor less walking, a balance, or faster trips
   with more walking. Include or exclude regional trains.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
