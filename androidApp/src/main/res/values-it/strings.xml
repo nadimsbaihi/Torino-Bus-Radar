@@ -5,6 +5,10 @@
     <string name="walk_summary">A piedi · ~%1$d min</string>
     <string name="walk_option">A piedi · %1$d min</string>
     <string name="transit_option">Mezzi · %1$d min</string>
+    <string name="appearance">Aspetto</string>
+    <string name="appearance_system">Come le impostazioni del telefono</string>
+    <string name="appearance_light">Chiaro</string>
+    <string name="appearance_dark">Scuro</string>
     <string name="trains_label">TRENI</string>
     <string name="include_label">Includi</string>
     <string name="include_trains">Includi i treni nei percorsi</string>

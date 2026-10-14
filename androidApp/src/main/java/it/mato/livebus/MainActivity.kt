@@ -169,6 +169,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         setupDestinationPicker()
         setupSearchPresets()
+        setupAppearanceMenu()
         binding.locationButton.setOnClickListener {
             if (deviceLocationEnabled()) requestLocation() else openLocationSettings()
         }
@@ -734,6 +735,35 @@ class MainActivity : AppCompatActivity() {
                         preferences.edit().putString(WALKING_PREFERENCE, selected.name).apply()
                         updateWalkingPresetButton()
                         replanForPreset()
+                    }
+                    true
+                }
+                show()
+            }
+        }
+    }
+
+    private fun setupAppearanceMenu() {
+        binding.appearanceButton.setOnClickListener { anchor ->
+            val current = Appearance.load(this)
+            PopupMenu(this, anchor).apply {
+                Appearance.entries.forEach { option ->
+                    menu.add(1, option.ordinal + 1, option.ordinal, getString(when (option) {
+                        Appearance.SYSTEM -> R.string.appearance_system
+                        Appearance.LIGHT -> R.string.appearance_light
+                        Appearance.DARK -> R.string.appearance_dark
+                    })).apply {
+                        isCheckable = true
+                        isChecked = option == current
+                    }
+                }
+                menu.setGroupCheckable(1, true, true)
+                setOnMenuItemClickListener { item ->
+                    val selected = Appearance.entries[item.itemId - 1]
+                    if (selected != current) {
+                        Appearance.save(this@MainActivity, selected)
+                        // Switching recreates this activity, which rebuilds the map in the new theme.
+                        Appearance.apply(this@MainActivity)
                     }
                     true
                 }

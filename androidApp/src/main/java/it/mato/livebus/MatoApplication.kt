@@ -9,6 +9,7 @@ class MatoApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Appearance.apply(this)
         MapsForgeTileSource.createInstance(this)
         Configuration.getInstance().apply {
             load(this@MatoApplication, getSharedPreferences("osmdroid", MODE_PRIVATE))

@@ -46,6 +46,16 @@
                     android:textColor="@color/ink"
                     android:textSize="15sp" />
 
+                <ImageButton
+                    android:id="@+id/appearanceButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/appearance"
+                    android:src="@drawable/ic_appearance"
+                    android:tooltipText="@string/appearance" />
+
                 <TextView
                     android:id="@+id/liveStatus"
                     android:layout_marginStart="12dp"
