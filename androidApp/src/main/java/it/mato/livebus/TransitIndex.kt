@@ -1186,8 +1186,31 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         }
 
         fun cleanStopName(value: String) =
-            value.replace(Regex("""^Fermata\s+\d+\s*-\s*""", RegexOption.IGNORE_CASE), "")
-                .trim()
+            readableCase(value.replace(Regex("""^Fermata\s+\d+\s*-\s*""", RegexOption.IGNORE_CASE), "")
+                .trim())
+
+        private val NAME_PARTICLES = setOf("a", "al", "alla", "da", "dal", "dalla", "de", "dei", "degli",
+            "del", "della", "delle", "di", "e", "in", "per", "sul", "sulla")
+        private val ROMAN_NUMERAL = Regex("^[IVXLC]+$")
+        private val HAS_VOWEL = Regex("[AEIOUÀÈÉÌÒÙ]")
+        private val WORD_START = Regex("""(^|['’\-/(])(\p{L})""")
+
+        /**
+         * GTT writes most stop names in capitals ("CHIESA DELLA SALUTE"); they read better as
+         * "Chiesa della Salute". Names already in mixed case are left alone, as are roman numerals
+         * ("XX Settembre") and words without vowels, which are abbreviations ("FS").
+         */
+        internal fun readableCase(name: String): String {
+            if (name.any { it.isLowerCase() }) return name
+            return name.split(" ").mapIndexed { index, word ->
+                when {
+                    word.isEmpty() -> word
+                    ROMAN_NUMERAL.matches(word) || !HAS_VOWEL.containsMatchIn(word) -> word
+                    index > 0 && word.lowercase() in NAME_PARTICLES -> word.lowercase()
+                    else -> WORD_START.replace(word.lowercase()) { it.value.uppercase() }
+                }
+            }.joinToString(" ")
+        }
 
         private fun distance(lat: Double, lon: Double, stop: TransitStop): Float {
             val result = FloatArray(1)

@@ -17,7 +17,7 @@
     <string name="include_trains">Include trains in journeys</string>
     <string name="enter_destination">Enter a place or address in Torino</string>
     <string name="direction_estimated_short">Estimated direction</string>
-    <string name="bus_turnaround_note">Bus %1$s is still finishing its previous run; by the timetable it sets off from %2$s in ~%3$d min, so this time is an estimate.</string>
+    <string name="bus_turnaround_note">%1$s leaves the terminus in ~%2$d min</string>
     <string name="app_name">Torino Bus Radar</string>
     <string name="map_description">Map of live GTT vehicle positions</string>
     <string name="connecting">CONNECTING</string>
@@ -30,7 +30,7 @@
     <string name="delayed_bus_positions">%1$d buses · up to %2$d min old</string>
     <string name="data_out_of_date">Bus data may be out of date: many live buses do not match the app’s timetable. Update the app for accurate journeys.</string>
     <string name="bus_position_age">Position %1$d min ago</string>
-    <string name="missed_it_next_bus">Missed it? Next bus %1$s in ~%2$d min</string>
+    <string name="missed_it_next_bus">Missed it? %1$s in ~%2$d min</string>
     <string name="bus_fleet_number">Bus no. %1$s</string>
     <string name="delayed_bus_journey">Bus positions are up to %1$d minutes old. Arrival estimates account for this delay, but the bus may have moved differently.</string>
     <string name="live_updated">● LIVE · UPDATED NOW</string>
@@ -62,8 +62,7 @@
     <string name="replanning_from_here">Checkpoint reached · refreshing your location and all live buses…</string>
     <string name="bus_passed_replanning">That bus is no longer catchable · recalculating the whole journey with current live vehicles…</string>
     <string name="restoring_journey">Restoring your destination and recalculating the best live journey…</string>
-    <string name="walking_is_faster">Walking is faster: about %1$d min for roughly %2$d m. The best bus journey is about %3$d min.</string>
-    <string name="walking_selected">Local estimate: roughly %1$d m, about %2$d min. Google Maps may choose a different route.</string>
+    <string name="walking_selected">Estimate: %1$d m, ~%2$d min. Maps may differ.</string>
     <string name="walk_there">Walk instead</string>
     <string name="walk_to_boarding_stop">Directions to boarding stop</string>
     <string name="lazy_bus_option">Take transit</string>
@@ -113,17 +112,14 @@
     <string name="step_directions">Walking directions in Maps</string>
     <string name="step_directions_for">Walking directions in Maps: %1$s</string>
     <string name="refresh_journey">Refresh buses and replan</string>
-    <string name="step_walk_to">Walk %1$d m to %2$s</string>
-    <string name="step_walk_to_destination">Walk %1$d m to your destination</string>
-    <string name="step_board_bus_eta">Board bus %1$s · arrives in ~%2$d min</string>
-    <string name="step_board_bus">Board bus %1$s</string>
+    <string name="step_walk_to">%1$s → %2$s</string>
+    <string name="step_walk_to_destination">%1$s → destination</string>
+    <string name="step_board_bus">Bus %1$s</string>
     <string name="leave_in">leave in ~%1$d min</string>
     <string name="leave_now">leave now</string>
-    <string name="step_get_off">Get off at %1$s</string>
-    <string name="step_change_bus">Change to bus %1$s at %2$s</string>
-    <string name="step_take_train">Take %1$s %2$s towards %3$s · departs %4$s</string>
-    <string name="step_train_get_off">Get off at %1$s · arrives %2$s</string>
-    <string name="train_timetable_note">Train times: Regione Piemonte timetable.</string>
+    <string name="step_change_bus">Bus %1$s · %2$s</string>
+    <string name="step_take_train">%1$s %2$s → %3$s</string>
+    <string name="train_timetable_note">Timetable times</string>
     <plurals name="live_vehicle_count">
         <item quantity="one">%1$d live vehicle found for route %2$s</item>
         <item quantity="other">%1$d live vehicles found for route %2$s</item>
@@ -134,7 +130,7 @@
     </plurals>
     <string name="close_journey">Close journey</string>
     <string name="location_unavailable">Could not get a position yet. Try near a window or outdoors, then tap the location button again.</string>
-    <string name="location_approximate">Approximate location · walking estimates may vary.</string>
+    <string name="location_approximate">Approximate location</string>
     <string name="journey_failed">Could not plan this journey. Please try again.</string>
     <string name="checking_transfers">Checking connections…</string>
     <string name="map_attribution">© OpenStreetMap contributors</string>
@@ -172,5 +168,6 @@
     <string name="start_pick_recent">A recent destination…</string>
     <string name="start_search_hint">Start from</string>
     <string name="swap_start_destination">Swap start and destination</string>
-    <string name="planned_from_note">Planned from %1$s, not from your location. The approach alert is off.</string>
+    <string name="planned_from_note">Alert off: different start</string>
+    <string name="faster">faster</string>
 </resources>

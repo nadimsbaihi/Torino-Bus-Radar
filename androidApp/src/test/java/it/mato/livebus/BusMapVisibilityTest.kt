@@ -365,8 +365,8 @@ class BusMapVisibilityTest {
         }
 
         val steps = stepTexts(binding)
-        assertTrue(steps.any { it.startsWith("Board bus 60") })
-        assertTrue(steps.any { it.startsWith("Take REGIONALE 2121") })
+        assertTrue(steps.toString(), "Bus 60" in steps)
+        assertTrue(steps.toString(), steps.any { it.startsWith("R 2121 →") })
         assertEquals(android.view.View.GONE, binding.alertButton.visibility)
         assertEquals(1, binding.map.overlays.filterIsInstance<Marker>()
             .count { it.title == activity.getString(R.string.vehicle_title, "60") })

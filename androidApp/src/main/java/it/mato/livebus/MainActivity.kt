@@ -12,6 +12,7 @@ import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.location.Location
 import android.location.LocationManager
@@ -24,7 +25,11 @@ import android.annotation.SuppressLint
 import androidx.core.widget.ImageViewCompat
 import androidx.core.widget.doAfterTextChanged
 import android.content.res.ColorStateList
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.DynamicDrawableSpan
+import android.text.style.ImageSpan
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -40,6 +45,7 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -367,27 +373,58 @@ class MainActivity : AppCompatActivity() {
         guide.steps.forEach { step ->
             val row = ItemJourneyStepBinding.inflate(layoutInflater, binding.journeySteps, false)
             row.stepText.text = step.text
-            row.stepIcon.setImageResource(when (step.kind) {
-                StepKind.WALK -> R.drawable.ic_walk
-                StepKind.BUS, StepKind.TRANSFER -> R.drawable.ic_bus
-                StepKind.TRAIN -> R.drawable.ic_train
+            step.detail?.let { detail ->
+                row.stepDetail.text = detail
+                row.stepDetail.setCompoundDrawablesRelative(
+                    sizedIcon(R.drawable.ic_schedule, row.stepDetail.textSize, R.color.muted), null, null, null)
+                row.stepDetail.visibility = View.VISIBLE
+            }
+            row.stepIcon.setImageResource(when {
+                step.getOff -> R.drawable.ic_get_off
+                step.kind == StepKind.WALK -> R.drawable.ic_walk
+                step.kind == StepKind.TRANSFER -> R.drawable.ic_transfer
+                step.kind == StepKind.TRAIN -> R.drawable.ic_train
+                else -> R.drawable.ic_bus
             })
             ImageViewCompat.setImageTintList(row.stepIcon, ColorStateList.valueOf(
                 getColor(if (step.kind == StepKind.TRAIN) R.color.train_blue else R.color.deep_green)))
             step.target?.let { target ->
                 row.stepDirections.visibility = View.VISIBLE
-                row.stepDirections.contentDescription = getString(R.string.step_directions_for, step.text)
+                row.stepDirections.contentDescription = getString(R.string.step_directions_for,
+                    listOfNotNull(step.text, step.detail).joinToString(", "))
                 row.stepDirections.setOnClickListener { openWalkingDirections(target, step.origin) }
             }
             binding.journeySteps.addView(row.root)
         }
-        binding.sharedDirections.text = guide.notes.joinToString("\n")
+        binding.sharedDirections.text = notesText(guide.notes)
         binding.sharedDirections.visibility = if (guide.notes.isEmpty()) View.GONE else View.VISIBLE
     }
 
+    /** Each note on its own line, behind an icon the height of the text that says what it is about. */
+    private fun notesText(notes: List<JourneyNote>): CharSequence {
+        val size = binding.sharedDirections.textSize
+        val align = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) DynamicDrawableSpan.ALIGN_CENTER
+            else DynamicDrawableSpan.ALIGN_BOTTOM
+        return SpannableStringBuilder().apply {
+            notes.forEachIndexed { index, note ->
+                if (index > 0) append("\n")
+                append(" ", ImageSpan(sizedIcon(note.icon, size, R.color.deep_green), align),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                append("  ").append(note.text)
+            }
+        }
+    }
+
+    private fun sizedIcon(icon: Int, sizePx: Float, tint: Int): Drawable =
+        requireNotNull(AppCompatResources.getDrawable(this, icon)).mutate().apply {
+            setBounds(0, 0, sizePx.roundToInt(), sizePx.roundToInt())
+            setTint(getColor(tint))
+        }
+
     private fun appendJourneyNote(note: String) {
         val current = binding.sharedDirections.text
-        binding.sharedDirections.text = if (current.isEmpty()) note else "$current\n$note"
+        binding.sharedDirections.text =
+            if (current.isEmpty()) note else SpannableStringBuilder(current).append("\n").append(note)
         binding.sharedDirections.visibility = View.VISIBLE
     }
 
@@ -1231,18 +1268,23 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             ?: trainJourneyChoice?.let { JourneySteps.forTrain(this, it, directDestination) }
             ?: JourneySteps.forBus(this, requireNotNull(choice))
         val walkingFaster = directWalkingSeconds < transitSeconds
-        transitGuide = guide.copy(notes = listOfNotNull(
-            if (walkingFaster) getString(R.string.walking_is_faster, minutes(directWalkingSeconds),
-                directWalkingMetres.roundToInt(), minutes(transitSeconds)) else null
-        ) + guide.notes + listOfNotNull(
-            customStart?.let { getString(R.string.planned_from_note, it.name) }
-                ?: if ((originLocation?.accuracy ?: 0f) > 200f) getString(R.string.location_approximate) else null
+        transitGuide = guide.copy(notes = guide.notes + listOfNotNull(
+            customStart?.let { JourneyNote(R.drawable.ic_alert_off, getString(R.string.planned_from_note)) }
+                ?: if ((originLocation?.accuracy ?: 0f) > 200f) {
+                    JourneyNote(R.drawable.ic_my_location, getString(R.string.location_approximate))
+                } else null
         ))
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
         binding.walkButton.text = getString(R.string.walk_option, minutes(directWalkingSeconds))
-        binding.walkButton.contentDescription = getString(R.string.walk_there) + ", " +
-            getString(R.string.walk_summary, minutes(directWalkingSeconds))
+        binding.walkButton.contentDescription = listOfNotNull(getString(R.string.walk_there),
+            getString(R.string.walk_summary, minutes(directWalkingSeconds)),
+            getString(R.string.faster).takeIf { walkingFaster }).joinToString(", ")
         binding.busAnywayButton.text = getString(R.string.transit_option, minutes(transitSeconds))
+        binding.busAnywayButton.contentDescription = listOfNotNull(binding.busAnywayButton.text,
+            getString(R.string.faster).takeIf { !walkingFaster }).joinToString(", ")
+        // The quicker way carries a bolt rather than a sentence saying so.
+        binding.walkButton.setIconResource(if (walkingFaster) R.drawable.ic_bolt else 0)
+        binding.busAnywayButton.setIconResource(if (walkingFaster) 0 else R.drawable.ic_bolt)
         binding.travelModeChoices.visibility = View.VISIBLE
         binding.boardStopDirectionsButton.setText(R.string.walk_to_boarding_stop)
         binding.boardStopDirectionsButton.visibility = View.VISIBLE

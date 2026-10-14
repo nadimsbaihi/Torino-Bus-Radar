@@ -1,6 +1,9 @@
 package it.mato.livebus
 
 import android.content.Context
+import androidx.annotation.DrawableRes
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
 import org.osmdroid.util.GeoPoint
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -8,20 +11,32 @@ import kotlin.math.roundToInt
 enum class StepKind { WALK, BUS, TRAIN, TRANSFER }
 
 /**
- * One line of a journey. A [target] marks a walk the rider can open as directions in Maps; its
- * [origin] is where that leg starts, or null when it starts where the journey does.
+ * One line of a journey: what and where in [text], when in [detail]. A [target] marks a walk the
+ * rider can open as directions in Maps; its [origin] is where that leg starts, or null when it
+ * starts where the journey does. [getOff] marks where the rider leaves a vehicle.
  */
 data class JourneyStep(
     val kind: StepKind,
     val text: String,
     val target: GeoPoint? = null,
-    val origin: GeoPoint? = null
+    val origin: GeoPoint? = null,
+    val detail: String? = null,
+    val getOff: Boolean = false
 )
 
+/** A caveat under the steps, with the icon that says what it is about. */
+data class JourneyNote(@DrawableRes val icon: Int, val text: String)
+
 /** A journey broken into steps, plus the caveats that apply to all of them. */
-data class JourneyGuide(val steps: List<JourneyStep>, val notes: List<String> = emptyList())
+data class JourneyGuide(val steps: List<JourneyStep>, val notes: List<JourneyNote> = emptyList())
 
 internal fun ceilMinutes(seconds: Float) = ceil(seconds / 60f).toInt().coerceAtLeast(1)
+
+/** Metres up to a kilometre, then kilometres to one decimal, as the rider's language writes them. */
+internal fun formatDistance(context: Context, metres: Float): String =
+    if (metres < 1_000f) "${metres.roundToInt()} m"
+    else DecimalFormat("0.#", DecimalFormatSymbols(context.resources.configuration.locales[0]))
+        .format(metres / 1_000f) + " km"
 
 internal fun formatClock(seconds: Int, dayOffset: Int = 0): String = "%02d:%02d".format(
     (seconds / 3600) % 24,
@@ -52,7 +67,7 @@ object JourneySteps {
             walkToDestination(context, train.destinationWalkMetres, train.destination.asTransitStop(), destination)
                 ?.let(::add)
         },
-        listOf(context.getString(R.string.train_timetable_note))
+        listOf(timetableNote(context))
     )
 
     fun forMixed(context: Context, mixed: MixedJourney, destination: GeoPoint? = null): JourneyGuide {
@@ -77,13 +92,14 @@ object JourneySteps {
         }
         // A bus planned for after the train is judged by the clock then; "in N min" from now would mislead.
         return JourneyGuide(steps, busNotes(context, bus, withBackup = mixed.busFirst) +
-            context.getString(R.string.train_timetable_note))
+            timetableNote(context))
     }
 
     fun forWalking(context: Context, metres: Int, minutes: Int, destination: GeoPoint) = JourneyGuide(
         listOf(JourneyStep(StepKind.WALK,
-            context.getString(R.string.step_walk_to_destination, metres), destination)),
-        listOf(context.getString(R.string.walking_selected, metres, minutes))
+            context.getString(R.string.step_walk_to_destination, formatDistance(context, metres.toFloat())),
+            destination)),
+        listOf(JourneyNote(R.drawable.ic_info, context.getString(R.string.walking_selected, metres, minutes)))
     )
 
     /**
@@ -95,7 +111,8 @@ object JourneySteps {
             busLeg(context, bus, withEta = true)
         val leave = leaveBy(context, bus)
         val first = steps.first()
-        return listOf(first.copy(text = "${first.text} · $leave")) + steps.drop(1)
+        return listOf(first.copy(detail = listOfNotNull(first.detail, leave).joinToString(" · "))) +
+            steps.drop(1)
     }
 
     internal fun leaveBy(context: Context, bus: JourneyChoice): String {
@@ -106,40 +123,56 @@ object JourneySteps {
     }
 
     private fun busLeg(context: Context, bus: JourneyChoice, withEta: Boolean): List<JourneyStep> = buildList {
-        add(JourneyStep(StepKind.BUS,
-            if (withEta) context.getString(R.string.step_board_bus_eta,
-                bus.pattern.route, ceilMinutes(bus.boardingEtaSeconds))
-            else context.getString(R.string.step_board_bus, bus.pattern.route)))
+        add(JourneyStep(StepKind.BUS, context.getString(R.string.step_board_bus, bus.pattern.route),
+            detail = if (withEta) context.getString(R.string.estimated_minutes,
+                ceilMinutes(bus.boardingEtaSeconds)) else null))
         val exit = bus.transferAt ?: bus.destination
-        add(JourneyStep(StepKind.BUS, context.getString(R.string.step_get_off, stopName(exit.name))))
+        add(JourneyStep(StepKind.BUS, stopName(exit.name), getOff = true))
         bus.secondLeg?.let { leg ->
             walkTo(context, bus.transferWalkMetres, leg.boardAt, exit)?.let(::add)
             add(JourneyStep(StepKind.TRANSFER, context.getString(R.string.step_change_bus,
                 leg.pattern.route, stopName(leg.boardAt.name))))
-            add(JourneyStep(StepKind.BUS, context.getString(R.string.step_get_off, stopName(leg.exitAt.name))))
+            add(JourneyStep(StepKind.BUS, stopName(leg.exitAt.name), getOff = true))
         }
     }
 
     private fun trainLeg(context: Context, train: ScheduledTrainJourney) = listOf(
         JourneyStep(StepKind.TRAIN, context.getString(R.string.step_take_train,
-            train.category, train.number, train.headsign,
-            formatClock(train.departureSeconds, train.dayOffset))),
-        JourneyStep(StepKind.TRAIN, context.getString(R.string.step_train_get_off,
-            stopName(train.destination.name), formatClock(train.arrivalSeconds, train.dayOffset)))
+            trainCategory(train.category), train.number, stopName(train.headsign)),
+            detail = formatClock(train.departureSeconds, train.dayOffset)),
+        JourneyStep(StepKind.TRAIN, stopName(train.destination.name),
+            detail = formatClock(train.arrivalSeconds, train.dayOffset), getOff = true)
     )
 
-    private fun busNotes(context: Context, bus: JourneyChoice, withBackup: Boolean = true): List<String> {
+    private fun busNotes(context: Context, bus: JourneyChoice, withBackup: Boolean = true): List<JourneyNote> {
         val age = maxOf(bus.vehicle.ageSeconds, bus.secondLeg?.vehicle?.ageSeconds ?: 0)
         return listOfNotNull(
             bus.backup?.takeIf { withBackup }?.let {
-                context.getString(R.string.missed_it_next_bus, it.route, ceilMinutes(it.etaSeconds))
+                JourneyNote(R.drawable.ic_history,
+                    context.getString(R.string.missed_it_next_bus, it.route, ceilMinutes(it.etaSeconds)))
             },
-            bus.turnaround?.let { context.getString(R.string.bus_turnaround_note, bus.pattern.route,
-                stopName(bus.pattern.stops.first().name), ceilMinutes(it.departsInSeconds)) },
-            if (bus.directionEstimated) context.getString(R.string.direction_estimated_short) else null,
-            if (age > STALE_POSITION_SECONDS) context.getString(R.string.bus_position_age, (age + 59) / 60) else null
+            bus.turnaround?.let {
+                JourneyNote(R.drawable.ic_schedule, context.getString(R.string.bus_turnaround_note,
+                    bus.pattern.route, ceilMinutes(it.departsInSeconds)))
+            },
+            if (bus.directionEstimated) {
+                JourneyNote(R.drawable.ic_explore, context.getString(R.string.direction_estimated_short))
+            } else null,
+            if (age > STALE_POSITION_SECONDS) {
+                JourneyNote(R.drawable.ic_schedule, context.getString(R.string.bus_position_age, (age + 59) / 60))
+            } else null
         )
     }
+
+    /** The short names on station boards: "REGIONALE VELOCE" is "RV". */
+    internal fun trainCategory(category: String) = when (category.trim().uppercase()) {
+        "REGIONALE" -> "R"
+        "REGIONALE VELOCE" -> "RV"
+        else -> TransitIndex.readableCase(category.trim())
+    }
+
+    private fun timetableNote(context: Context) =
+        JourneyNote(R.drawable.ic_train, context.getString(R.string.train_timetable_note))
 
     private fun walkTo(context: Context, metres: Float, stop: TransitStop, from: TransitStop? = null) =
         walkTo(context, metres, stop.name, GeoPoint(stop.latitude, stop.longitude), from)
@@ -150,13 +183,14 @@ object JourneySteps {
     private fun walkTo(context: Context, metres: Float, name: String, to: GeoPoint, from: TransitStop?): JourneyStep? {
         if (metres < MIN_WALK_METRES) return null
         return JourneyStep(StepKind.WALK,
-            context.getString(R.string.step_walk_to, metres.roundToInt(), stopName(name)),
+            context.getString(R.string.step_walk_to, formatDistance(context, metres), stopName(name)),
             to, from?.let { GeoPoint(it.latitude, it.longitude) })
     }
 
     private fun walkToDestination(context: Context, metres: Float, from: TransitStop, to: GeoPoint?): JourneyStep? =
         if (metres < MIN_WALK_METRES) null
-        else JourneyStep(StepKind.WALK, context.getString(R.string.step_walk_to_destination, metres.roundToInt()),
+        else JourneyStep(StepKind.WALK,
+            context.getString(R.string.step_walk_to_destination, formatDistance(context, metres)),
             to, GeoPoint(from.latitude, from.longitude))
 
     private fun TrainStop.asTransitStop() = TransitStop(id, name, latitude, longitude)

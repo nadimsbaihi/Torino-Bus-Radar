@@ -16,14 +16,31 @@
         android:layout_marginEnd="12dp"
         android:importantForAccessibility="no" />
 
-    <TextView
-        android:id="@+id/stepText"
+    <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:lineSpacingExtra="2dp"
-        android:textColor="@color/ink"
-        android:textSize="15sp" />
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/stepText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:lineSpacingExtra="2dp"
+            android:textColor="@color/ink"
+            android:textSize="15sp" />
+
+        <!-- When: the clock icon is set with the text, sized to it. -->
+        <TextView
+            android:id="@+id/stepDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:drawablePadding="4dp"
+            android:gravity="center_vertical"
+            android:textColor="@color/muted"
+            android:textSize="13sp"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <ImageButton
         android:id="@+id/stepDirections"

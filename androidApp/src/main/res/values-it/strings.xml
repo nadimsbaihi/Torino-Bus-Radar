@@ -17,7 +17,7 @@
     <string name="include_trains">Includi i treni nei percorsi</string>
     <string name="enter_destination">Inserisci un luogo o un indirizzo a Torino</string>
     <string name="direction_estimated_short">Direzione stimata</string>
-    <string name="bus_turnaround_note">Il bus %1$s sta ancora finendo la corsa precedente; secondo l\'orario riparte da %2$s tra circa %3$d min, quindi è una stima.</string>
+    <string name="bus_turnaround_note">Il %1$s riparte dal capolinea tra ~%2$d min</string>
     <string name="app_name">Torino Bus Radar</string>
     <string name="map_description">Mappa dei veicoli GTT in tempo reale</string>
     <string name="connecting">CONNESSIONE IN CORSO…</string>
@@ -30,7 +30,7 @@
     <string name="delayed_bus_positions">%1$d bus · posizioni di massimo %2$d min fa</string>
     <string name="data_out_of_date">I dati dei bus potrebbero essere obsoleti: molti bus in servizio non corrispondono agli orari dell’app. Aggiorna l’app per percorsi accurati.</string>
     <string name="bus_position_age">Ultima posizione: %1$d min fa</string>
-    <string name="missed_it_next_bus">Perso? Prossimo bus %1$s tra circa %2$d min</string>
+    <string name="missed_it_next_bus">Perso? %1$s tra ~%2$d min</string>
     <string name="bus_fleet_number">Bus n. %1$s</string>
     <string name="delayed_bus_journey">Le posizioni dei bus risalgono fino a %1$d min fa. Le stime tengono conto del ritardo, ma la posizione attuale potrebbe essere diversa.</string>
     <string name="live_updated">● AGGIORNATO ORA</string>
@@ -62,8 +62,7 @@
     <string name="replanning_from_here">Sei al punto di cambio · aggiornamento della posizione e dei bus…</string>
     <string name="bus_passed_replanning">Non fai più in tempo a prendere questo bus · ricalcolo del percorso…</string>
     <string name="restoring_journey">Ricalcolo del percorso verso la tua destinazione…</string>
-    <string name="walking_is_faster">Fai prima a piedi: circa %1$d min per %2$d m. Con il bus servono circa %3$d min.</string>
-    <string name="walking_selected">Stima locale: circa %1$d m, %2$d min. Google Maps può scegliere un percorso diverso.</string>
+    <string name="walking_selected">Stima: %1$d m, ~%2$d min. Maps può variare.</string>
     <string name="walk_there">Vai a piedi</string>
     <string name="walk_to_boarding_stop">Indicazioni fino alla fermata</string>
     <string name="lazy_bus_option">Prendi i mezzi</string>
@@ -113,17 +112,14 @@
     <string name="step_directions">Indicazioni a piedi in Google Maps</string>
     <string name="step_directions_for">Indicazioni a piedi in Google Maps: %1$s</string>
     <string name="refresh_journey">Aggiorna i bus e ricalcola</string>
-    <string name="step_walk_to">Cammina per %1$d m fino a %2$s</string>
-    <string name="step_walk_to_destination">Cammina per %1$d m fino a destinazione</string>
-    <string name="step_board_bus_eta">Sali sul bus %1$s · arriva tra circa %2$d min</string>
-    <string name="step_board_bus">Sali sul bus %1$s</string>
-    <string name="leave_in">parti tra circa %1$d min</string>
+    <string name="step_walk_to">%1$s → %2$s</string>
+    <string name="step_walk_to_destination">%1$s → arrivo</string>
+    <string name="step_board_bus">Bus %1$s</string>
+    <string name="leave_in">parti tra ~%1$d min</string>
     <string name="leave_now">parti ora</string>
-    <string name="step_get_off">Scendi a %1$s</string>
-    <string name="step_change_bus">Cambia con il bus %1$s a %2$s</string>
-    <string name="step_take_train">Treno %1$s %2$s per %3$s · parte alle %4$s</string>
-    <string name="step_train_get_off">Scendi a %1$s · arrivo alle %2$s</string>
-    <string name="train_timetable_note">Orari treni: Regione Piemonte.</string>
+    <string name="step_change_bus">Bus %1$s · %2$s</string>
+    <string name="step_take_train">%1$s %2$s → %3$s</string>
+    <string name="train_timetable_note">Orari da tabella</string>
     <plurals name="live_vehicle_count">
         <item quantity="one">%1$d veicolo in tempo reale sulla linea %2$s</item>
         <item quantity="other">%1$d veicoli in tempo reale sulla linea %2$s</item>
@@ -134,7 +130,7 @@
     </plurals>
     <string name="close_journey">Chiudi il percorso</string>
     <string name="location_unavailable">Posizione non disponibile. Prova vicino a una finestra o all’aperto, poi tocca di nuovo il pulsante della posizione.</string>
-    <string name="location_approximate">Posizione approssimativa · le stime a piedi potrebbero variare.</string>
+    <string name="location_approximate">Posizione approssimativa</string>
     <string name="journey_failed">Impossibile calcolare il percorso. Riprova.</string>
     <string name="checking_transfers">Ricerca delle coincidenze…</string>
     <string name="map_attribution">© contributori di OpenStreetMap</string>
@@ -172,5 +168,6 @@
     <string name="start_pick_recent">Una destinazione recente…</string>
     <string name="start_search_hint">Parti da</string>
     <string name="swap_start_destination">Inverti partenza e destinazione</string>
-    <string name="planned_from_note">Percorso calcolato da %1$s, non dalla tua posizione. L\'avviso di arrivo è disattivato.</string>
+    <string name="planned_from_note">Avviso spento: partenza diversa</string>
+    <string name="faster">più veloce</string>
 </resources>

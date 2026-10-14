@@ -117,6 +117,6 @@ class ReliabilityPlanningTest {
         val b = line("b")
         val choice = plan(index(a, b), listOf(bus(a, "A", 45.0035), bus(b, "B", 45.0020)), 90f)!!
         val notes = JourneySteps.forBus(RuntimeEnvironment.getApplication(), choice).notes
-        assertTrue(notes.toString(), notes.any { it.startsWith("Missed it? Next bus b in ~") })
+        assertTrue(notes.toString(), notes.any { it.text.startsWith("Missed it? b in ~") })
     }
 }

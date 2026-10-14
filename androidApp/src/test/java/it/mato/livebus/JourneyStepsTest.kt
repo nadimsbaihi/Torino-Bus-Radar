@@ -40,16 +40,22 @@ class JourneyStepsTest {
 
     private fun texts(guide: JourneyGuide) = guide.steps.map { it.text }
 
+    /** What a row shows: its text, then its detail line after " | ". */
+    private fun lines(guide: JourneyGuide) = guide.steps.map { listOfNotNull(it.text, it.detail).joinToString(" | ") }
+
+    private fun noteTexts(guide: JourneyGuide) = guide.notes.map { it.text }
+
     @Test fun aBusJourneyReadsWalkBoardRideWalk() {
         val guide = JourneySteps.forBus(context, bus())
 
         assertEquals(listOf(
-            "Walk 250 m to Via Roma · leave now",
-            "Board bus 4 · arrives in ~4 min",
-            "Get off at Piazza Castello",
-            "Walk 120 m to your destination"
-        ), texts(guide))
+            "250 m → Via Roma | leave now",
+            "Bus 4 | ~4 min",
+            "Piazza Castello",
+            "120 m → destination"
+        ), lines(guide))
         assertEquals(listOf(StepKind.WALK, StepKind.BUS, StepKind.BUS, StepKind.WALK), guide.steps.map { it.kind })
+        assertEquals(listOf(false, false, true, false), guide.steps.map { it.getOff })
     }
 
     @Test fun theFirstWalkStartsWhereTheJourneyDoesAndTheLastStartsAtTheExit() {
@@ -71,7 +77,7 @@ class JourneyStepsTest {
         val second = TransitPattern("p2", "r9", "9", "Nord", "0", emptySet(), listOf(next, secondExit))
         val leg = JourneyLeg(second, vehicle, next, secondExit, 1)
         val walk = JourneySteps.forBus(context, bus(leg = leg, transfer = transfer, transferWalk = 80f))
-            .steps.first { it.text == "Walk 80 m to Corso Vittorio Nord" }
+            .steps.first { it.text == "80 m → Corso Vittorio Nord" }
 
         assertEquals(transfer.latitude, walk.origin!!.latitude, 1e-9)
         assertEquals(next.latitude, walk.target!!.latitude, 1e-9)
@@ -80,8 +86,8 @@ class JourneyStepsTest {
     @Test fun leaveByIsTheBusArrivalLessTheWalk() {
         // 600 s until the bus, 300 m (250 s) to walk: set off in about 5 minutes.
         assertEquals("leave in ~5 min", JourneySteps.leaveBy(context, bus(walk = 300f, eta = 600f)))
-        assertEquals("Walk 300 m to Via Roma · leave in ~5 min",
-            texts(JourneySteps.forBus(context, bus(walk = 300f, eta = 600f))).first())
+        assertEquals("300 m → Via Roma | leave in ~5 min",
+            lines(JourneySteps.forBus(context, bus(walk = 300f, eta = 600f))).first())
     }
 
     @Test fun leaveNowWhenTheWalkTakesAsLongAsTheBusDoes() {
@@ -92,7 +98,7 @@ class JourneyStepsTest {
     @Test fun aNegligibleWalkIsNotAStep() {
         val guide = JourneySteps.forBus(context, bus(walk = 5f, lastWalk = 0f))
 
-        assertEquals(listOf("Board bus 4 · arrives in ~4 min · leave in ~4 min", "Get off at Piazza Castello"), texts(guide))
+        assertEquals(listOf("Bus 4 | ~4 min · leave in ~4 min", "Piazza Castello"), lines(guide))
     }
 
     @Test fun aTransferAddsTheChangeAndTheSecondRide() {
@@ -103,14 +109,14 @@ class JourneyStepsTest {
         val guide = JourneySteps.forBus(context, bus(leg = leg, transfer = transfer, transferWalk = 80f))
 
         assertEquals(listOf(
-            "Walk 250 m to Via Roma · leave now",
-            "Board bus 4 · arrives in ~4 min",
-            "Get off at Corso Vittorio",
-            "Walk 80 m to Corso Vittorio",
-            "Change to bus 9 at Corso Vittorio",
-            "Get off at Piazza Statuto",
-            "Walk 120 m to your destination"
-        ), texts(guide))
+            "250 m → Via Roma | leave now",
+            "Bus 4 | ~4 min",
+            "Corso Vittorio",
+            "80 m → Corso Vittorio",
+            "Bus 9 · Corso Vittorio",
+            "Piazza Statuto",
+            "120 m → destination"
+        ), lines(guide))
     }
 
     @Test fun anEstimatedDirectionAndAnOldPositionBecomeNotes() {
@@ -118,26 +124,33 @@ class JourneyStepsTest {
         val stale = vehicle.copy(tripId = "other", timestampSeconds = System.currentTimeMillis() / 1000 - 250)
         val guide = JourneySteps.forBus(context, bus().copy(vehicle = stale))
 
-        assertEquals(listOf("Estimated direction", "Position 5 min ago"), guide.notes)
+        assertEquals(listOf("Estimated direction", "Position 5 min ago"), noteTexts(guide))
+        assertEquals(listOf(R.drawable.ic_explore, R.drawable.ic_schedule), guide.notes.map { it.icon })
     }
 
     @Test fun aTrainJourneyListsTimesAndCreditsTheTimetable() {
         val guide = JourneySteps.forTrain(context, train())
 
         assertEquals(listOf(
-            "Walk 300 m to Torino Porta Susa",
-            "Take REGIONALE 2121 towards Chieri · departs 09:30",
-            "Get off at Chieri · arrives 09:42",
-            "Walk 500 m to your destination"
-        ), texts(guide))
-        assertEquals(listOf("Train times: Regione Piemonte timetable."), guide.notes)
+            "300 m → Torino Porta Susa",
+            "R 2121 → Chieri | 09:30",
+            "Chieri | 09:42",
+            "500 m → destination"
+        ), lines(guide))
+        assertEquals(listOf("Timetable times"), noteTexts(guide))
         assertEquals(StepKind.TRAIN, guide.steps[1].kind)
+    }
+
+    @Test fun trainCategoriesAreAbbreviated() {
+        assertEquals("R", JourneySteps.trainCategory("REGIONALE"))
+        assertEquals("RV", JourneySteps.trainCategory("REGIONALE VELOCE"))
+        assertEquals("Intercity", JourneySteps.trainCategory("INTERCITY"))
     }
 
     @Test fun aTrainThatRunsTomorrowSaysSo() {
         val guide = JourneySteps.forTrain(context, train(dayOffset = 1))
 
-        assertTrue(texts(guide)[1].endsWith("departs 09:30 (+1)"))
+        assertEquals("09:30 (+1)", guide.steps[1].detail)
     }
 
     @Test fun busThenTrainWalksBetweenTheTwoStops() {
@@ -145,18 +158,18 @@ class JourneyStepsTest {
             MixedJourney(bus(lastWalk = 150f), train(walk = 0f), busFirst = true, estimatedTotalSeconds = 3_000f))
 
         assertEquals(listOf(
-            "Walk 250 m to Via Roma · leave now",
-            "Board bus 4 · arrives in ~4 min",
-            "Get off at Piazza Castello",
-            "Walk 150 m to Torino Porta Susa",
-            "Take REGIONALE 2121 towards Chieri · departs 09:30",
-            "Get off at Chieri · arrives 09:42",
-            "Walk 500 m to your destination"
-        ), texts(guide))
+            "250 m → Via Roma | leave now",
+            "Bus 4 | ~4 min",
+            "Piazza Castello",
+            "150 m → Torino Porta Susa",
+            "R 2121 → Chieri | 09:30",
+            "Chieri | 09:42",
+            "500 m → destination"
+        ), lines(guide))
         assertEquals(StepKind.WALK, guide.steps[3].kind)
         assertEquals(exit.latitude, guide.steps[3].origin!!.latitude, 1e-9)
         assertNotNull(guide.steps[3].target)
-        assertTrue(guide.notes.contains("Train times: Regione Piemonte timetable."))
+        assertTrue(noteTexts(guide).contains("Timetable times"))
     }
 
     @Test fun trainThenBusDoesNotPromiseABusArrivalTime() {
@@ -164,14 +177,14 @@ class JourneyStepsTest {
             MixedJourney(bus(walk = 200f), train(lastWalk = 0f), busFirst = false, estimatedTotalSeconds = 3_000f))
 
         assertEquals(listOf(
-            "Walk 300 m to Torino Porta Susa",
-            "Take REGIONALE 2121 towards Chieri · departs 09:30",
-            "Get off at Chieri · arrives 09:42",
-            "Walk 200 m to Via Roma",
-            "Board bus 4",
-            "Get off at Piazza Castello",
-            "Walk 120 m to your destination"
-        ), texts(guide))
+            "300 m → Torino Porta Susa",
+            "R 2121 → Chieri | 09:30",
+            "Chieri | 09:42",
+            "200 m → Via Roma",
+            "Bus 4",
+            "Piazza Castello",
+            "120 m → destination"
+        ), lines(guide))
         // Directions lead to where the rider starts, the train station.
         assertEquals(trainStart.latitude, guide.steps.first().target!!.latitude, 1e-9)
     }
@@ -180,16 +193,35 @@ class JourneyStepsTest {
         val destination = GeoPoint(45.07, 7.68)
         val guide = JourneySteps.forWalking(context, 900, 13, destination)
 
-        assertEquals(listOf("Walk 900 m to your destination"), texts(guide))
+        assertEquals(listOf("900 m → destination"), texts(guide))
         assertEquals(destination, guide.steps.single().target)
-        assertTrue(guide.notes.single().contains("900 m"))
+        assertTrue(guide.notes.single().text.contains("900 m"))
     }
 
     @Test @Config(qualifiers = "it") fun stepsAreInItalian() {
         val guide = JourneySteps.forBus(context, bus())
 
-        assertEquals("Cammina per 250 m fino a Via Roma · parti ora", guide.steps.first().text)
-        assertEquals("Sali sul bus 4 · arriva tra circa 4 min", guide.steps[1].text)
-        assertEquals("Scendi a Piazza Castello", guide.steps[2].text)
+        assertEquals(listOf("250 m → Via Roma | parti ora", "Bus 4 | ~4 min", "Piazza Castello",
+            "120 m → arrivo"), lines(guide))
+    }
+
+    @Test fun longWalksAreInKilometres() {
+        assertEquals("950 m", formatDistance(context, 950f))
+        assertEquals("1.2 km", formatDistance(context, 1_240f))
+        assertEquals("2 km", formatDistance(context, 1_960f))
+    }
+
+    @Test @Config(qualifiers = "it") fun italianKilometresUseADecimalComma() {
+        assertEquals("1,2 km", formatDistance(context, 1_240f))
+    }
+
+    @Test fun capitalisedStopNamesReadNormally() {
+        assertEquals("Chiesa della Salute", TransitIndex.cleanStopName("CHIESA DELLA SALUTE"))
+        assertEquals("Corso XX Settembre", TransitIndex.cleanStopName("CORSO XX SETTEMBRE"))
+        assertEquals("Massimo D'Azeglio", TransitIndex.cleanStopName("MASSIMO D'AZEGLIO"))
+        assertEquals("Porta Nuova FS", TransitIndex.cleanStopName("PORTA NUOVA FS"))
+        assertEquals("P.zza Statuto", TransitIndex.cleanStopName("P.ZZA STATUTO"))
+        assertEquals("Via Roma", TransitIndex.cleanStopName("Via Roma"))
+        assertEquals("Montalenghe", TransitIndex.cleanStopName("Fermata 123 - MONTALENGHE"))
     }
 }
