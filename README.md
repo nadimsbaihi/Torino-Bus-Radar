@@ -41,6 +41,8 @@ destination and your search preferences.
   and hold the app icon; tap one to plan a journey there.
 - **Go anywhere from the map.** Press and hold on the map to plan a journey to
   that spot, even where the bundled data has no address. Bookmark it to keep it.
+- **Open locations from other apps.** Share a place from a maps app or a link
+  to Torino Bus Radar and it plans a journey to that spot.
 - **Walking directions.** Compare a ride with walking, then open Google Maps
   directions to the destination or boarding stop. Maps opens only when you tap
   a directions button, and the button stays so you can reopen the route.

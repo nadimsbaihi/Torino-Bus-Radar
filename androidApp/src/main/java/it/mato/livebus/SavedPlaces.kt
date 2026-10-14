@@ -219,3 +219,38 @@ class RecentDestinations(context: Context) {
         private const val SAME_SPOT_DEGREES = 0.00004
     }
 }
+
+/** What a `geo:` link asks for: a point, or a place to search for by text. */
+sealed interface GeoTarget {
+    data class Point(val latitude: Double, val longitude: Double) : GeoTarget
+    data class Search(val query: String) : GeoTarget
+}
+
+object GeoUri {
+    private val POINT = Regex("""^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)""")
+
+    /**
+     * `geo:lat,lng`, `geo:lat,lng?q=...`, `geo:0,0?q=lat,lng(label)` and `geo:0,0?q=address`. A
+     * 0,0 point means "see q"; the label is dropped, as the pin is what gets planned to.
+     */
+    fun parse(uri: String): GeoTarget? {
+        if (!uri.startsWith("geo:", ignoreCase = true)) return null
+        val body = uri.substring(4)
+        val path = body.substringBefore('?').substringBefore(';')
+        val query = body.substringAfter('?', "").split('&')
+            .firstOrNull { it.startsWith("q=") }?.substring(2)
+            ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+            ?.replace(Regex("""\s*\([^)]*\)\s*$"""), "")?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        point(path)?.takeIf { !(it.latitude == 0.0 && it.longitude == 0.0) }?.let { return it }
+        query ?: return null
+        return point(query) ?: GeoTarget.Search(query)
+    }
+
+    private fun point(text: String): GeoTarget.Point? {
+        val match = POINT.find(text) ?: return null
+        val latitude = match.groupValues[1].toDouble()
+        val longitude = match.groupValues[2].toDouble()
+        return if (abs(latitude) <= 90.0 && abs(longitude) <= 180.0) GeoTarget.Point(latitude, longitude) else null
+    }
+}

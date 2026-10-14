@@ -158,7 +158,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val handlingReplan = intent.action == BusAlertService.ACTION_REPLAN ||
-            intent.action == PlaceShortcuts.ACTION_GO_TO_PLACE
+            intent.action == PlaceShortcuts.ACTION_GO_TO_PLACE || geoTarget(intent) != null
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.root.requestFocus()
@@ -196,6 +196,7 @@ class MainActivity : AppCompatActivity() {
         startRefreshing()
         consumeReplan(intent)
         consumeGoToPlace(intent)
+        consumeGeoLink(intent)
         savedPlaces.publishShortcuts()
         if (savedInstanceState == null && !handlingReplan) restoreLastJourney()
     }
@@ -206,6 +207,7 @@ class MainActivity : AppCompatActivity() {
         consumeSharedDirections(intent)
         consumeReplan(intent)
         consumeGoToPlace(intent)
+        consumeGeoLink(intent)
     }
 
     private fun setupJourneySheet() {
@@ -1843,6 +1845,22 @@ class MainActivity : AppCompatActivity() {
         val place = savedPlaces.byName(name)?.asOfflinePlace(exactMatch = true)
             ?: OfflinePlace(name, name, latitude, longitude, SavedPlace.KIND, true)
         chooseDestination(place)
+    }
+
+    private fun geoTarget(intent: Intent?): GeoTarget? =
+        if (intent?.action == Intent.ACTION_VIEW) intent.data?.toString()?.let(GeoUri::parse) else null
+
+    /** A `geo:` link from another app: plan a journey there, as a long press on the map would. */
+    private fun consumeGeoLink(intent: Intent?) {
+        val target = geoTarget(intent) ?: return
+        intent!!.action = null
+        when (target) {
+            is GeoTarget.Point -> goToMapPoint(GeoPoint(target.latitude, target.longitude))
+            is GeoTarget.Search -> {
+                binding.destinationInput.setText(target.query)
+                findDestinationRoute()
+            }
+        }
     }
 
     private fun consumeReplan(intent: Intent?) {
