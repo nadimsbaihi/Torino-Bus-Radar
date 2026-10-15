@@ -163,8 +163,12 @@ network behavior, and map interaction.
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.
 - When a trip ID is missing, the app can estimate direction from the line,
-  route geometry, and heading, choosing only among the line's variants that run that day
-  (holidays included): on a weekday, a 67 is not taken for the Sunday run to Borgo Vittoria.
+  route geometry, and heading. GTT's trip updates
+  (`https://percorsieorari.gtt.to.it/das_gtfsrt/trip_update.aspx`, fetched with each refresh)
+  name the trips each vehicle is on or about to start, so the guess is made among those
+  variants first. They can name the next run while the bus finishes the current one, so they
+  narrow the guess rather than set the trip. Otherwise only the line's variants that run that day
+  (holidays included) count: on a weekday, a 67 is not taken for the Sunday run to Borgo Vittoria.
 - The metro's notices come from GTT's alerts feed
   (`https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx`). Only notices that last at most
   60 days count; GTT keeps standing bulletins (such as the state of the lifts) up for years.
@@ -184,7 +188,7 @@ the workflow run number sets the version code.
 
 ## Data and credits
 
-- **GTT:** live vehicle positions, service alerts, and static routes, stops, route shapes and
+- **GTT:** live vehicle positions, trip updates, service alerts, and static routes, stops, route shapes and
   the metro timetable.
 - **OpenStreetMap contributors:** the offline map, places, addresses, and walking
   network, using a [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/).

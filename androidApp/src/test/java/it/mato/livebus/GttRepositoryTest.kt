@@ -60,7 +60,28 @@ class GttRepositoryTest {
         assertEquals(2, calls.get())
     }
 
-    private fun repository(calls: AtomicInteger, failAfterFirst: Boolean = false): GttRepository {
+    @Test fun aBusWithNoTripGetsTheTripsTheUpdatesNameForIt() = runBlocking {
+        val repository = repository(AtomicInteger(), tripUpdates = GtfsRealtime.FeedMessage.newBuilder()
+            .setHeader(GtfsRealtime.FeedHeader.newBuilder().setGtfsRealtimeVersion("2.0"))
+            .addEntity(GtfsRealtime.FeedEntity.newBuilder().setId("u").setTripUpdate(
+                GtfsRealtime.TripUpdate.newBuilder()
+                    .setTrip(GtfsRealtime.TripDescriptor.newBuilder().setTripId("28375713U"))
+                    .setVehicle(GtfsRealtime.VehicleDescriptor.newBuilder().setId("fresh"))))
+            .build())
+        assertEquals(listOf("28375713U"), repository.vehicles().single { it.id == "fresh" }.tripHints)
+    }
+
+    @Test fun positionsStillComeWhenTheTripUpdatesFail() = runBlocking {
+        val repository = repository(AtomicInteger(), failTripUpdates = true)
+        assertTrue(repository.vehicles().any { it.id == "fresh" })
+    }
+
+    private fun repository(
+        calls: AtomicInteger,
+        failAfterFirst: Boolean = false,
+        tripUpdates: GtfsRealtime.FeedMessage? = null,
+        failTripUpdates: Boolean = false
+    ): GttRepository {
         val now = System.currentTimeMillis() / 1000
         val feed = GtfsRealtime.FeedMessage.newBuilder().setHeader(
             GtfsRealtime.FeedHeader.newBuilder().setGtfsRealtimeVersion("2.0").setTimestamp(now)
@@ -75,10 +96,15 @@ class GttRepositoryTest {
             feed.addEntity(GtfsRealtime.FeedEntity.newBuilder().setId(id).setVehicle(vehicle))
         }
         val bytes = feed.build().toByteArray()
+        // Trip updates come with every refresh; only the positions are counted here.
+        val updateBytes = (tripUpdates ?: GtfsRealtime.FeedMessage.newBuilder().setHeader(
+            GtfsRealtime.FeedHeader.newBuilder().setGtfsRealtimeVersion("2.0")).build()).toByteArray()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
-            if (calls.incrementAndGet() > 1 && failAfterFirst) throw IOException("Feed unavailable")
+            val forUpdates = "trip_update" in chain.request().url.encodedPath
+            if (forUpdates && failTripUpdates) throw IOException("Trip updates unavailable")
+            if (!forUpdates && calls.incrementAndGet() > 1 && failAfterFirst) throw IOException("Feed unavailable")
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
-                .code(200).message("OK").body(bytes.toResponseBody()).build()
+                .code(200).message("OK").body((if (forUpdates) updateBytes else bytes).toResponseBody()).build()
         }.build()
         return GttRepository().also {
             GttRepository::class.java.getDeclaredField("client").apply {

@@ -11,7 +11,10 @@ import okhttp3.Callback
 import okhttp3.Response
 import java.io.IOException
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -26,7 +29,13 @@ data class LiveVehicle(
     val bearing: Float?,
     val timestampSeconds: Long,
     /** The fleet number painted on the bus, when the feed gives one. */
-    val label: String? = null
+    val label: String? = null,
+    /**
+     * For a bus whose position comes without a trip, the trips GTT's trip updates name for it,
+     * soonest first: the one it is on, or the next one when it is about to finish. A shortlist
+     * for working out its direction, never its trip.
+     */
+    val tripHints: List<String> = emptyList()
 ) {
     /** What the rider sees on the bus itself; the feed id is that number with a company suffix. */
     val fleetNumber: String get() = label ?: id.removeSuffix("U")
@@ -104,16 +113,37 @@ class GttRepository {
         alerts
     }
 
-    private suspend fun fetchVehicles(): List<LiveVehicle> {
+    private suspend fun fetchVehicles(): List<LiveVehicle> = coroutineScope {
+        // Positions often come without their trip (most buses, some evenings); the trip updates
+        // still name the trips each vehicle is on or about to start.
+        val hintsTask = async { fetchTripHints() }
         Log.d(TAG, "Requesting GTT vehicle positions")
         val response = fetch(VEHICLE_POSITIONS_URL)
-        return response.use {
+        val vehicles = response.use {
             check(response.isSuccessful) { "GTT feed returned ${response.code}" }
             val feed = GtfsRealtime.FeedMessage.parseFrom(
                 requireNotNull(response.body).byteStream()
             )
             decodeVehicles(feed)
         }
+        val hints = hintsTask.await()
+        vehicles.map { vehicle ->
+            if (vehicle.tripId != null) vehicle
+            else hints[vehicle.id]?.let { vehicle.copy(tripHints = it) } ?: vehicle
+        }
+    }
+
+    /** The trips GTT's trip updates name for each vehicle, soonest first; empty if that feed fails. */
+    private suspend fun fetchTripHints(): Map<String, List<String>> = try {
+        fetch(TRIP_UPDATES_URL).use { response ->
+            check(response.isSuccessful) { "GTT trip updates returned ${response.code}" }
+            tripHints(GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream()))
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.w(TAG, "GTT trip updates unavailable", error)
+        emptyMap()
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -158,10 +188,24 @@ class GttRepository {
         return vehicles
     }
 
-    private companion object {
-        const val TAG = "GttRepository"
-        const val VEHICLE_POSITIONS_URL =
+    companion object {
+        private const val TAG = "GttRepository"
+
+        /** Each vehicle's trips in the trip updates, by when they start ("20261015" "09:56:00"). */
+        internal fun tripHints(feed: GtfsRealtime.FeedMessage): Map<String, List<String>> =
+            feed.entityList.asSequence()
+                .filter { it.hasTripUpdate() && it.tripUpdate.vehicle.id.isNotBlank() }
+                .map { it.tripUpdate }
+                .filter { it.trip.tripId.isNotBlank() }
+                .groupBy { it.vehicle.id }
+                .mapValues { (_, updates) ->
+                    updates.sortedBy { it.trip.startDate + it.trip.startTime.padStart(8, '0') }
+                        .map { it.trip.tripId }.distinct()
+                }
+
+        private const val VEHICLE_POSITIONS_URL =
             "https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx"
-        const val ALERTS_URL = "https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx"
+        private const val TRIP_UPDATES_URL = "https://percorsieorari.gtt.to.it/das_gtfsrt/trip_update.aspx"
+        private const val ALERTS_URL = "https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx"
     }
 }

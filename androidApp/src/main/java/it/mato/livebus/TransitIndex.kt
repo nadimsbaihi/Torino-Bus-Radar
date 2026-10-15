@@ -898,13 +898,18 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         // Limit inference to nearby segments of that route, using the heading when
         // available and otherwise the direction the vehicle has actually been moving.
         val heading = headingOf(vehicle)
-        val candidates = runningPatterns(vehicle).mapNotNull { pattern ->
+        fun scored(patterns: List<TransitPattern>) = patterns.mapNotNull { pattern ->
             var score = Double.POSITIVE_INFINITY
             for (index in 0 until pattern.stops.size - 1) {
                 score = minOf(score, segmentScore(vehicle, pattern, index, inferred = true, heading = heading))
             }
             if (score.isFinite()) pattern to score else null
         }.sortedBy { it.second }
+        // The trip updates name the trip the bus is on or the one it starts next: the variant is
+        // among theirs, and where the bus is and where it heads says which.
+        val hinted = vehicle.tripHints.mapNotNull { patternsByTripId[it] }
+            .filter { it.routeId == vehicle.routeId }.distinct()
+        val candidates = scored(hinted).ifEmpty { scored(runningPatterns(vehicle)) }
         val best = candidates.firstOrNull() ?: return null
         // Variants of one direction often share a trunk and tie; stay on the one already
         // matched so the answer does not flip between them as the bus moves.

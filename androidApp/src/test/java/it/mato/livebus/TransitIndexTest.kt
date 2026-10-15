@@ -438,6 +438,24 @@ class TransitIndexTest {
         assertNotNull(index.matchDirection(busAt("2027-03-01T10:00:00")))
     }
 
+    @Test fun theTripUpdatesSayWhichVariantABusWithNoTripIsOn() {
+        // Two runs of one line on the same day, alike until the short one ends.
+        val trunk = listOf(stop("a", 45.0, 7.0), stop("b", 45.01, 7.0), stop("c", 45.02, 7.0))
+        val long = TransitPattern("long", "67", "67", "Borgo Vittoria", "0", setOf("L"), trunk + stop("d", 45.03, 7.0))
+        val short = TransitPattern("short", "67", "67", "Zara", "0", setOf("S"), trunk)
+        val back = TransitPattern("back", "67", "67", "Moncalieri", "1", setOf("B"), trunk.reversed())
+        val index = index(short, long, back)
+        // Heading north (a bearing of 0 is how the feed says it has none).
+        val bus = LiveVehicle("bus", "67", null, 45.005, 7.0, 5f, System.currentTimeMillis() / 1000)
+
+        assertEquals("long", index.matchDirection(bus.copy(tripHints = listOf("L")))!!.id)
+        assertEquals("short", index.matchDirection(bus.copy(id = "bus2", tripHints = listOf("S")))!!.id)
+        // Finishing its run northwards, with the next one back already in the updates.
+        assertEquals("long", index.matchDirection(bus.copy(id = "bus3", tripHints = listOf("L", "B")))!!.id)
+        // A trip the index does not know leaves the usual guess.
+        assertNotNull(index.matchDirection(bus.copy(id = "bus4", tripHints = listOf("unknown"))))
+    }
+
     private fun stop(id: String, lat: Double, lon: Double) = TransitStop(id, id, lat, lon)
     private fun pattern(id: String, stops: List<TransitStop>) =
         TransitPattern(id, id, id, id, "0", setOf(id), stops)
