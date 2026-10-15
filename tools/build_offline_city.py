@@ -52,10 +52,12 @@ def station_rows(train_index, bounds):
 def notice(source_note):
     return (source_note + '\nSearch database and pedestrian graph include data from the BBBike OSM extract.\n'
             'OSM-derived records are under ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/\n'
-            'Bus stops: GTT S.p.A. - Gruppo Torinese Trasporti, https://www.gtt.to.it\n'
+            'Bus stops, timetables and live data: Data source: GTT S.p.A. – Gruppo Torinese Trasporti,\n'
+            'https://www.gtt.to.it\n'
             'GTT GTFS terms: https://www.gtt.to.it/gtt_gtfs_license.html\n'
             + TRAIN_NOTICE +
-            'Builder: tools/build_offline_city.py in the Torino Bus Radar source.\n')
+            'Builder: tools/build_offline_city.py in the Torino Bus Radar source.\n'
+            'App code libraries and their licences: in the app, tap the map credit, then Open-source licences.\n')
 
 
 def refresh_stations(output, train_index):

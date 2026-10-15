@@ -36,8 +36,10 @@ BBBike Map Compare: https://mc.bbbike.org
 
 Search database and pedestrian graph include data from the BBBike OSM extract.
 OSM-derived records are under ODbL 1.0: https://opendatacommons.org/licenses/odbl/1-0/
-Bus stops: GTT S.p.A. - Gruppo Torinese Trasporti, https://www.gtt.to.it
+Bus stops, timetables and live data: Data source: GTT S.p.A. – Gruppo Torinese Trasporti,
+https://www.gtt.to.it
 GTT GTFS terms: https://www.gtt.to.it/gtt_gtfs_license.html
 Train stations: Trenitalia timetable (CCISS National Access Point), converted to GTFS
 by Clement Desouche, https://github.com/deryclem/trenitalia-gtfs, CC BY 4.0.
 Builder: tools/build_offline_city.py in the Torino Bus Radar source.
+App code libraries and their licences: in the app, tap the map credit, then Open-source licences.

@@ -198,6 +198,7 @@ class MainActivity : AppCompatActivity() {
         setupSearchPresets()
         setupStartRow()
         setupAppearanceMenu()
+        binding.mapAttribution.setOnClickListener { Credits.show(this) }
         binding.locationButton.setOnClickListener {
             if (deviceLocationEnabled()) requestLocation() else openLocationSettings()
         }

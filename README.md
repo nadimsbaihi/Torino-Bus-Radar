@@ -179,6 +179,15 @@ network behavior, and map interaction.
 
 </details>
 
+## Privacy
+
+The app reads your location from the phone's location service (Google Play services) to plan
+journeys, measure the distance to buses and, while an approach alert is on, to tell when you reach
+the stop where you change buses. The app itself never sends your location anywhere. Requests to GTT
+carry no location or identifier. Searching, saved places and recent destinations work offline and
+are stored only on the phone. Your location leaves the phone only when you choose to open walking
+directions in Google Maps. The app has no accounts, analytics or ads.
+
 ## Publish a release
 
 Push a version tag such as `v0.2.1`. [GitHub Actions](.github/workflows/release.yml)
@@ -192,8 +201,13 @@ the workflow run number sets the version code.
 
 ## Data and credits
 
+The app shows these credits itself: tap "© OpenStreetMap · Data GTT" in the corner of the map
+for every data source and the licences of the libraries it is built with.
+
 - **GTT:** live vehicle positions, trip updates, service alerts, and static routes, stops, route shapes and
-  the metro timetable.
+  the metro timetable. Data source: GTT S.p.A. – Gruppo Torinese Trasporti, https://www.gtt.to.it.
+  [GTT's licence](https://www.gtt.to.it/gtt_gtfs_license.html) allows non-commercial use only: the app
+  is free and has no ads, and charging for it or adding ads would need GTT's written permission first.
 - **OpenStreetMap contributors:** the offline map, places, addresses, and walking
   network, using a [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/).
 - **Trenitalia:** train timetables from the national NeTEx feed (CCISS National Access Point),

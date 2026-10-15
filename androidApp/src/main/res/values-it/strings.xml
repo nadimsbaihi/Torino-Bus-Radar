@@ -140,7 +140,12 @@
     <string name="location_approximate">Posizione approssimativa</string>
     <string name="journey_failed">Impossibile calcolare il percorso. Riprova.</string>
     <string name="checking_transfers">Ricerca delle coincidenze…</string>
-    <string name="map_attribution">© contributori di OpenStreetMap</string>
+    <string name="map_attribution">© OpenStreetMap · Dati GTT</string>
+    <string name="credits_body"><![CDATA[<b>Bus, metro, fermate e avvisi</b><br/>Data source: GTT S.p.A. – Gruppo Torinese Trasporti, <a href="https://www.gtt.to.it">www.gtt.to.it</a>. Dati usati secondo la <a href="https://www.gtt.to.it/gtt_gtfs_license.html">licenza open data di GTT</a>, che ne consente l\'uso non commerciale, ed elaborati per questa app. GTT non garantisce i dati e questa app non è affiliata a GTT.<br/><br/><b>Treni</b><br/>Orari di Trenitalia, pubblicati sul National Access Point del CCISS e convertiti in GTFS da <a href="https://github.com/deryclem/trenitalia-gtfs">Clément Desouche</a>, con licenza <a href="https://creativecommons.org/licenses/by/4.0/deed.it">CC BY 4.0</a>. Modifiche: sono tenuti solo i treni locali dell\'area di Torino.<br/><br/><b>Mappa, luoghi e percorsi a piedi</b><br/>© <a href="https://www.openstreetmap.org/copyright">contributori di OpenStreetMap</a>, dati disponibili con licenza Open Database License (ODbL). Anche i database di ricerca e dei percorsi a piedi inclusi in questa app derivano da OpenStreetMap e sono disponibili con licenza ODbL. Estratto di <a href="https://extract.bbbike.org">BBBike</a>; mappe disegnate con Mapsforge e osmdroid.]]></string>
+    <string name="close">Chiudi</string>
+    <string name="credits_open_source">Licenze open source</string>
+    <string name="credits_title">Dati e licenze</string>
+    <string name="map_attribution_description">Fonti dei dati e licenze</string>
     <string name="device_location_off">Posizione del telefono disattivata</string>
     <string name="turn_on_location">Attiva la posizione</string>
     <string name="location_permission_required">Serve il permesso di posizione</string>

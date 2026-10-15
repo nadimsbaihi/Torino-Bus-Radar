@@ -140,7 +140,12 @@
     <string name="location_approximate">Approximate location</string>
     <string name="journey_failed">Could not plan this journey. Please try again.</string>
     <string name="checking_transfers">Checking connections…</string>
-    <string name="map_attribution">© OpenStreetMap contributors</string>
+    <string name="map_attribution">© OpenStreetMap · Data GTT</string>
+    <string name="credits_body"><![CDATA[<b>Buses, metro, stops and alerts</b><br/>Data source: GTT S.p.A. – Gruppo Torinese Trasporti, <a href="https://www.gtt.to.it">www.gtt.to.it</a>. Used under <a href="https://www.gtt.to.it/gtt_gtfs_license.html">GTT\'s open data licence</a>, which allows non-commercial use, and processed for this app. GTT does not guarantee the data, and this app is not affiliated with GTT.<br/><br/><b>Trains</b><br/>Timetables from Trenitalia, published on the CCISS National Access Point and converted to GTFS by <a href="https://github.com/deryclem/trenitalia-gtfs">Clément Desouche</a>, under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Changed: only local trains in the Torino area are kept.<br/><br/><b>Map, places and walking routes</b><br/>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, available under the Open Database License (ODbL). The search and walking databases in this app are derived from OpenStreetMap and are available under the ODbL too. Extract by <a href="https://extract.bbbike.org">BBBike</a>; maps drawn with Mapsforge and osmdroid.]]></string>
+    <string name="close">Close</string>
+    <string name="credits_open_source">Open-source licences</string>
+    <string name="credits_title">Data and licences</string>
+    <string name="map_attribution_description">Data sources and licences</string>
     <string name="device_location_off">Phone location is off</string>
     <string name="turn_on_location">Turn on location</string>
     <string name="location_permission_required">Location permission needed</string>
