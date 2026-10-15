@@ -9,6 +9,8 @@
     <color name="live_green">#6FD48F</color>
     <color name="route_orange">#5CC8B9</color>
     <color name="train_blue">#7DB6F0</color>
+    <!-- GTT's metro red. -->
+    <color name="metro_red">#FF7A85</color>
     <color name="course_magenta">#FF6FA3</color>
     <color name="warning">#FF8F73</color>
     <color name="shared_bg">#26352D</color>

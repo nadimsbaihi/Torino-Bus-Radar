@@ -37,8 +37,10 @@ class JourneyQuery(
     val walkFromDestination: ((Double, Double) -> Float)? = null,
     val walkBetweenStops: ((Double, Double, Double, Double) -> Float)? = null,
     val walkingPreference: WalkingPreference = WalkingPreference.MORE,
-    // Set to include scheduled trains, planned from this moment (Rome time).
+    // Set to include scheduled rail, planned from this moment (Rome time): the metro, and the
+    // trains too unless [includeTrains] is off.
     val trainsAt: LocalDateTime? = null,
+    val includeTrains: Boolean = true,
     val earliestStartSeconds: Float = 0f,
     val maxDestinationWalkMetres: Float = Float.POSITIVE_INFINITY,
     // Vehicles per journey; the journey panel can show two.
@@ -97,6 +99,7 @@ class JourneyPlanner(private val buses: TransitIndex, private val trains: TrainI
         val network = Network(query, fleet)
         network.addBusTrips()
         val trainsOn = trains?.takeIf { query.trainsAt != null }
+            ?.let { if (query.includeTrains) it else it.metroOnly }
         if (trainsOn != null) network.addTrainTrips(trainsOn, query.trainsAt!!)
 
         val request = network.request(query, trainsOn != null)
@@ -167,7 +170,9 @@ class JourneyPlanner(private val buses: TransitIndex, private val trains: TrainI
                     val depart = FloatArray(stops.size) { (stops[it].departureSeconds - nowInServiceDay).toFloat() }
                     trips.add(PlanTrip(
                         IntArray(stops.size) { stop("T:" + stops[it].id, stops[it].latitude, stops[it].longitude, true) },
-                        arrive, depart, true, "", { 0f }, TrainRun(trip, stops, dayOffset)))
+                        // One metro train is as good as the next: never change between two.
+                        arrive, depart, true, if (trip.category == TrainIndex.METRO) TrainIndex.METRO else "",
+                        { 0f }, TrainRun(trip, stops, dayOffset)))
                 }
             }
             val links = HashMap<Int, List<Int>>()

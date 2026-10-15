@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Create a compact, scheduled rail index from a Trenitalia GTFS feed.
 
-Usage: build_train_index.py SOURCE.zip OUTPUT.json [MINLAT,MINLON,MAXLAT,MAXLON]
+Usage: build_train_index.py [--metro] SOURCE.zip OUTPUT.json [MINLAT,MINLON,MAXLAT,MAXLON]
 
 With an area, only trains calling at two or more stations inside it are kept, and only those
 stations: the app plans journeys within its map, so the rest of a national feed is dead weight.
 Long-distance and bus services are left out; the trains are the ones a local ticket covers.
+
+With --metro, the source is GTT's feed and only its metro is kept, under the category METRO and
+the line's name as the number. Runs with the same times on different days become one run.
 """
 
 import csv
@@ -84,7 +87,7 @@ def category_of(trip, route):
     return category.upper() or "REGIONALE"
 
 
-def main(source, output, area=None):
+def main(source, output, area=None, metro=False):
     box = [float(part) for part in area.split(",")] if area else None
 
     def inside(stop):
@@ -121,11 +124,16 @@ def main(source, output, area=None):
         output_trips = []
         for trip_id, trip in trips.items():
             route = routes.get(trip.get("route_id"), {})
-            if route.get("route_type", "2") == "3":
-                continue
-            category = category_of(trip, route)
-            if category in LONG_DISTANCE:
-                continue
+            if metro:
+                if route.get("route_type") != "1":
+                    continue
+                category = "METRO"
+            else:
+                if route.get("route_type", "2") == "3":
+                    continue
+                category = category_of(trip, route)
+                if category in LONG_DISTANCE:
+                    continue
             all_times = sorted(times[trip_id], key=lambda entry: entry[0])
             stop_times = [entry for entry in all_times if inside(entry[1])]
             dates = active_dates.get(trip["service_id"])
@@ -133,8 +141,13 @@ def main(source, output, area=None):
                 continue
             # The national feed leaves the headsign out: a train is going to its last station.
             headsign = (trip.get("trip_headsign") or "").strip() or all_times[-1][1]["name"]
+            if metro:
+                # "METRO BENGASI": on the metro, every train is a metro train.
+                headsign = readable(re.sub(r"^METRO\s+", "", headsign, flags=re.IGNORECASE))
+            number = (route["route_short_name"].strip() if metro
+                      else trip["trip_short_name"].lstrip("0") or trip["trip_short_name"])
             output_trips.append({
-                "number": trip["trip_short_name"].lstrip("0") or trip["trip_short_name"],
+                "number": number,
                 "category": category,
                 "headsign": headsign,
                 "dates": dates,
@@ -144,13 +157,46 @@ def main(source, output, area=None):
                 ],
             })
 
+    index = {"version": 1, "trips": output_trips}
+    if metro:
+        index = compact(merge_same_runs(output_trips))
     Path(output).parent.mkdir(parents=True, exist_ok=True)
-    Path(output).write_text(
-        json.dumps({"version": 1, "trips": output_trips}, separators=(",", ":")),
-        encoding="utf-8",
-    )
-    print(f"Wrote {len(output_trips)} train trips to {output}")
+    Path(output).write_text(json.dumps(index, separators=(",", ":")), encoding="utf-8")
+    print(f"Wrote {len(index['trips'])} {'metro' if metro else 'train'} trips to {output}")
+
+
+def merge_same_runs(trips):
+    """One run per timetable: a metro train at 07:04 on weekdays and on Saturdays is listed once."""
+    merged = {}
+    for trip in trips:
+        key = (trip["number"], trip["headsign"],
+               tuple((stop["id"], stop["arrival"], stop["departure"]) for stop in trip["stops"]))
+        if key in merged:
+            merged[key]["dates"] = sorted(set(merged[key]["dates"]) | set(trip["dates"]))
+        else:
+            merged[key] = trip
+    return list(merged.values())
+
+
+def compact(trips):
+    """Version 2: each station once, and each run as station numbers with arrival, departure pairs."""
+    stations, numbers = [], {}
+    for trip in trips:
+        for stop in trip["stops"]:
+            if stop["id"] not in numbers:
+                numbers[stop["id"]] = len(stations)
+                stations.append({key: stop[key] for key in ("id", "name", "lat", "lon")})
+    return {"version": 2, "stations": stations, "trips": [{
+        "number": trip["number"],
+        "category": trip["category"],
+        "headsign": trip["headsign"],
+        "dates": trip["dates"],
+        "calls": [numbers[stop["id"]] for stop in trip["stops"]],
+        "times": [time for stop in trip["stops"] for time in (stop["arrival"], stop["departure"])],
+    } for trip in trips]}
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    arguments = sys.argv[1:]
+    metro_only = "--metro" in arguments
+    main(*[argument for argument in arguments if argument != "--metro"][:3], metro=metro_only)

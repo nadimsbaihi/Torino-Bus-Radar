@@ -161,6 +161,22 @@ class JourneyStepsTest {
         assertEquals(StepKind.TRAIN, guide.steps[1].kind)
     }
 
+    @Test fun aMetroRideNamesTheLineAndWhereItIsGoing() {
+        val fermi = TrainStop("3619", "Metro Fermi", 45.076, 7.591, 27000, 27000)
+        val portaSusa = TrainStop("3631", "Metro Porta Susa", 45.072, 7.666, 27780, 27780)
+        val metro = ScheduledTrainJourney("M1", "METRO", "Bengasi", fermi, portaSusa, listOf(fermi, portaSusa),
+            0, 1, 200f, 0f, 1_000f, 27000, 27780)
+        val guide = JourneySteps.forTrain(context, metro)
+
+        assertEquals(listOf(
+            "200 m → Metro Fermi",
+            "M1 → Bengasi | 07:30",
+            "Metro Porta Susa | 07:43"
+        ), lines(guide))
+        assertEquals(listOf(StepKind.METRO, StepKind.METRO), guide.steps.drop(1).map { it.kind })
+        assertEquals(listOf(R.drawable.ic_metro), guide.notes.map { it.icon })
+    }
+
     @Test fun trainCategoriesAreAbbreviated() {
         assertEquals("R", JourneySteps.trainCategory("REGIONALE"))
         assertEquals("RV", JourneySteps.trainCategory("REGIONALE VELOCE"))

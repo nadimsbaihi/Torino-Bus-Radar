@@ -167,6 +167,60 @@ class JourneyPlannerTest {
         assertNull(missed)
     }
 
+    private fun metroStation(name: String) = trains.stations.first { it.name == "Metro $name" }
+
+    @Test fun theMetroIsPlannedFromItsTimetable() = runBlocking {
+        val fermi = metroStation("Fermi")
+        val portaSusa = metroStation("Porta Susa")
+        val journey = trains.metroOnly.planScheduledJourney(
+            fermi.latitude, fermi.longitude, portaSusa.latitude, portaSusa.longitude,
+            LocalDateTime.of(2026, 10, 15, 8, 0),
+            walkFromOrigin = { _, _ -> 0f }, walkFromDestination = { _, _ -> 0f },
+            boardStopId = fermi.id, exitStopId = portaSusa.id)
+
+        assertNotNull(journey)
+        assertTrue(journey!!.isMetro)
+        assertEquals("M1", journey.number)
+        assertEquals("Bengasi", journey.headsign)
+        // At rush hour a train comes every few minutes, and Fermi to Porta Susa is under twenty.
+        assertTrue(journey.departureSeconds - 8 * 3600 in 120..8 * 60)
+        assertTrue(journey.arrivalSeconds - journey.departureSeconds < 20 * 60)
+    }
+
+    @Test fun leavingTrainsOutKeepsTheMetro() {
+        assertTrue(trains.stations.any { it.name == "Torino Porta Nuova" })
+        assertTrue(trains.stations.any { it.name == "Metro Porta Nuova" })
+        val metro = trains.metroOnly.stations.map { it.name }
+        assertEquals(23, metro.size)
+        assertTrue(metro.all { it.startsWith("Metro ") })
+    }
+
+    @Test fun aBusCanConnectToTheMetroWithTrainsLeftOut() = runBlocking {
+        val fermi = metroStation("Fermi")
+        val portaNuova = metroStation("Porta Nuova")
+        val route = pattern(listOf(
+            stop("start", fermi.latitude + 0.02, fermi.longitude),
+            stop("board", fermi.latitude + 0.01, fermi.longitude),
+            stop("station", fermi.latitude, fermi.longitude)
+        ))
+        val options = planner(route).plan(JourneyQuery(
+            fermi.latitude + 0.01, fermi.longitude, portaNuova.latitude, portaNuova.longitude,
+            listOf(vehicle(route)),
+            walkFromOrigin = { lat, lon -> distance(fermi.latitude + 0.01, fermi.longitude, lat, lon) },
+            walkFromDestination = { lat, lon -> distance(portaNuova.latitude, portaNuova.longitude, lat, lon) },
+            walkBetweenStops = ::distance,
+            trainsAt = LocalDateTime.of(2026, 10, 15, 8, 0),
+            includeTrains = false))
+
+        val mixed = options.firstNotNullOfOrNull { it.mixed }
+        assertNotNull(mixed)
+        assertTrue(mixed!!.busFirst)
+        assertTrue(mixed.train.isMetro)
+        assertEquals(fermi.id, mixed.train.boardAt.id)
+        assertEquals(portaNuova.id, mixed.train.destination.id)
+        assertTrue(options.mapNotNull { it.mixed }.all { it.train.isMetro })
+    }
+
     private fun pattern(stops: List<TransitStop>) =
         TransitPattern("test", "test", "T", "Destination", "0", setOf("trip"), stops)
 

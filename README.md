@@ -1,7 +1,7 @@
 # Torino Bus Radar
 
 Find your next ride in Torino. See live GTT buses on the map, compare routes
-with walking or regional trains, and get directions to your boarding stop.
+with walking, the metro or regional trains, and get directions to your boarding stop.
 
 **[Download the latest APK](https://github.com/nadimsbaihi/Torino-Bus-Radar/releases/latest)**
 · Android 8.0 or newer · English and Italian
@@ -25,9 +25,11 @@ destination and whether to include trains.
   boarding and exit stops of a journey, to see the next few buses heading there
   with their line, direction and estimated minutes. The list updates with each
   refresh while it is open.
-- **Bus and train journeys.** Find direct trips and connections, including
+- **Bus, metro and train journeys.** Find direct trips and connections, including
   bus-to-train and train-to-bus options. Trains include the SFM suburban lines
-  (such as the airport and Venaria line), Regionale and Regionale Veloce.
+  (such as the airport and Venaria line), Regionale and Regionale Veloce. The M1
+  metro is always included, even with trains left out. A metro journey shows GTT's
+  current notices about the metro, such as a closure or replacement buses.
 - **Changes.** A change to a second bus says when that bus is due and how long you
   wait for it, or "tight change" when it is under a minute or likely to be missed.
 - **Journey steps, out of the way of the map.** Your journey opens as a short
@@ -86,8 +88,8 @@ be missing.
 Live bus positions require internet and come from GTT. Delayed positions are
 marked, and the app reports feed outages. If most live buses stop matching the
 bundled timetable, which happens when GTT publishes a new one, the app tells you
-once that its data may be out of date and should be updated. **Regional train times are scheduled,
-not live:** train delays and positions are not available. Connections are
+once that its data may be out of date and should be updated. **Regional train and metro times are
+scheduled, not live:** GTT and Trenitalia publish no live positions for them. Connections are
 estimates and can change as new bus positions arrive.
 
 Walking directions open in Google Maps, or in your browser if Maps is not
@@ -120,8 +122,8 @@ network behavior, and map interaction.
 - Walking estimates follow a bundled pedestrian street graph at 1.2 m/s.
   When no connected path is available, the app uses an approximate distance
   and omits the walking line.
-- Train journeys allow two minutes for boarding. The maximum walk to a boarding
-  station is 2.5 km.
+- Train and metro journeys allow two minutes for boarding (the metro's stations are deep).
+  The maximum walk to a boarding station is 2.5 km.
   Timetables use Europe/Rome time; once the day's trains have gone, the first
   trains tomorrow are offered, marked "(+1)".
 - Bus arrival estimates add 18 s per stop to the drive between stops. Distances
@@ -147,13 +149,13 @@ network behavior, and map interaction.
   "Missed it? Next bus ..." for the next vehicle that reaches the same boarding stop,
   and the same exit, after the planned one.
 - Journeys come from one round-based search (in the manner of RAPTOR) over every live bus
-  and the day's regional trains. Round k holds the best ways to reach each stop after k
+  and the day's metro and regional trains. Round k holds the best ways to reach each stop after k
   vehicles; each round boards every run it can catch (a bus must still be ahead, with
   walk plus 15% slack and 20 s to change, or 60 s after a train; a train needs 2 min),
   then walks on to stops within 350 m (500 m between stop and station). The planner keeps
   a few ways per stop rather than one, so a slower way with less walking or a safer
-  connection survives. The panel can show a bus, two buses, or a bus and a train in either
-  order; the search itself handles three vehicles, but the panel stops at two. Trains
+  connection survives. The panel can show a bus, two buses, or a bus and a train (or the
+  metro) in either order; the search itself handles three vehicles, but the panel stops at two. Trains
   more than three hours away are ignored and tomorrow's are only offered by the
   train-only search. Beside the best journey, chips offer the one with fewest changes, the
   soonest, and the one with least walking, when they differ.
@@ -162,6 +164,9 @@ network behavior, and map interaction.
   for the age of the position.
 - When a trip ID is missing, the app can estimate direction from the line,
   route geometry, and heading.
+- The metro's notices come from GTT's alerts feed
+  (`https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx`). Only notices that last at most
+  60 days count; GTT keeps standing bulletins (such as the state of the lifts) up for years.
 
 </details>
 
@@ -178,7 +183,8 @@ the workflow run number sets the version code.
 
 ## Data and credits
 
-- **GTT:** live vehicle positions and static routes, stops, and route shapes.
+- **GTT:** live vehicle positions, service alerts, and static routes, stops, route shapes and
+  the metro timetable.
 - **OpenStreetMap contributors:** the offline map, places, addresses, and walking
   network, using a [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/).
 - **Trenitalia:** train timetables from the national NeTEx feed (CCISS National Access Point),
@@ -242,6 +248,15 @@ python3 tools/build_train_index.py gtfs-trenitalia.zip \
   androidApp/src/main/assets/trenitalia_rail_index.json 44.92,7.41,45.23,7.95
 python3 tools/build_offline_city.py --stations androidApp/src/main/assets/offline \
   androidApp/src/main/assets/trenitalia_rail_index.json
+```
+
+The metro index comes from the same GTT feed; GTT's live positions do not include the metro, so
+it is planned from its timetable. Runs that keep the same times on different days are merged. The
+feed's timetable ends on January 31, 2027; rebuild before then. Metro stations are already in the
+search database as GTT stops.
+
+```sh
+python3 tools/build_train_index.py --metro gtt_gtfs.zip androidApp/src/main/assets/gtt_metro_index.json
 ```
 
 The live GTT feed is

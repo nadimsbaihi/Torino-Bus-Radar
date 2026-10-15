@@ -230,6 +230,37 @@ class TrainIndexTest(unittest.TestCase):
         self.assertEqual('Susa', trip['headsign'], "the last station, though outside the area")
         self.assertEqual(['A', 'B'], [stop['id'] for stop in trip['stops']])
 
+    def test_metro_keeps_only_the_metro_once_per_timetable(self):
+        stops = ("stop_id,stop_name,stop_lat,stop_lon\n"
+                 "1,METRO FERMI,45.07,7.59\n2,METRO PORTA SUSA,45.07,7.66\n3,PIAZZA,45.06,7.67\n")
+        routes = ("route_id,route_short_name,route_long_name,route_type\n"
+                  "METROU,M1,metropolitana,1\nM1SU,M1S,bus sostitutivo,3\n")
+        calendar = ("service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,"
+                    "start_date,end_date\nwk,1,1,1,1,1,0,0,20261012,20261016\n"
+                    "sat,0,0,0,0,0,1,0,20261012,20261018\n")
+        trips = ("route_id,trip_id,service_id,trip_short_name,trip_headsign\n"
+                 "METROU,a,wk,1,METRO PORTA SUSA\nMETROU,b,sat,1,METRO PORTA SUSA\n"
+                 "METROU,c,wk,2,METRO PORTA SUSA\nM1SU,bus,wk,,PORTA SUSA\n")
+        times = "trip_id,stop_sequence,stop_id,arrival_time,departure_time\n" + "".join(
+            f"{trip},{n},{stop},07:{minute + n:02d}:00,07:{minute + n:02d}:00\n"
+            for trip, minute, path in (("a", 0, "12"), ("b", 0, "12"), ("c", 4, "12"), ("bus", 0, "32"))
+            for n, stop in enumerate(path, 1))
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory, 'gtt.zip'), Path(directory, 'out.json')
+            write_zip(source, {'stops.txt': stops, 'routes.txt': routes, 'trips.txt': trips,
+                               'calendar.txt': calendar, 'stop_times.txt': times})
+            run('build_train_index.py', '--metro', source, output)
+            index = json.loads(output.read_text())
+        self.assertEqual(2, index['version'])
+        self.assertEqual(['Metro Fermi', 'Metro Porta Susa'], [station['name'] for station in index['stations']])
+        # The 07:01 runs on weekdays and on Saturday are one run; the 07:05 is another; the bus goes.
+        self.assertEqual(2, len(index['trips']))
+        first = index['trips'][0]
+        self.assertEqual(('M1', 'METRO', 'Porta Susa'), (first['number'], first['category'], first['headsign']))
+        self.assertEqual(['20261012', '20261013', '20261014', '20261015', '20261016', '20261017'], first['dates'])
+        self.assertEqual([0, 1], first['calls'])
+        self.assertEqual([7 * 3600 + 60, 7 * 3600 + 60, 7 * 3600 + 120, 7 * 3600 + 120], first['times'])
+
 
 class OfflineCityGeometryTest(unittest.TestCase):
     def test_only_walkable_highways_become_footpaths(self):

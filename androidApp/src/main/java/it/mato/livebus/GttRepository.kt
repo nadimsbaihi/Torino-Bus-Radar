@@ -37,6 +37,29 @@ data class LiveVehicle(
     fun ageSecondsAt(nowSeconds: Long): Long = (nowSeconds - timestampSeconds).coerceAtLeast(0)
 }
 
+/** What GTT's alerts say about the metro now; only short-lived ones, such as a closure, count. */
+object MetroAlerts {
+    // GTT's metro in its feeds; the live positions never carry it, but the alerts do.
+    const val ROUTE_ID = "METROU"
+    // A bulletin that stands for months ("lift status", posted for ten years) is not news.
+    private const val MAX_SPAN_SECONDS = 60L * 24 * 3600
+
+    fun from(feed: GtfsRealtime.FeedMessage, nowSeconds: Long): List<String> =
+        feed.entityList.mapNotNull { entity ->
+            val alert = entity.alert.takeIf { entity.hasAlert() } ?: return@mapNotNull null
+            if (alert.informedEntityList.none { it.routeId.removePrefix("gtt:") == ROUTE_ID }) return@mapNotNull null
+            val periods = alert.activePeriodList
+            val current = periods.isEmpty() || periods.any { period ->
+                (!period.hasStart() || period.start <= nowSeconds) && (!period.hasEnd() || nowSeconds < period.end)
+            }
+            val standing = periods.isEmpty() || periods.any { period ->
+                !period.hasStart() || !period.hasEnd() || period.end - period.start > MAX_SPAN_SECONDS
+            }
+            if (!current || standing) return@mapNotNull null
+            alert.headerText.translationList.firstOrNull()?.text?.trim()?.takeIf(String::isNotEmpty)
+        }.distinct()
+}
+
 class GttRepository {
     private val refreshLock = Mutex()
     private var cachedVehicles: List<LiveVehicle>? = null
@@ -61,15 +84,45 @@ class GttRepository {
         return vehicles.filter { now - it.timestampSeconds in -30..300 }
     }
 
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val alertsLock = Mutex()
+    private var cachedMetroAlerts: List<String>? = null
+    private var alertsFetchedAtMillis = 0L
+
+    /** GTT's current notices about the metro, refreshed every few minutes. */
+    suspend fun metroAlerts(): List<String> = alertsLock.withLock {
+        cachedMetroAlerts?.takeIf { SystemClock.elapsedRealtime() - alertsFetchedAtMillis < 300_000 }
+            ?.let { return@withLock it }
+        val alerts = withContext(Dispatchers.IO) {
+            fetch(ALERTS_URL).use { response ->
+                check(response.isSuccessful) { "GTT alerts returned ${response.code}" }
+                MetroAlerts.from(GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream()),
+                    System.currentTimeMillis() / 1000)
+            }
+        }
+        cachedMetroAlerts = alerts
+        alertsFetchedAtMillis = SystemClock.elapsedRealtime()
+        alerts
+    }
+
     private suspend fun fetchVehicles(): List<LiveVehicle> {
+        Log.d(TAG, "Requesting GTT vehicle positions")
+        val response = fetch(VEHICLE_POSITIONS_URL)
+        return response.use {
+            check(response.isSuccessful) { "GTT feed returned ${response.code}" }
+            val feed = GtfsRealtime.FeedMessage.parseFrom(
+                requireNotNull(response.body).byteStream()
+            )
+            decodeVehicles(feed)
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private suspend fun fetch(url: String): Response {
         val request = Request.Builder()
-            .url(VEHICLE_POSITIONS_URL)
+            .url(url)
             .header("User-Agent", "Torino-Bus-Radar-Android/0.1")
             .build()
-
-        Log.d(TAG, "Requesting GTT vehicle positions")
-        val response = suspendCancellableCoroutine<Response> { continuation ->
+        return suspendCancellableCoroutine { continuation ->
             val call = client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
@@ -82,35 +135,33 @@ class GttRepository {
                 }
             })
         }
-        return response.use {
-            check(response.isSuccessful) { "GTT feed returned ${response.code}" }
-            val feed = GtfsRealtime.FeedMessage.parseFrom(
-                requireNotNull(response.body).byteStream()
+    }
+
+    private fun decodeVehicles(feed: GtfsRealtime.FeedMessage): List<LiveVehicle> {
+        val vehicles = feed.entityList.mapNotNull { entity ->
+            if (!entity.hasVehicle() || !entity.vehicle.hasPosition()) return@mapNotNull null
+            val update = entity.vehicle
+            // A vehicle with no GPS fix reports 0, 0: open sea off Africa, not a bus.
+            if (update.position.latitude == 0f && update.position.longitude == 0f) return@mapNotNull null
+            LiveVehicle(
+                id = update.vehicle.id.takeIf(String::isNotBlank) ?: entity.id,
+                routeId = update.trip.routeId.removePrefix("gtt:"),
+                tripId = update.trip.tripId.takeIf(String::isNotBlank),
+                latitude = update.position.latitude.toDouble(),
+                longitude = update.position.longitude.toDouble(),
+                bearing = update.position.bearing.takeIf { update.position.hasBearing() },
+                timestampSeconds = if (update.hasTimestamp()) update.timestamp else feed.header.timestamp,
+                label = update.vehicle.label.takeIf(String::isNotBlank)
             )
-            val vehicles = feed.entityList.mapNotNull { entity ->
-                if (!entity.hasVehicle() || !entity.vehicle.hasPosition()) return@mapNotNull null
-                val update = entity.vehicle
-                // A vehicle with no GPS fix reports 0, 0: open sea off Africa, not a bus.
-                if (update.position.latitude == 0f && update.position.longitude == 0f) return@mapNotNull null
-                LiveVehicle(
-                    id = update.vehicle.id.takeIf(String::isNotBlank) ?: entity.id,
-                    routeId = update.trip.routeId.removePrefix("gtt:"),
-                    tripId = update.trip.tripId.takeIf(String::isNotBlank),
-                    latitude = update.position.latitude.toDouble(),
-                    longitude = update.position.longitude.toDouble(),
-                    bearing = update.position.bearing.takeIf { update.position.hasBearing() },
-                    timestampSeconds = if (update.hasTimestamp()) update.timestamp else feed.header.timestamp,
-                    label = update.vehicle.label.takeIf(String::isNotBlank)
-                )
-            }
-            Log.i(TAG, "Decoded ${vehicles.size} live GTT vehicles")
-            vehicles
         }
+        Log.i(TAG, "Decoded ${vehicles.size} live GTT vehicles")
+        return vehicles
     }
 
     private companion object {
         const val TAG = "GttRepository"
         const val VEHICLE_POSITIONS_URL =
             "https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx"
+        const val ALERTS_URL = "https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx"
     }
 }

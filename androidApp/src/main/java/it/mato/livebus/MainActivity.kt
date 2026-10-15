@@ -143,6 +143,8 @@ class MainActivity : AppCompatActivity() {
     private var automaticReplanPending = false
     private var missingBusRefreshes = 0
     private var includeTrains = true
+    // GTT's notices about the metro (a closure, buses replacing it), as of the last search.
+    private var metroAlerts: List<String> = emptyList()
     // The journey options offer the least walking and the fastest trip; the first pick weighs both.
     private val walkingPreference = WalkingPreference.BALANCED
     private val busIconCache = mutableMapOf<Triple<Boolean, Int, String>, BitmapDrawable>()
@@ -385,10 +387,14 @@ class MainActivity : AppCompatActivity() {
                 step.kind == StepKind.WALK -> R.drawable.ic_walk
                 step.kind == StepKind.TRANSFER -> R.drawable.ic_transfer
                 step.kind == StepKind.TRAIN -> R.drawable.ic_train
+                step.kind == StepKind.METRO -> R.drawable.ic_metro
                 else -> R.drawable.ic_bus
             })
-            ImageViewCompat.setImageTintList(row.stepIcon, ColorStateList.valueOf(
-                getColor(if (step.kind == StepKind.TRAIN) R.color.train_blue else R.color.deep_green)))
+            ImageViewCompat.setImageTintList(row.stepIcon, ColorStateList.valueOf(getColor(when (step.kind) {
+                StepKind.TRAIN -> R.color.train_blue
+                StepKind.METRO -> R.color.metro_red
+                else -> R.color.deep_green
+            })))
             step.target?.let { target ->
                 row.stepDirections.visibility = View.VISIBLE
                 row.stepDirections.contentDescription = getString(R.string.step_directions_for,
@@ -1030,10 +1036,21 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                             }
                         }
                     }
+                    val metroAlertsTask = async {
+                        try {
+                            repository.metroAlerts()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            Log.w(TAG, "Metro alerts unavailable", error)
+                            emptyList()
+                        }
+                    }
                     val address = addressTask.await()
                     if (address == null) {
                         originTask.cancel()
                         vehiclesTask.cancel()
+                        metroAlertsTask.cancel()
                         showJourneyMessage(getString(R.string.address_not_found))
                         binding.destinationInput.showDropDown()
                         return@coroutineScope
@@ -1045,6 +1062,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     val origin = originTask.await()
                     if (origin == null) {
                         vehiclesTask.cancel()
+                        metroAlertsTask.cancel()
                         showLocationHint()
                         return@coroutineScope
                     }
@@ -1058,10 +1076,12 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                         }
                     }
                     val planningTime = TrainIndex.now()
-                    val trainTask = if (searchTrains) async(Dispatchers.Default) {
+                    // The metro is always on offer; the trains only when the rider wants them.
+                    val scheduled = if (searchTrains) trainIndex else trainIndex.metroOnly
+                    val trainTask = async(Dispatchers.Default) {
                         timed("trains") {
                             val (fromOrigin, fromDestination) = walkingTask.await()
-                            trainIndex.planScheduledJourney(
+                            scheduled.planScheduledJourney(
                                 origin.latitude, origin.longitude, address.first, address.second,
                                 now = planningTime,
                                 walkFromOrigin = fromOrigin::estimatedMetresTo,
@@ -1069,7 +1089,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                                 walkingPreference = preference
                             )
                         }
-                    } else null
+                    }
                     val vehicleResult = vehiclesTask.await()
                     val journeyVehicles = vehicleResult.getOrDefault(emptyList())
                     liveVehicles = journeyVehicles
@@ -1095,10 +1115,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                                         ?: Float.POSITIVE_INFINITY
                                 },
                                 walkingPreference = preference,
-                                trainsAt = if (searchTrains) planningTime else null
+                                trainsAt = planningTime,
+                                includeTrains = searchTrains
                             ), onDirectJourney = { direct ->
                                 withContext(Dispatchers.Main) {
-                                    val trainChoice = trainTask?.await()
+                                    val trainChoice = trainTask.await()
                                         ?.takeIf { worthTaking(it.estimatedTotalSeconds, walkSeconds) }
                                     val bus = direct?.takeIf { worthTaking(it.estimatedTotalSeconds, walkSeconds) }
                                     if (bus != null || trainChoice != null) {
@@ -1110,7 +1131,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                             })
                         }
                     }
-                    val plannedTrain = trainTask?.await()
+                    metroAlerts = metroAlertsTask.await()
+                    val plannedTrain = trainTask.await()
                     val trainChoice = plannedTrain?.takeIf { worthTaking(it.estimatedTotalSeconds, walkSeconds) }
                     val worthOptions = options.filter { worthTaking(it.totalSeconds, walkSeconds) }
                     val busChoice = worthOptions.firstOrNull { it.bus != null }?.bus
@@ -1278,7 +1300,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             ?: trainJourneyChoice?.let { JourneySteps.forTrain(this, it, directDestination) }
             ?: JourneySteps.forBus(this, requireNotNull(choice))
         val walkingFaster = directWalkingSeconds < transitSeconds
-        transitGuide = guide.copy(notes = guide.notes + listOfNotNull(
+        // The timetable cannot know the metro is shut; GTT's notices can.
+        val metroNotes = if (trainJourneyChoice?.isMetro == true) {
+            metroAlerts.map { JourneyNote(R.drawable.ic_metro, getString(R.string.metro_alert_note, it)) }
+        } else emptyList()
+        transitGuide = guide.copy(notes = metroNotes + guide.notes + listOfNotNull(
             customStart?.let { JourneyNote(R.drawable.ic_alert_off, getString(R.string.planned_from_note)) }
                 ?: if ((originLocation?.accuracy ?: 0f) > 200f) {
                     JourneyNote(R.drawable.ic_my_location, getString(R.string.location_approximate))
@@ -1750,6 +1776,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             GeoPoint(train.destination.latitude, train.destination.longitude),
             destination
         )
+        val colour = getColor(if (train.isMetro) R.color.metro_red else R.color.train_blue)
         if (points.size >= 2) {
             binding.map.overlays.add(mapLine().apply {
                 setPoints(points)
@@ -1759,13 +1786,15 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             })
             binding.map.overlays.add(mapLine().apply {
                 setPoints(points)
-                outlinePaint.color = getColor(R.color.train_blue)
+                outlinePaint.color = colour
                 outlinePaint.strokeWidth = 3.5f * resources.displayMetrics.density
                 outlinePaint.strokeCap = Paint.Cap.ROUND
             })
         }
-        addJourneyStopMarker(train.boardAt.asTransitStop(), getString(R.string.board_train_here), getColor(R.color.train_blue), busStop = false)
-        addJourneyStopMarker(train.destination.asTransitStop(), getString(R.string.exit_train_here), getColor(R.color.train_blue), 18, busStop = false)
+        addJourneyStopMarker(train.boardAt.asTransitStop(),
+            getString(if (train.isMetro) R.string.board_metro_here else R.string.board_train_here), colour, busStop = false)
+        addJourneyStopMarker(train.destination.asTransitStop(),
+            getString(if (train.isMetro) R.string.exit_metro_here else R.string.exit_train_here), colour, 18, busStop = false)
         if (showFinalDestination) addExactDestinationMarker(destination.latitude, destination.longitude)
     }
 
@@ -1943,8 +1972,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private fun requestAlert() {
-        if (trainJourneyChoice != null) {
-            showJourneyMessage(getString(R.string.train_alert_unavailable))
+        trainJourneyChoice?.let { train ->
+            showJourneyMessage(getString(
+                if (train.isMetro) R.string.metro_alert_unavailable else R.string.train_alert_unavailable))
             return
         }
         if (selectedPattern == null) {

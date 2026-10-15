@@ -37,10 +37,16 @@ data class ScheduledTrainJourney(
     val dayOffset: Int = 0
 ) {
     val totalWalkingMetres: Float get() = walkingMetres + destinationWalkMetres
+    // GTT's metro rides the same timetable path as the trains; its number is the line, "M1".
+    val isMetro: Boolean get() = category == TrainIndex.METRO
 }
 
+/** Scheduled rail: Trenitalia's local trains and GTT's metro, both from their timetables. */
 class TrainIndex private constructor(private val trips: List<TrainTrip>) {
     val stations: List<TrainStop> = trips.flatMap { it.stops }.distinctBy { it.id }
+
+    /** The metro alone, for a rider who leaves trains out: it runs like a bus line, every few minutes. */
+    val metroOnly: TrainIndex by lazy { TrainIndex(trips.filter { it.category == METRO }) }
 
     private val tripsByDate: Map<String, List<TrainTrip>> by lazy {
         val byDate = HashMap<String, MutableList<TrainTrip>>()
@@ -147,14 +153,24 @@ class TrainIndex private constructor(private val trips: List<TrainTrip>) {
         fun now(): LocalDateTime = LocalDateTime.now(ROME)
         private val DATE = DateTimeFormatter.BASIC_ISO_DATE
 
-        fun load(context: Context): TrainIndex {
-            val root = JSONObject(
-                context.assets.open("trenitalia_rail_index.json").bufferedReader().use { it.readText() }
-            )
+        const val METRO = "METRO"
+
+        fun load(context: Context): TrainIndex =
+            TrainIndex(ASSETS.flatMap { name ->
+                parse(JSONObject(context.assets.open(name).bufferedReader().use { it.readText() }))
+            })
+
+        private val ASSETS = listOf("trenitalia_rail_index.json", "gtt_metro_index.json")
+
+        /**
+         * Version 1 lists every stop of a run in full; version 2 lists each station once and a run
+         * as station numbers ("calls") with an arrival and a departure for each ("times").
+         */
+        private fun parse(root: JSONObject): List<TrainTrip> {
+            val stations = root.optJSONArray("stations")
             val trips = root.getJSONArray("trips")
-            return TrainIndex((0 until trips.length()).map { index ->
+            return (0 until trips.length()).map { index ->
                 val item = trips.getJSONObject(index)
-                val stops = item.getJSONArray("stops")
                 TrainTrip(
                     number = item.getString("number"),
                     category = item.getString("category"),
@@ -162,20 +178,32 @@ class TrainIndex private constructor(private val trips: List<TrainTrip>) {
                     activeDates = item.getJSONArray("dates").let { dates ->
                         (0 until dates.length()).mapTo(mutableSetOf()) { dates.getString(it) }
                     },
-                    stops = (0 until stops.length()).map { stopIndex ->
-                        val stop = stops.getJSONObject(stopIndex)
-                        TrainStop(
-                            id = stop.getString("id"),
-                            name = stop.getString("name"),
-                            latitude = stop.getDouble("lat"),
-                            longitude = stop.getDouble("lon"),
-                            arrivalSeconds = stop.getInt("arrival"),
-                            departureSeconds = stop.getInt("departure")
-                        )
+                    stops = if (stations == null) {
+                        val stops = item.getJSONArray("stops")
+                        (0 until stops.length()).map { stopIndex ->
+                            val stop = stops.getJSONObject(stopIndex)
+                            trainStop(stop, stop.getInt("arrival"), stop.getInt("departure"))
+                        }
+                    } else {
+                        val calls = item.getJSONArray("calls")
+                        val times = item.getJSONArray("times")
+                        (0 until calls.length()).map { call ->
+                            trainStop(stations.getJSONObject(calls.getInt(call)),
+                                times.getInt(2 * call), times.getInt(2 * call + 1))
+                        }
                     }
                 )
-            })
+            }
         }
+
+        private fun trainStop(station: JSONObject, arrival: Int, departure: Int) = TrainStop(
+            id = station.getString("id"),
+            name = station.getString("name"),
+            latitude = station.getDouble("lat"),
+            longitude = station.getDouble("lon"),
+            arrivalSeconds = arrival,
+            departureSeconds = departure
+        )
 
         fun metres(value: Float) = value.roundToInt()
 

@@ -53,7 +53,11 @@
     <string name="no_direct_route">Non ci sono bus che puoi prendere tra le linee con dati disponibili. Riprova tra poco.</string>
     <string name="board_train_here">Sali sul treno qui</string>
     <string name="exit_train_here">Scendi dal treno qui</string>
+    <string name="board_metro_here">Sali sulla metro qui</string>
+    <string name="exit_metro_here">Scendi dalla metro qui</string>
     <string name="train_alert_unavailable">Gli avvisi per i treni non sono ancora disponibili: gli orari Trenitalia non includono la posizione in tempo reale.</string>
+    <string name="metro_alert_unavailable">Gli avvisi per la metro non sono ancora disponibili: gli orari vengono dalla tabella, non dalla posizione in tempo reale.</string>
+    <string name="metro_alert_note">GTT sulla metro: %1$s</string>
     <string name="journey_feed_unavailable">Le posizioni dei bus GTT non sono disponibili. Controlla la connessione e riprova.</string>
     <string name="no_live_vehicles_now">Al momento non ci sono posizioni aggiornate dei bus GTT. I dati potrebbero essere in ritardo o i bus fuori servizio. Riprova tra poco.</string>
     <string name="journey_found">Linea %1$s per %2$s · bus a %3$d m · cammina per %5$d m fino a %4$s; arrivo previsto tra circa %6$d min · %7$d fermate · scendi a %8$s, a %9$d m dalla destinazione</string>
@@ -121,6 +125,7 @@
     <string name="change_wait">attesa ~%1$d min</string>
     <string name="change_tight">cambio stretto</string>
     <string name="step_take_train">%1$s %2$s → %3$s</string>
+    <string name="step_take_metro">%1$s → %2$s</string>
     <string name="train_timetable_note">Orari da tabella</string>
     <plurals name="live_vehicle_count">
         <item quantity="one">%1$d veicolo in tempo reale sulla linea %2$s</item>

@@ -8,7 +8,7 @@ import org.osmdroid.util.GeoPoint
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
-enum class StepKind { WALK, BUS, TRAIN, TRANSFER }
+enum class StepKind { WALK, BUS, TRAIN, METRO, TRANSFER }
 
 /**
  * One line of a journey: what and where in [text], when in [detail]. A [target] marks a walk the
@@ -69,7 +69,7 @@ object JourneySteps {
             walkToDestination(context, train.destinationWalkMetres, train.destination.asTransitStop(), destination)
                 ?.let(::add)
         },
-        listOf(timetableNote(context))
+        listOf(timetableNote(context, train))
     )
 
     fun forMixed(context: Context, mixed: MixedJourney, destination: GeoPoint? = null): JourneyGuide {
@@ -94,7 +94,7 @@ object JourneySteps {
         }
         // A bus planned for after the train is judged by the clock then; "in N min" from now would mislead.
         return JourneyGuide(steps, busNotes(context, bus, withBackup = mixed.busFirst) +
-            timetableNote(context))
+            timetableNote(context, train))
     }
 
     fun forWalking(context: Context, metres: Int, minutes: Int, destination: GeoPoint) = JourneyGuide(
@@ -148,13 +148,18 @@ object JourneySteps {
         if (chance < TIGHT_CHANGE_CHANCE || leg.waitSeconds < 60f) context.getString(R.string.change_tight)
         else context.getString(R.string.change_wait, (leg.waitSeconds / 60f).roundToInt())
 
-    private fun trainLeg(context: Context, train: ScheduledTrainJourney) = listOf(
-        JourneyStep(StepKind.TRAIN, context.getString(R.string.step_take_train,
-            trainCategory(train.category), train.number, stopName(train.headsign)),
-            detail = formatClock(train.departureSeconds, train.dayOffset)),
-        JourneyStep(StepKind.TRAIN, stopName(train.destination.name),
-            detail = formatClock(train.arrivalSeconds, train.dayOffset), getOff = true)
-    )
+    private fun trainLeg(context: Context, train: ScheduledTrainJourney): List<JourneyStep> {
+        val kind = if (train.isMetro) StepKind.METRO else StepKind.TRAIN
+        // A metro train has no number to look for, only the line and where it is going.
+        val board = if (train.isMetro) context.getString(R.string.step_take_metro, train.number, stopName(train.headsign))
+            else context.getString(R.string.step_take_train,
+                trainCategory(train.category), train.number, stopName(train.headsign))
+        return listOf(
+            JourneyStep(kind, board, detail = formatClock(train.departureSeconds, train.dayOffset)),
+            JourneyStep(kind, stopName(train.destination.name),
+                detail = formatClock(train.arrivalSeconds, train.dayOffset), getOff = true)
+        )
+    }
 
     private fun busNotes(context: Context, bus: JourneyChoice, withBackup: Boolean = true): List<JourneyNote> {
         val age = maxOf(bus.vehicle.ageSeconds, bus.secondLeg?.vehicle?.ageSeconds ?: 0)
@@ -180,8 +185,9 @@ object JourneySteps {
         else -> TransitIndex.readableCase(category.trim())
     }
 
-    private fun timetableNote(context: Context) =
-        JourneyNote(R.drawable.ic_train, context.getString(R.string.train_timetable_note))
+    private fun timetableNote(context: Context, train: ScheduledTrainJourney) =
+        JourneyNote(if (train.isMetro) R.drawable.ic_metro else R.drawable.ic_train,
+            context.getString(R.string.train_timetable_note))
 
     private fun walkTo(context: Context, metres: Float, stop: TransitStop, from: TransitStop? = null) =
         walkTo(context, metres, stop.name, GeoPoint(stop.latitude, stop.longitude), from)
