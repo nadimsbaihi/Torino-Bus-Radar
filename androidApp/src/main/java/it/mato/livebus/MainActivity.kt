@@ -2125,68 +2125,52 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val labelDiameter = 2f * (busLabelRadius(lines.map(paint::measureText), paint.textSize) +
             ring + 0.5f * density)
         val busDiameter = max((if (closest) 30f else 21f) * density, labelDiameter)
-        val arrowDiameter = (if (closest) 8f else 5f) * density
         val busRadius = busDiameter / 2f
-        val arrowRadius = arrowDiameter / 2f
-        val gap = 2f * density
-        val extent = busRadius + gap + arrowDiameter
+        // The bus drawn as a teardrop: its circle runs out to a point the way it is going, like a
+        // compass needle, and stays a plain circle when the way is unknown.
+        val nose = max(busRadius * 0.55f, 6f * density)
+        val extent = busRadius + nose + ring
         val bitmapSize = (extent * 2f).roundToInt()
         val bitmap = Bitmap.createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val center = bitmapSize / 2f
         val color = if (closest) getColor(R.color.route_orange) else getColor(R.color.deep_green)
 
+        val outline = Path().apply { addCircle(center, center, busRadius - ring / 2f, Path.Direction.CW) }
+        bearing?.let {
+            val angle = Math.toRadians(it.toDouble() - 90.0)
+            // The sides leave the circle where they meet it smoothly (tangents from the tip).
+            val tipDistance = busRadius - ring / 2f + nose
+            val spread = kotlin.math.acos(((busRadius - ring / 2f) / tipDistance).toDouble())
+            fun at(radians: Double, distance: Float) = Pair(
+                center + kotlin.math.cos(radians).toFloat() * distance,
+                center + kotlin.math.sin(radians).toFloat() * distance)
+            val (tipX, tipY) = at(angle, tipDistance)
+            val (leftX, leftY) = at(angle - spread, busRadius - ring / 2f)
+            val (rightX, rightY) = at(angle + spread, busRadius - ring / 2f)
+            outline.op(Path().apply {
+                moveTo(tipX, tipY)
+                lineTo(leftX, leftY)
+                lineTo(center, center)
+                lineTo(rightX, rightY)
+                close()
+            }, Path.Op.UNION)
+        }
+
         paint.style = Paint.Style.FILL
         paint.color = if (closest) color else getColor(R.color.map_face)
-        canvas.drawCircle(center, center, busRadius, paint)
+        canvas.drawPath(outline, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = ring
+        paint.strokeJoin = Paint.Join.ROUND
         paint.color = if (closest) getColor(R.color.map_on_accent) else color
-        canvas.drawCircle(center, center, busRadius - paint.strokeWidth / 2f, paint)
+        canvas.drawPath(outline, paint)
 
         paint.style = Paint.Style.FILL
         paint.color = if (closest) getColor(R.color.map_on_accent) else color
         lines.forEachIndexed { index, line ->
             val offset = (index - (lines.size - 1) / 2f) * paint.textSize
             canvas.drawText(line, center, center + offset - (paint.ascent() + paint.descent()) / 2, paint)
-        }
-
-        bearing?.let {
-            val angle = Math.toRadians(it.toDouble() - 90.0)
-            val directionX = kotlin.math.cos(angle).toFloat()
-            val directionY = kotlin.math.sin(angle).toFloat()
-            val perpendicularX = -directionY
-            val perpendicularY = directionX
-            val separation = busRadius + gap + arrowRadius
-            val arrowX = center + directionX * separation
-            val arrowY = center + directionY * separation
-
-            paint.style = Paint.Style.FILL
-            paint.color = getColor(R.color.map_face)
-            canvas.drawCircle(arrowX, arrowY, arrowRadius, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.5f * density
-            paint.color = color
-            canvas.drawCircle(arrowX, arrowY, arrowRadius - paint.strokeWidth / 2f, paint)
-
-            val tip = arrowRadius * 0.72f
-            val back = arrowRadius * 0.48f
-            val halfBase = arrowRadius * 0.48f
-            val arrowPath = Path().apply {
-                moveTo(arrowX + directionX * tip, arrowY + directionY * tip)
-                lineTo(
-                    arrowX - directionX * back + perpendicularX * halfBase,
-                    arrowY - directionY * back + perpendicularY * halfBase
-                )
-                lineTo(
-                    arrowX - directionX * back - perpendicularX * halfBase,
-                    arrowY - directionY * back - perpendicularY * halfBase
-                )
-                close()
-            }
-            paint.style = Paint.Style.FILL
-            paint.color = color
-            canvas.drawPath(arrowPath, paint)
         }
         return BitmapDrawable(resources, bitmap)
     }

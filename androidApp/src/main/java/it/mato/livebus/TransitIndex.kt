@@ -1013,20 +1013,60 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     }
 
     /**
-     * Where a bus should look like it is pointing: its own heading, corrected to the direction of
-     * the route segment it is on when the heading is missing or points the wrong way along it.
+     * Where a bus should look like it is pointing, or null when that is not known well enough to
+     * draw: a wrong point sends a rider to the wrong side of the street, a plain circle does not.
+     *
+     * A bus on a known trip points along its route, its own heading kept unless it runs against the
+     * route. A bus whose line is guessed points only once it has been seen moving the way the guess
+     * runs. GTT's bearing contradicts the bus's own trip for about one bus in ten, and a trip update
+     * may already name the run back from the terminus, so neither is enough on its own (measured on
+     * live feeds: with movement, under 1% of the points shown are wrong; with the bearing, ~5%).
      */
     fun displayHeading(vehicle: LiveVehicle): Float? {
         val heading = headingOf(vehicle)
-        val pattern = matchDirection(vehicle) ?: return heading
-        val segment = progressOf(vehicle, pattern) ?: return heading
+        val exact = exactTripPattern(vehicle) != null
+        val moving = freshMovement(vehicle)
+        val pattern = matchDirection(vehicle) ?: return if (exact) heading else moving
+        val route = routeDirection(vehicle, pattern) ?: return if (exact) heading else moving
+        if (exact) {
+            return if (heading == null ||
+                angleDifference(heading.toDouble(), route.toDouble()) > MAX_FORWARD_BEARING_DIFFERENCE) route
+            else heading
+        }
+        val seenGoingThatWay = moving != null &&
+            angleDifference(moving.toDouble(), route.toDouble()) <= MAX_FORWARD_BEARING_DIFFERENCE
+        return if (seenGoingThatWay) route else null
+    }
+
+    /** Which way [pattern] runs where [vehicle] is, or null when the bus is not on it. */
+    private fun routeDirection(vehicle: LiveVehicle, pattern: TransitPattern): Float? {
+        val segment = progressOf(vehicle, pattern) ?: return null
         val from = pattern.stops[segment]
         val to = pattern.stops[segment + 1]
-        if (distanceToSegment(vehicle.latitude, vehicle.longitude, from, to) > MAX_SNAP_METRES) return heading
-        val route = bearing(from, to).toFloat()
-        return if (heading == null ||
-            angleDifference(heading.toDouble(), route.toDouble()) > MAX_FORWARD_BEARING_DIFFERENCE) route
-        else heading
+        if (distanceToSegment(vehicle.latitude, vehicle.longitude, from, to) > MAX_SNAP_METRES) return null
+        // The road's own direction where the bus is, so the marker turns with a bend between stops.
+        return roadBearing(vehicle, pattern, segment) ?: bearing(from, to).toFloat()
+    }
+
+    /** The way the bus has been seen moving lately, from its own fixes; null until it has moved. */
+    @Synchronized
+    private fun freshMovement(vehicle: LiveVehicle): Float? {
+        val motion = vehicleMotion[vehicle.id] ?: return null
+        return motion.movementHeading?.takeIf {
+            vehicle.timestampSeconds - motion.movementTimestamp <= MOVEMENT_FRESH_SECONDS
+        }
+    }
+
+    /** Which way the road of [pattern] runs where [vehicle] is, if it has a shape the bus is on. */
+    private fun roadBearing(vehicle: LiveVehicle, pattern: TransitPattern, segment: Int): Float? {
+        val shape = pattern.shape ?: return null
+        val alignment = alignmentOf(pattern) ?: return null
+        // As for the course: a stop either side at most, so a road passed twice cannot mislead.
+        val last = pattern.stops.size - 1
+        val fix = shape.nearest(vehicle.latitude, vehicle.longitude,
+            alignment.chainages[(segment - 1).coerceAtLeast(0)], alignment.chainages[(segment + 2).coerceAtMost(last)])
+            ?.takeIf { it.distance <= MAX_SNAP_METRES } ?: return null
+        return shape.bearingAt(fix.chainage)
     }
 
     private class VehicleMotion(

@@ -19,6 +19,16 @@ class RouteShapeTest {
         TransitStop("back-1", "Back 1", 45.001, 7.018), TransitStop("back-2", "Back 2", 45.001, 7.002)
     )
 
+    @Test fun theRoadsDirectionChangesAtItsBends() {
+        // East along the first street, north at the corner, west along the second.
+        val start = outAndBack.nearest(45.000, 7.010, 0.0, outAndBack.lengthMetres)!!.chainage
+        val corner = outAndBack.nearest(45.0005, 7.020, 0.0, outAndBack.lengthMetres)!!.chainage
+        val back = outAndBack.nearest(45.001, 7.010, 0.0, outAndBack.lengthMetres)!!.chainage
+        assertEquals(90f, outAndBack.bearingAt(start), 0.5f)
+        assertEquals(0f, outAndBack.bearingAt(corner), 0.5f)
+        assertEquals(270f, outAndBack.bearingAt(back), 0.5f)
+    }
+
     @Test fun decodesTheReferencePolyline() {
         val shape = RouteShape.decode("_p~iF~ps|U_ulLnnqC_mqNvxq`@")!!
         assertArrayEquals(doubleArrayOf(38.5, 40.7, 43.252), shape.latitudes, 1e-9)

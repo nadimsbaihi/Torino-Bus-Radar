@@ -283,6 +283,18 @@ class TransitIndexTest {
         assertNull(index.displayHeading(offRoute.copy(bearing = null)))
     }
 
+    @Test fun aGuessedBusPointsOnlyOnceItIsSeenMovingThatWay() {
+        val index = index(first)
+        val now = System.currentTimeMillis() / 1000
+        // No trip: GTT's bearing alone is wrong too often to draw.
+        val guessed = vehicle(first, 45.002, 7.0).copy(tripId = null, bearing = 5f, timestampSeconds = now - 30)
+        assertNull(index.displayHeading(guessed))
+        // Seen 330 m further north half a minute later: now it points, along the line.
+        assertEquals(0f, index.displayHeading(guessed.copy(latitude = 45.005, timestampSeconds = now))!!, 1f)
+        // A bus on a known trip points straight away.
+        assertEquals(0f, index.displayHeading(vehicle(first, 45.005, 7.0).copy(bearing = 0f))!!, 1f)
+    }
+
     @Test fun exactTripStillTakesPrecedenceOverHeading() = runBlocking {
         val bus = vehicle(first, 45.0, 7.0).copy(bearing = 180f)
         assertEquals(first, index(first).matchDirection(bus))

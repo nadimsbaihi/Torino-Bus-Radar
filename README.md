@@ -169,6 +169,10 @@ network behavior, and map interaction.
   variants first. They can name the next run while the bus finishes the current one, so they
   narrow the guess rather than set the trip. Otherwise only the line's variants that run that day
   (holidays included) count: on a weekday, a 67 is not taken for the Sunday run to Borgo Vittoria.
+- A bus marker points the way the bus is going: at once for a bus on a known trip, and for a bus
+  whose trip is guessed only after it has been seen moving that way (usually within one or two
+  refreshes). GTT's own bearing contradicts the bus's trip for about one bus in ten, so it is not
+  enough by itself; until then the marker is a plain circle.
 - The metro's notices come from GTT's alerts feed
   (`https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx`). Only notices that last at most
   60 days count; GTT keeps standing bulletins (such as the state of the lifts) up for years.

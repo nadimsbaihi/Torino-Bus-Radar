@@ -85,6 +85,16 @@ class RouteShape(val latitudes: DoubleArray, val longitudes: DoubleArray) {
         return Alignment(chainages, worst)
     }
 
+    /** Which way the road runs at [chainage], in compass degrees (0 north, 90 east). */
+    fun bearingAt(chainage: Double): Float {
+        var segment = 0
+        while (segment < chain.size - 2 && chain[segment + 1] <= chainage) segment++
+        // A repeated point has no direction; look past it.
+        while (segment < chain.size - 2 && chain[segment + 1] == chain[segment]) segment++
+        val degrees = Math.toDegrees(kotlin.math.atan2(xs[segment + 1] - xs[segment], ys[segment + 1] - ys[segment]))
+        return ((degrees + 360.0) % 360.0).toFloat()
+    }
+
     /** The shape between two chainages, with interpolated ends. */
     fun slice(from: Double, to: Double): List<GeoPoint> {
         val start = from.coerceIn(0.0, lengthMetres)
