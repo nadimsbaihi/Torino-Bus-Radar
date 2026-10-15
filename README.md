@@ -179,6 +179,15 @@ network behavior, and map interaction.
 
 </details>
 
+## License
+
+The app's code and tools are under the [MIT License](LICENSE). The data bundled in
+`androidApp/src/main/assets` keeps its own licences: GTT's data (non-commercial use, with credit),
+the Trenitalia timetable (CC BY 4.0), and the OpenStreetMap-derived map, search and walking data
+(ODbL 1.0). See [Data and credits](#data-and-credits) and the bundled
+[NOTICE](androidApp/src/main/assets/offline/NOTICE.txt). The libraries the app is built with keep
+their own licences too; their texts are in `androidApp/src/main/assets/licenses`.
+
 ## Privacy
 
 The app reads your location from the phone's location service (Google Play services) to plan
