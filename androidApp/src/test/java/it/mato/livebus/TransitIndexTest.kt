@@ -456,6 +456,25 @@ class TransitIndexTest {
         assertNotNull(index.matchDirection(bus.copy(id = "bus4", tripHints = listOf("unknown"))))
     }
 
+    @Test fun aRideFollowsItsRoadsBetweenTheStopsItUses() {
+        // The road bends east between each pair of stops.
+        val road = RouteShape(doubleArrayOf(45.0, 45.005, 45.01, 45.015, 45.02),
+            doubleArrayOf(7.0, 7.003, 7.0, 7.003, 7.0))
+        val stops = listOf(stop("a", 45.0, 7.0), stop("b", 45.01, 7.0), stop("c", 45.02, 7.0))
+        val shaped = TransitPattern("shaped", "M", "M1", "Bengasi", "0", emptySet(), stops, shape = road)
+        val index = index(shaped)
+
+        val ride = index.pathBetween(shaped, 1, 2)
+        assertEquals(listOf(45.01, 45.015, 45.02), ride.map { it.latitude })
+        assertEquals(7.003, ride[1].longitude, 1e-9)
+        // The metro, planned from its timetable, borrows the same line by its stations.
+        assertEquals(ride, index.pathAlongRoute("M1", "b", "c"))
+        assertNull(index.pathAlongRoute("M1", "c", "a"))
+        // Without a shape, straight from stop to stop.
+        val plain = shaped.copy(id = "plain", shape = null)
+        assertEquals(listOf(45.0, 45.01, 45.02), index(plain).pathBetween(plain, 0, 2).map { it.latitude })
+    }
+
     private fun stop(id: String, lat: Double, lon: Double) = TransitStop(id, id, lat, lon)
     private fun pattern(id: String, stops: List<TransitStop>) =
         TransitPattern(id, id, id, id, "0", setOf(id), stops)

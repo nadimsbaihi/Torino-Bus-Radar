@@ -1103,6 +1103,35 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         )
     }
 
+    /**
+     * The way between stops [from] and [to] of [pattern] (indices), along its roads when its shape
+     * fits its stops, and in straight lines between the stops otherwise.
+     */
+    fun pathBetween(pattern: TransitPattern, from: Int, to: Int): List<GeoPoint> {
+        if (from < 0 || to <= from || to > pattern.stops.lastIndex) return emptyList()
+        val shape = pattern.shape
+        val alignment = alignmentOf(pattern)
+        if (shape != null && alignment != null) {
+            return shape.slice(alignment.chainages[from], alignment.chainages[to])
+        }
+        return pattern.stops.subList(from, to + 1).map { GeoPoint(it.latitude, it.longitude) }
+    }
+
+    /**
+     * The way from stop [fromStopId] to [toStopId] along a pattern of the line named [route] that
+     * calls at both in that order: the metro's tunnel for a ride planned from its timetable.
+     */
+    fun pathAlongRoute(route: String, fromStopId: String, toStopId: String): List<GeoPoint>? {
+        for (pattern in patterns) {
+            if (pattern.route != route) continue
+            val from = pattern.stops.indexOfFirst { it.id == fromStopId }
+            if (from < 0) continue
+            val to = (from + 1..pattern.stops.lastIndex).firstOrNull { pattern.stops[it].id == toStopId } ?: continue
+            return pathBetween(pattern, from, to)
+        }
+        return null
+    }
+
     /** Index of the segment the vehicle is travelling on within [pattern], or null if it is off the line. */
     fun progressOf(vehicle: LiveVehicle, pattern: TransitPattern): Int? = progressIndex(vehicle, pattern)
 

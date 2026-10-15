@@ -1769,8 +1769,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
 
     private fun drawTrainJourneyLine(train: ScheduledTrainJourney, origin: GeoPoint,
                                      destination: GeoPoint, showFinalDestination: Boolean) {
-        val points = train.stops.subList(train.boardIndex, train.destinationIndex + 1)
-            .map { GeoPoint(it.latitude, it.longitude) }
+        val points = trainPoints(train)
         addWalkingConnector(origin, GeoPoint(train.boardAt.latitude, train.boardAt.longitude))
         addWalkingConnector(
             GeoPoint(train.destination.latitude, train.destination.longitude),
@@ -1836,22 +1835,26 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         })
     }
 
-    private fun journeyPoints(choice: JourneyChoice): List<GeoPoint> {
-        val stops = choice.pattern.stops
-        val start = stops.indexOfFirst { it.id == choice.boardAt.id }
-        val endStop = choice.transferAt ?: choice.destination
-        val end = stops.indexOfFirst { it.id == endStop.id }
-        if (start < 0 || end < start) return emptyList()
-        return stops.subList(start, end + 1).map { GeoPoint(it.latitude, it.longitude) }
-    }
+    /** The first bus's ride, along its roads like a highlighted course. */
+    private fun journeyPoints(choice: JourneyChoice): List<GeoPoint> =
+        transitIndex.pathBetween(choice.pattern, choice.boardStopIndex, choice.boardStopIndex + choice.stopCount)
 
     private fun secondLegPoints(choice: JourneyChoice): List<GeoPoint> {
         val leg = choice.secondLeg ?: return emptyList()
-        val start = leg.pattern.stops.indexOfFirst { it.id == leg.boardAt.id }
-        if (start < 0) return emptyList()
-        val end = (start + leg.stopCount).coerceAtMost(leg.pattern.stops.lastIndex)
-        return leg.pattern.stops.subList(start, end + 1).map { GeoPoint(it.latitude, it.longitude) }
+        val stops = leg.pattern.stops
+        // A line that loops calls at a stop twice: board where the ride ends at the right stop.
+        val start = stops.indices.firstOrNull {
+            stops[it].id == leg.boardAt.id && stops.getOrNull(it + leg.stopCount)?.id == leg.exitAt.id
+        } ?: return emptyList()
+        return transitIndex.pathBetween(leg.pattern, start, start + leg.stopCount)
     }
+
+    /** A ride on rails: the metro follows its tunnel; trains, whose tracks the app lacks, go station to station. */
+    private fun trainPoints(train: ScheduledTrainJourney): List<GeoPoint> =
+        train.takeIf { it.isMetro }?.let {
+            transitIndex.pathAlongRoute(it.number, it.boardAt.id, it.destination.id)
+        } ?: train.stops.subList(train.boardIndex, train.destinationIndex + 1)
+            .map { GeoPoint(it.latitude, it.longitude) }
 
     private fun addJourneyStopMarker(
         stop: TransitStop,
@@ -1929,13 +1932,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
         val transitPoints = if (walkingMode) emptyList() else {
             mixedJourneyChoice?.let { mixed ->
-                journeyPoints(mixed.bus) +
-                    mixed.train.stops.subList(mixed.train.boardIndex, mixed.train.destinationIndex + 1)
-                        .map { GeoPoint(it.latitude, it.longitude) }
-            } ?: trainJourneyChoice?.let { train ->
-                train.stops.subList(train.boardIndex, train.destinationIndex + 1)
-                    .map { GeoPoint(it.latitude, it.longitude) }
-            } ?: journeyChoice?.let { choice ->
+                journeyPoints(mixed.bus) + trainPoints(mixed.train)
+            } ?: trainJourneyChoice?.let(::trainPoints) ?: journeyChoice?.let { choice ->
                 journeyPoints(choice) + secondLegPoints(choice)
             }.orEmpty()
         }
