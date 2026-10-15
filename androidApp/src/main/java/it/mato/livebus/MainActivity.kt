@@ -1610,7 +1610,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val colour = getColor(R.color.course_magenta)
         val faded = ColorUtils.setAlphaComponent(colour, 110)
 
-        fun line(points: List<GeoPoint>, color: Int, widthDp: Float) = Polyline(binding.map).apply {
+        fun line(points: List<GeoPoint>, color: Int, widthDp: Float) = mapLine().apply {
             setPoints(points)
             outlinePaint.color = color
             outlinePaint.strokeWidth = widthDp * density
@@ -1687,14 +1687,14 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         )
         if (points.size >= 2) {
             // A white casing keeps the route leg readable over streets and labels.
-            binding.map.overlays.add(Polyline(binding.map).apply {
+            binding.map.overlays.add(mapLine().apply {
                 setPoints(points)
                 outlinePaint.color = getColor(R.color.map_casing)
                 outlinePaint.strokeWidth = 6f * resources.displayMetrics.density
                 outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
                 outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
             })
-            binding.map.overlays.add(Polyline(binding.map).apply {
+            binding.map.overlays.add(mapLine().apply {
                 setPoints(points)
                 outlinePaint.color = getColor(R.color.route_orange)
                 outlinePaint.strokeWidth = 3.5f * resources.displayMetrics.density
@@ -1725,7 +1725,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 }
             }
             for ((colour, width) in listOf(getColor(R.color.map_casing) to 6f, getColor(R.color.deep_green) to 3.5f)) {
-                binding.map.overlays.add(Polyline(binding.map).apply {
+                binding.map.overlays.add(mapLine().apply {
                     setPoints(secondPoints)
                     outlinePaint.color = colour
                     outlinePaint.strokeWidth = width * resources.displayMetrics.density
@@ -1754,13 +1754,13 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             destination
         )
         if (points.size >= 2) {
-            binding.map.overlays.add(Polyline(binding.map).apply {
+            binding.map.overlays.add(mapLine().apply {
                 setPoints(points)
                 outlinePaint.color = getColor(R.color.map_casing)
                 outlinePaint.strokeWidth = 6f * resources.displayMetrics.density
                 outlinePaint.strokeCap = Paint.Cap.ROUND
             })
-            binding.map.overlays.add(Polyline(binding.map).apply {
+            binding.map.overlays.add(mapLine().apply {
                 setPoints(points)
                 outlinePaint.color = getColor(R.color.train_blue)
                 outlinePaint.strokeWidth = 3.5f * resources.displayMetrics.density
@@ -1794,14 +1794,14 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun addWalkingPath(points: List<GeoPoint>) {
         val density = resources.displayMetrics.density
         val dash = DashPathEffect(floatArrayOf(9f * density, 7f * density), 0f)
-        binding.map.overlays.add(Polyline(binding.map).apply {
+        binding.map.overlays.add(mapLine().apply {
             setPoints(points)
             outlinePaint.color = getColor(R.color.map_casing)
             outlinePaint.strokeWidth = 5f * density
             outlinePaint.strokeCap = Paint.Cap.ROUND
             outlinePaint.pathEffect = dash
         })
-        binding.map.overlays.add(Polyline(binding.map).apply {
+        binding.map.overlays.add(mapLine().apply {
             setPoints(points)
             outlinePaint.color = getColor(R.color.deep_green)
             outlinePaint.strokeWidth = 2.5f * density
@@ -1852,6 +1852,14 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 setSize(size, size)
             }
         })
+    }
+
+    /**
+     * A line drawn on the map. Left alone, osmdroid opens a bubble with no words in it where a
+     * line is tapped; here the tap passes through to whatever lies under it, or the map.
+     */
+    private fun mapLine() = Polyline(binding.map).apply {
+        setOnClickListener { _, _, _ -> false }
     }
 
     private fun destinationPinIcon() = GradientDrawable().apply {

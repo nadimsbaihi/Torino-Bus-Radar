@@ -204,6 +204,14 @@ class BusMapVisibilityTest {
         val aheadPoints = courseLines().last().actualPoints
         assertEquals(listOf(45.075, 45.08, 45.09), aheadPoints.map { it.latitude })
         assertEquals(listOf(45.06, 45.07, 45.075), courseLines().first().actualPoints.map { it.latitude })
+        // A tapped line opens no empty bubble of its own; the tap goes on to the map.
+        val lineListener = Polyline::class.java.getDeclaredField("mOnClickListener")
+            .apply { isAccessible = true }
+        courseLines().forEach { line ->
+            val onClick = lineListener.get(line) as Polyline.OnClickListener
+            assertFalse(onClick.onClick(line, binding.map, line.actualPoints.first()))
+            assertFalse(line.isInfoWindowOpen)
+        }
         // The course sits below every marker, so the bus stays tappable.
         assertTrue(binding.map.overlays.indexOfLast { it is Polyline } <
             binding.map.overlays.indexOfFirst { it is Marker })
