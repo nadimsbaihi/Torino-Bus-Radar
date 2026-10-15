@@ -16,7 +16,6 @@
     <string name="appearance_dark">Dark</string>
     <string name="include_trains">Include trains in journeys</string>
     <string name="enter_destination">Enter a place or address in Torino</string>
-    <string name="direction_estimated_short">Estimated direction</string>
     <string name="bus_turnaround_note">%1$s leaves the terminus in ~%2$d min</string>
     <string name="app_name">Torino Bus Radar</string>
     <string name="map_description">Map of live GTT vehicle positions</string>

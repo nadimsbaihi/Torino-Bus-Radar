@@ -155,9 +155,6 @@ object JourneySteps {
                 JourneyNote(R.drawable.ic_schedule, context.getString(R.string.bus_turnaround_note,
                     bus.pattern.route, ceilMinutes(it.departsInSeconds)))
             },
-            if (bus.directionEstimated) {
-                JourneyNote(R.drawable.ic_explore, context.getString(R.string.direction_estimated_short))
-            } else null,
             if (age > STALE_POSITION_SECONDS) {
                 JourneyNote(R.drawable.ic_schedule, context.getString(R.string.bus_position_age, (age + 59) / 60))
             } else null

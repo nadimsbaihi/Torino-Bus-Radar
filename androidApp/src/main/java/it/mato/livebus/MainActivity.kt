@@ -1490,10 +1490,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     val direction = when {
                         layover != null -> null
                         pattern == null -> getString(R.string.bus_direction_unavailable)
-                        else -> getString(R.string.bus_destination, pattern.headsign) +
-                            if (vehicle.tripId !in pattern.tripIds) {
-                                " · " + getString(R.string.direction_estimated_short)
-                            } else ""
+                        else -> getString(R.string.bus_destination, pattern.headsign)
                     }
                     // Waiting at the terminus, where it will go next and when is all there is to say.
                     if (layover != null) {

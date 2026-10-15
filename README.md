@@ -159,7 +159,7 @@ network behavior, and map interaction.
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.
 - When a trip ID is missing, the app can estimate direction from the line,
-  route geometry, and heading. Inferred directions are labeled.
+  route geometry, and heading.
 
 </details>
 

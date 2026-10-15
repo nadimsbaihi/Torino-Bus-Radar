@@ -16,7 +16,6 @@
     <string name="appearance_dark">Scuro</string>
     <string name="include_trains">Includi i treni nei percorsi</string>
     <string name="enter_destination">Inserisci un luogo o un indirizzo a Torino</string>
-    <string name="direction_estimated_short">Direzione stimata</string>
     <string name="bus_turnaround_note">Il %1$s riparte dal capolinea tra ~%2$d min</string>
     <string name="app_name">Torino Bus Radar</string>
     <string name="map_description">Mappa dei veicoli GTT in tempo reale</string>

@@ -119,13 +119,14 @@ class JourneyStepsTest {
         ), lines(guide))
     }
 
-    @Test fun anEstimatedDirectionAndAnOldPositionBecomeNotes() {
+    @Test fun anOldPositionBecomesANoteButAnEstimatedDirectionDoesNot() {
         // Far enough from a minute boundary that the clock ticking mid-test cannot change the label.
+        // A trip the timetable does not know means the direction is a guess; riders need not hear that.
         val stale = vehicle.copy(tripId = "other", timestampSeconds = System.currentTimeMillis() / 1000 - 250)
         val guide = JourneySteps.forBus(context, bus().copy(vehicle = stale))
 
-        assertEquals(listOf("Estimated direction", "Position 5 min ago"), noteTexts(guide))
-        assertEquals(listOf(R.drawable.ic_explore, R.drawable.ic_schedule), guide.notes.map { it.icon })
+        assertEquals(listOf("Position 5 min ago"), noteTexts(guide))
+        assertEquals(listOf(R.drawable.ic_schedule), guide.notes.map { it.icon })
     }
 
     @Test fun aTrainJourneyListsTimesAndCreditsTheTimetable() {
