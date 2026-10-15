@@ -28,6 +28,8 @@ destination and whether to include trains.
 - **Bus and train journeys.** Find direct trips and connections, including
   bus-to-train and train-to-bus options. Trains include the SFM suburban lines
   (such as the airport and Venaria line), Regionale and Regionale Veloce.
+- **Changes.** A change to a second bus says when that bus is due and how long you
+  wait for it, or "tight change" when it is under a minute or likely to be missed.
 - **Journey steps, out of the way of the map.** Your journey opens as a short
   list of steps (walk, board, get off, walk) in a panel at the bottom, so the
   map stays in view. Pull the panel up for every step, or swipe it down to

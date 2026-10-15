@@ -118,6 +118,8 @@
     <string name="leave_in">parti tra ~%1$d min</string>
     <string name="leave_now">parti ora</string>
     <string name="step_change_bus">Bus %1$s · %2$s</string>
+    <string name="change_wait">attesa ~%1$d min</string>
+    <string name="change_tight">cambio stretto</string>
     <string name="step_take_train">%1$s %2$s → %3$s</string>
     <string name="train_timetable_note">Orari da tabella</string>
     <plurals name="live_vehicle_count">

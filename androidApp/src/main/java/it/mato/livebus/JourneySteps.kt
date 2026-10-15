@@ -50,6 +50,8 @@ object JourneySteps {
     private const val STALE_POSITION_SECONDS = 120
     // The planner's walking pace.
     private const val WALKING_SPEED = 1.2f
+    // Below this chance of making a change, the rider is told it is tight rather than how long to wait.
+    private const val TIGHT_CHANGE_CHANCE = 0.8f
 
     fun forBus(context: Context, bus: JourneyChoice) = JourneyGuide(
         buildList {
@@ -131,10 +133,20 @@ object JourneySteps {
         bus.secondLeg?.let { leg ->
             walkTo(context, bus.transferWalkMetres, leg.boardAt, exit)?.let(::add)
             add(JourneyStep(StepKind.TRANSFER, context.getString(R.string.step_change_bus,
-                leg.pattern.route, stopName(leg.boardAt.name))))
+                leg.pattern.route, stopName(leg.boardAt.name)),
+                detail = listOfNotNull(
+                    if (withEta) context.getString(R.string.estimated_minutes,
+                        ceilMinutes(leg.boardingEtaSeconds)) else null,
+                    changeWait(context, leg, bus.transferChance)
+                ).joinToString(" · ")))
             add(JourneyStep(StepKind.BUS, stopName(leg.exitAt.name), getOff = true))
         }
     }
+
+    /** How long the rider waits for the second bus, or a warning when the change may be missed. */
+    private fun changeWait(context: Context, leg: JourneyLeg, chance: Float): String =
+        if (chance < TIGHT_CHANGE_CHANCE || leg.waitSeconds < 60f) context.getString(R.string.change_tight)
+        else context.getString(R.string.change_wait, (leg.waitSeconds / 60f).roundToInt())
 
     private fun trainLeg(context: Context, train: ScheduledTrainJourney) = listOf(
         JourneyStep(StepKind.TRAIN, context.getString(R.string.step_take_train,

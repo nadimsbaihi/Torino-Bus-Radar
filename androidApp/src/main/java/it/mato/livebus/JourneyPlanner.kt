@@ -325,9 +325,12 @@ class JourneyPlanner(private val buses: TransitIndex, private val trains: TrainI
                 val secondPattern = secondRun.tracked.pattern
                 val secondBoard = secondRun.firstIndex + secondLeg.boardPos
                 val secondExit = secondRun.firstIndex + secondLeg.alightPos
+                val secondEta = secondLeg.trip.depart[secondLeg.boardPos]
+                val atChange = leg.trip.arrive[leg.alightPos] + secondLeg.walkBeforeMetres / RoundPlanner.WALK_SPEED
                 Triple(secondLeg, secondRun, JourneyLeg(secondPattern, secondRun.tracked.vehicle,
                     secondPattern.stops[secondBoard], secondPattern.stops[secondExit],
-                    secondExit - secondBoard, secondRun.tracked.turnaround != null))
+                    secondExit - secondBoard, secondRun.tracked.turnaround != null,
+                    secondEta, secondEta - atChange))
             }
             val exit = second?.third?.exitAt ?: pattern.stops[exitIndex]
             return JourneyChoice(

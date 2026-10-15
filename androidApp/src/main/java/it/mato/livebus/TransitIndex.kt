@@ -103,7 +103,10 @@ data class JourneyLeg(
     val boardAt: TransitStop,
     val exitAt: TransitStop,
     val stopCount: Int,
-    val turnaround: Boolean = false
+    val turnaround: Boolean = false,
+    // When this bus reaches [boardAt], in seconds from now, and how long the rider waits there for it.
+    val boardingEtaSeconds: Float = 0f,
+    val waitSeconds: Float = 0f
 )
 
 /** A live vehicle matched to a pattern, with its arrival time at every stop still ahead of it. */
@@ -722,7 +725,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             estimatedTotalSeconds = total,
                             secondLeg = JourneyLeg(second.pattern, second.vehicle,
                                 second.pattern.stops[secondBoardIndex], destination,
-                                destinationIndex - secondBoardIndex, second.turnaround != null),
+                                destinationIndex - secondBoardIndex, second.turnaround != null,
+                                secondArrival, secondArrival - firstArrival - transferSeconds),
                             transferAt = exitStop,
                             transferWalkMetres = streetTransferWalk,
                             turnaround = first.turnaround,

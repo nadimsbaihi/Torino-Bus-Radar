@@ -105,7 +105,8 @@ class JourneyStepsTest {
         val transfer = TransitStop("x", "Corso Vittorio", 45.075, 7.685)
         val secondExit = TransitStop("y", "Piazza Statuto", 45.09, 7.7)
         val second = TransitPattern("p2", "r9", "9", "Nord", "0", emptySet(), listOf(transfer, secondExit))
-        val leg = JourneyLeg(second, vehicle, transfer, secondExit, 2)
+        // The 9 reaches the change in 12 min; the rider is there 3 min before it.
+        val leg = JourneyLeg(second, vehicle, transfer, secondExit, 2, boardingEtaSeconds = 700f, waitSeconds = 190f)
         val guide = JourneySteps.forBus(context, bus(leg = leg, transfer = transfer, transferWalk = 80f))
 
         assertEquals(listOf(
@@ -113,10 +114,28 @@ class JourneyStepsTest {
             "Bus 4 | ~4 min",
             "Corso Vittorio",
             "80 m → Corso Vittorio",
-            "Bus 9 · Corso Vittorio",
+            "Bus 9 · Corso Vittorio | ~12 min · wait ~3 min",
             "Piazza Statuto",
             "120 m → destination"
         ), lines(guide))
+    }
+
+    @Test fun aChangeLikelyToBeMissedIsCalledTightInsteadOfAWait() {
+        val transfer = TransitStop("x", "Corso Vittorio", 45.075, 7.685)
+        val secondExit = TransitStop("y", "Piazza Statuto", 45.09, 7.7)
+        val second = TransitPattern("p2", "r9", "9", "Nord", "0", emptySet(), listOf(transfer, secondExit))
+        fun changeLine(waitSeconds: Float, chance: Float): String {
+            val leg = JourneyLeg(second, vehicle, transfer, secondExit, 2,
+                boardingEtaSeconds = 700f, waitSeconds = waitSeconds)
+            val guide = JourneySteps.forBus(context, bus(leg = leg, transfer = transfer).copy(transferChance = chance))
+            return lines(guide).single { it.startsWith("Bus 9") }
+        }
+
+        // Plenty of time on paper, but the buses are too uncertain to count on it.
+        assertEquals("Bus 9 · Corso Vittorio | ~12 min · tight change", changeLine(240f, 0.6f))
+        // Likely enough, but under a minute to spare.
+        assertEquals("Bus 9 · Corso Vittorio | ~12 min · tight change", changeLine(40f, 0.9f))
+        assertEquals("Bus 9 · Corso Vittorio | ~12 min · wait ~4 min", changeLine(240f, 0.9f))
     }
 
     @Test fun anOldPositionBecomesANoteButAnEstimatedDirectionDoesNot() {

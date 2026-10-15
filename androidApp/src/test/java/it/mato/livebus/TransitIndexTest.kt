@@ -40,6 +40,10 @@ class TransitIndexTest {
         assertNull(direct!!.secondLeg)
         assertEquals("second", choice!!.secondLeg!!.pattern.id)
         assertEquals("transfer", choice.transferAt!!.id)
+        // The second bus comes after the first one, and the rider is at the change before it.
+        val leg = choice.secondLeg!!
+        assertTrue(leg.boardingEtaSeconds > choice.boardingEtaSeconds)
+        assertTrue(leg.waitSeconds >= 0f && leg.waitSeconds < leg.boardingEtaSeconds)
         assertTrue(choice.estimatedTotalSeconds < direct!!.estimatedTotalSeconds)
     }
 
