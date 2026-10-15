@@ -418,6 +418,26 @@ class TransitIndexTest {
         assertNull(index(first).planLiveJourney(45.01, 7.0019, 45.03, 7.0, listOf(bus)))
     }
 
+    @Test fun aBusWithNoTripRunsTheVariantOfItsDay() {
+        // Like the 67: the Sunday runs go on past the weekday terminus, along the same road until then.
+        val trunk = listOf(stop("a", 45.0, 7.0), stop("b", 45.01, 7.0), stop("c", 45.02, 7.0))
+        val sunday = TransitPattern("sunday", "67", "67", "Borgo Vittoria", "0", setOf("s"),
+            trunk + stop("d", 45.03, 7.0), serviceIds = setOf("sun"))
+        val weekday = TransitPattern("weekday", "67", "67", "Arbarello", "0", setOf("w"),
+            trunk, serviceIds = setOf("wk"))
+        val index = index(sunday, weekday)
+        index.serviceDates = mapOf("wk" to setOf("20261014", "20261015"), "sun" to setOf("20261018"))
+        fun busAt(time: String) = LiveVehicle("bus-$time", "67", null, 45.005, 7.0, 0f,
+            java.time.LocalDateTime.parse(time).atZone(java.time.ZoneId.of("Europe/Rome")).toEpochSecond())
+
+        assertEquals("weekday", index.matchDirection(busAt("2026-10-14T10:00:00"))!!.id)
+        assertEquals("sunday", index.matchDirection(busAt("2026-10-18T10:00:00"))!!.id)
+        // At 01:00 on Monday, Sunday's night runs are still out.
+        assertEquals("sunday", index.matchDirection(busAt("2026-10-19T01:00:00"))!!.id)
+        // Past the timetable's end, the day says nothing and the bus still gets a direction.
+        assertNotNull(index.matchDirection(busAt("2027-03-01T10:00:00")))
+    }
+
     private fun stop(id: String, lat: Double, lon: Double) = TransitStop(id, id, lat, lon)
     private fun pattern(id: String, stops: List<TransitStop>) =
         TransitPattern(id, id, id, id, "0", setOf(id), stops)

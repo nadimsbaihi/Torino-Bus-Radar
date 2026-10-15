@@ -9,6 +9,8 @@ import zipfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from build_train_index import service_dates
+
 # A drawn route line may stray this far from the surveyed shape; a metre is under a pixel.
 SHAPE_TOLERANCE_METRES = 2.0
 METRES_PER_DEGREE = 111_195.0
@@ -171,6 +173,7 @@ def main(source, output):
         # skipped stops); group by the stop sequence itself, never by one sample trip.
         trip_keys = {}
         trip_blocks = {}
+        trip_services = {}
         for trip in rows(archive, "trips.txt"):
             key = (
                 trip["route_id"],
@@ -179,6 +182,7 @@ def main(source, output):
                 trip["shape_id"],
             )
             trip_keys[trip["trip_id"]] = key
+            trip_services[trip["trip_id"]] = trip.get("service_id", "")
             if trip.get("block_id"):
                 trip_blocks[trip["trip_id"]] = (trip["block_id"], trip.get("service_id", ""))
 
@@ -245,8 +249,15 @@ def main(source, output):
         mark_duty_ends(patterns, trip_blocks, trip_span)
         used = {pattern["shape"] for pattern in patterns if "shape" in pattern}
         shapes = {shape_id: shapes[shape_id] for shape_id in sorted(used)}
+        # The days each pattern runs: the 67 goes to Borgo Vittoria only on Sundays and holidays.
+        dates = service_dates(archive)
+        for pattern in patterns:
+            pattern["services"] = sorted({trip_services[trip_id] for trip_id in pattern["tripIds"]}
+                                         & dates.keys())
+        services = {service: dates[service]
+                    for service in sorted({service for pattern in patterns for service in pattern["services"]})}
 
-    payload = {"version": 5, "patterns": patterns, "shapes": shapes}
+    payload = {"version": 6, "patterns": patterns, "shapes": shapes, "services": services}
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),

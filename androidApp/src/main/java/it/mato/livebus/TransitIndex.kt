@@ -4,6 +4,9 @@ import android.content.Context
 import android.location.Location
 import org.json.JSONObject
 import org.osmdroid.util.GeoPoint
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -32,7 +35,9 @@ data class TransitPattern(
     // What the same bus usually does after this pattern; null when the timetable does not say.
     val next: PatternSuccessor? = null,
     // Trips of this pattern that are the last of a bus's duty: the depot comes after them.
-    val lastTripIds: Set<String> = emptySet()
+    val lastTripIds: Set<String> = emptySet(),
+    // The timetable's services this pattern runs in; empty when the index does not say.
+    val serviceIds: Set<String> = emptySet()
 )
 
 /**
@@ -179,6 +184,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     }
     /** What buses have been seen doing; the planner's speed for a line comes from here. */
     var speeds = SpeedEstimator()
+
+    // The dates (yyyyMMdd) each service runs on, holidays included; empty for an index without them.
+    internal var serviceDates: Map<String, Set<String>> = emptyMap()
     // The last fix of each vehicle on its trip, to measure how far it got between two feeds.
     private val speedFixes = HashMap<String, SpeedSampler.Fix>()
     /** Stops within [MAX_TRANSFER_WALK] (straight line) of a stop, with the distance, the stop itself included. */
@@ -890,7 +898,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         // Limit inference to nearby segments of that route, using the heading when
         // available and otherwise the direction the vehicle has actually been moving.
         val heading = headingOf(vehicle)
-        val candidates = patternsByRoute[vehicle.routeId].orEmpty().mapNotNull { pattern ->
+        val candidates = runningPatterns(vehicle).mapNotNull { pattern ->
             var score = Double.POSITIVE_INFINITY
             for (index in 0 until pattern.stops.size - 1) {
                 score = minOf(score, segmentScore(vehicle, pattern, index, inferred = true, heading = heading))
@@ -912,6 +920,27 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         }
         if (rivals.isEmpty()) return remember(vehicle, (sticky ?: best).first)
         return sticky?.first?.let { remember(vehicle, it) }
+    }
+
+    /**
+     * The route's patterns that run on the day of the vehicle's fix: on a weekday the 67 does not
+     * go on to Borgo Vittoria, as it does on Sundays and holidays, however alike the two look along
+     * their shared stretch. A run after midnight still belongs to the day before. When none of
+     * them runs that day (a timetable past its end), the day says nothing and all of them count.
+     */
+    private fun runningPatterns(vehicle: LiveVehicle): List<TransitPattern> {
+        val all = patternsByRoute[vehicle.routeId].orEmpty()
+        if (serviceDates.isEmpty()) return all
+        val time = Instant.ofEpochSecond(vehicle.timestampSeconds).atZone(ROME)
+        val days = listOfNotNull(time.toLocalDate(),
+            time.toLocalDate().minusDays(1).takeIf { time.hour < AFTER_MIDNIGHT_HOURS })
+            .map { it.format(DateTimeFormatter.BASIC_ISO_DATE) }
+        val running = all.filter { pattern ->
+            pattern.serviceIds.isEmpty() || pattern.serviceIds.any { service ->
+                serviceDates[service]?.let { dates -> days.any(dates::contains) } == true
+            }
+        }
+        return running.ifEmpty { all }
     }
 
     private fun remember(vehicle: LiveVehicle, pattern: TransitPattern): TransitPattern {
@@ -1242,10 +1271,21 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                     },
                     lastTripIds = item.optJSONArray("last")?.let { last ->
                         (0 until last.length()).mapTo(HashSet()) { last.getString(it) }
+                    } ?: emptySet(),
+                    serviceIds = item.optJSONArray("services")?.let { services ->
+                        (0 until services.length()).mapTo(HashSet()) { services.getString(it) }
                     } ?: emptySet()
                 )
             }
-            return TransitIndex(patterns).also { it.speeds = BusSpeedStore.shared(context) }
+            val services = root.optJSONObject("services")
+            val serviceDates = services?.keys()?.asSequence()?.associateWith { service ->
+                val dates = services.getJSONArray(service)
+                (0 until dates.length()).mapTo(HashSet()) { dates.getString(it) }
+            }.orEmpty()
+            return TransitIndex(patterns).also {
+                it.speeds = BusSpeedStore.shared(context)
+                it.serviceDates = serviceDates
+            }
         }
 
         fun cleanStopName(value: String) =
@@ -1370,6 +1410,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         // No bus covers this between two fixes, so the vehicle ID has been reused.
         private const val MAX_PLAUSIBLE_MOVE_METRES = 3_000f
         private const val MOTION_MEMORY_SECONDS = 300L
+        // GTT's evening timetable runs past midnight; until this hour a bus may still be on yesterday's.
+        private const val AFTER_MIDNIGHT_HOURS = 4
+        private val ROME = ZoneId.of("Europe/Rome")
         private const val MOVEMENT_FRESH_SECONDS = 90L
     }
 }

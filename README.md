@@ -163,7 +163,8 @@ network behavior, and map interaction.
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.
 - When a trip ID is missing, the app can estimate direction from the line,
-  route geometry, and heading.
+  route geometry, and heading, choosing only among the line's variants that run that day
+  (holidays included): on a weekday, a 67 is not taken for the Sunday run to Borgo Vittoria.
 - The metro's notices come from GTT's alerts feed
   (`https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx`). Only notices that last at most
   60 days count; GTT keeps standing bulletins (such as the state of the lifts) up for years.
@@ -232,7 +233,8 @@ It also marks the last trip of each block: a bus that finishes one is going to t
 the app stops showing and planning with it until the feed gives it another trip. The feed has no
 out-of-service flag, so a bus the feed gives no trip at all is also left out when it is more
 than 500 m from every road of its line. A bus with no trip that is simply waiting at its
-terminus between runs stays.
+terminus between runs stays. Each pattern also lists the timetable services it runs in, with the
+dates of each service, so a bus that reports no trip is matched only to variants running that day.
 Trip IDs change when GTT publishes a new feed, and the app matches live buses to routes by
 trip ID, so refresh this index when live buses stop matching it.
 

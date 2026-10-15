@@ -56,6 +56,34 @@ class TransitIndexTest(unittest.TestCase):
         self.assertEqual(['t3'], by_stops[tuple('ACD')]['tripIds'])
         self.assertEqual(2, len({p['id'] for p in patterns}))
 
+    def test_patterns_know_the_days_they_run(self):
+        # Like the 67: to the usual terminus on weekdays, further on to another on Sundays.
+        stops = "stop_id,stop_name,stop_lat,stop_lon\n" + "".join(
+            f"{s},{s},45.0{i},7.0\n" for i, s in enumerate("ABCD"))
+        trips = ("route_id,trip_id,service_id,direction_id,trip_headsign,shape_id\n"
+                 "r,w1,wk,0,C,\nr,w2,sat,0,C,\nr,s1,sun,0,D,\n")
+        calendar = ("service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,"
+                    "start_date,end_date\nwk,1,1,1,1,1,0,0,20261012,20261018\n"
+                    "sat,0,0,0,0,0,1,0,20261012,20261018\nsun,0,0,0,0,0,0,1,20261012,20261018\n")
+        # A Thursday holiday runs the Sunday timetable.
+        exceptions = "service_id,date,exception_type\nwk,20261015,2\nsun,20261015,1\n"
+        stop_times = "trip_id,stop_sequence,stop_id,arrival_time,departure_time\n" + "".join(
+            f"{trip},{i},{stop},08:00:00,08:00:00\n"
+            for trip, path in (("w1", "ABC"), ("w2", "ABC"), ("s1", "ABCD"))
+            for i, stop in enumerate(path, 1))
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory, 'gtfs.zip'), Path(directory, 'out.json')
+            write_zip(source, {'stops.txt': stops, 'routes.txt': "route_id,route_short_name\nr,67\n",
+                               'trips.txt': trips, 'stop_times.txt': stop_times,
+                               'calendar.txt': calendar, 'calendar_dates.txt': exceptions})
+            run('build_transit_index.py', source, output)
+            index = json.loads(output.read_text())
+        by_headsign = {p['headsign']: p for p in index['patterns']}
+        self.assertEqual(['sat', 'wk'], by_headsign['C']['services'])
+        self.assertEqual(['sun'], by_headsign['D']['services'])
+        self.assertEqual(['20261015', '20261018'], index['services']['sun'])
+        self.assertNotIn('20261015', index['services']['wk'])
+
 
 def decode_polyline(encoded):
     points, index, lat, lon = [], 0, 0, 0
@@ -108,7 +136,7 @@ class TransitShapeTest(unittest.TestCase):
             write_zip(source, files)
             run('build_transit_index.py', source, output)
             shapeless = json.loads(output.read_text())
-        self.assertEqual(5, index['version'])
+        self.assertEqual(6, index['version'])
         self.assertEqual(1, len(index['patterns']))
         self.assertEqual('common', index['patterns'][0]['shape'])
         self.assertEqual({'common'}, set(index['shapes']), "only shapes a pattern uses are shipped")
