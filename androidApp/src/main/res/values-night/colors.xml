@@ -26,4 +26,8 @@
     <color name="surface_variant">#2A3230</color>
     <!-- The see-through backing of small text on the map. -->
     <color name="map_label_bg">#D9121615</color>
+    <!-- Map bubbles are cards like the rest of the app, so they turn dark too. -->
+    <color name="bubble_ink">#E8ECEA</color>
+    <color name="bubble_muted">#A3AEAB</color>
+    <color name="bubble_accent">#5CC8B9</color>
 </resources>

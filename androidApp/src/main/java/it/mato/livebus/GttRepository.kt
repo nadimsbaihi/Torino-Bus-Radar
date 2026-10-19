@@ -37,9 +37,6 @@ data class LiveVehicle(
      */
     val tripHints: List<String> = emptyList()
 ) {
-    /** What the rider sees on the bus itself; the feed id is that number with a company suffix. */
-    val fleetNumber: String get() = label ?: id.removeSuffix("U")
-
     val ageSeconds: Long get() = ageSecondsAt(System.currentTimeMillis() / 1000)
 
     /** Age against a fixed clock reading, so one planning run sees one consistent "now". */

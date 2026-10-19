@@ -3,8 +3,6 @@
     <string name="planning_journey">Calcolo del percorso…</string>
     <string name="transit_summary">Mezzi · ~%1$d min</string>
     <string name="walk_summary">A piedi · ~%1$d min</string>
-    <string name="walk_option">A piedi · %1$d min</string>
-    <string name="transit_option">Mezzi · %1$d min</string>
     <string name="option_best">Migliore</string>
     <string name="option_fewest_changes">Meno cambi</string>
     <string name="option_fastest">Più veloce</string>
@@ -25,7 +23,6 @@
     <string name="data_out_of_date">I dati dei bus potrebbero essere obsoleti: molti bus in servizio non corrispondono agli orari dell’app. Aggiorna l’app per percorsi accurati.</string>
     <string name="bus_position_age">Ultima posizione: %1$d min fa</string>
     <string name="missed_it_next_bus">Perso? %1$s tra ~%2$d min</string>
-    <string name="bus_fleet_number">Bus n. %1$s</string>
     <string name="delayed_bus_journey">Le posizioni dei bus risalgono fino a %1$d min fa. Le stime tengono conto del ritardo, ma la posizione attuale potrebbe essere diversa.</string>
     <string name="live_updated">● AGGIORNATO ORA</string>
     <string name="feed_unavailable">Dati GTT non disponibili · Riprova</string>
@@ -38,7 +35,6 @@
     <string name="gtt_route">Filtra per linea</string>
     <string name="all_routes">Tutte le linee</string>
     <string name="destination">Dove vuoi andare?</string>
-    <string name="find_direct_route">Trova il percorso migliore</string>
     <string name="search">Cerca</string>
     <string name="searching_short">…</string>
     <string name="finding_address">Ricerca della destinazione e dei mezzi disponibili…</string>
@@ -61,11 +57,7 @@
     <string name="transfer_journey_found">Prendi la linea %1$s per %2$s (bus a %3$d m) · cammina per %6$d m fino a %4$s; arrivo previsto tra circa %7$d min · scendi vicino a %5$s · da lì il percorso verrà aggiornato con le posizioni dei bus in tempo reale.</string>
     <string name="replanning_from_here">Sei al punto di cambio · aggiornamento della posizione e dei bus…</string>
     <string name="bus_passed_replanning">Non fai più in tempo a prendere questo bus · ricalcolo del percorso…</string>
-    <string name="walking_selected">Stima: %1$d m, ~%2$d min. Maps può variare.</string>
     <string name="no_ride_beats_walking">Nessun mezzo batte la camminata</string>
-    <string name="walk_there">Vai a piedi</string>
-    <string name="walk_to_boarding_stop">Indicazioni fino alla fermata</string>
-    <string name="lazy_bus_option">Prendi i mezzi</string>
     <string name="board_here">Sali qui</string>
     <string name="exit_here">Scendi qui</string>
     <string name="intermediate_destination">Destinazione intermedia</string>
@@ -107,7 +99,6 @@
     <string name="live_vehicle_overview_count">Sulla mappa i %1$d bus più vicini su %2$d disponibili</string>
     <string name="scheduled_train_no_live_vehicles">Percorso in treno con orari Trenitalia · bus GTT nascosti</string>
     <string name="directions_unavailable">Nessuna app su questo telefono può aprire le indicazioni a piedi.</string>
-    <string name="open_walking_directions">Apri le indicazioni a piedi</string>
     <string name="journey_details">Dettagli del percorso</string>
     <string name="step_directions">Indicazioni a piedi in Google Maps</string>
     <string name="step_directions_for">Indicazioni a piedi in Google Maps: %1$s</string>
@@ -122,7 +113,6 @@
     <string name="change_tight">cambio stretto</string>
     <string name="step_take_train">%1$s %2$s → %3$s</string>
     <string name="step_take_metro">%1$s → %2$s</string>
-    <string name="train_timetable_note">Orari da tabella</string>
     <plurals name="live_vehicle_count">
         <item quantity="one">%1$d veicolo in tempo reale sulla linea %2$s</item>
         <item quantity="other">%1$d veicoli in tempo reale sulla linea %2$s</item>
@@ -169,7 +159,6 @@
     <string name="stop_arrival_eta">~%1$d min</string>
     <string name="stop_arrival_row">Linea %1$s verso %2$s, tra circa %3$d minuti</string>
     <string name="start_my_location">La mia posizione</string>
-    <string name="start_from">Da: %1$s</string>
     <string name="start_change">Punto di partenza: %1$s. Tocca per cambiarlo.</string>
     <string name="start_pick_saved">Un luogo salvato…</string>
     <string name="start_pick_search">Cerca un luogo…</string>
@@ -177,7 +166,6 @@
     <string name="start_search_hint">Parti da</string>
     <string name="swap_start_destination">Inverti partenza e destinazione</string>
     <string name="planned_from_note">Avviso spento: partenza diversa</string>
-    <string name="faster">più veloce</string>
     <string name="at_terminus_leaves_in">Al capolinea · riparte tra ~%1$d min</string>
     <string name="at_terminus_leaving">Al capolinea · riparte a momenti</string>
     <string name="menu">Menu</string>
@@ -188,7 +176,6 @@
     <string name="hint_long_press">Tieni premuto sulla mappa per andare in quel punto</string>
     <string name="got_it">Ho capito</string>
     <string name="course_hint">Tocca una fermata del percorso per vedere i prossimi bus</string>
-    <string name="other_ways">Altri modi</string>
     <string name="journey_arrive">Arrivo ~%1$s</string>
     <string name="choose_start">Scegli da dove partire</string>
     <string name="allow_location">Consenti la posizione</string>
@@ -206,4 +193,8 @@
     <string name="update_up_to_date">Hai già l\'ultima versione (%1$s)</string>
     <string name="update_check_failed">Impossibile cercare aggiornamenti</string>
     <string name="update_allow_install">Consenti l\'installazione per completare l\'aggiornamento</string>
+    <string name="route_back">Torna alla mappa</string>
+    <string name="route_change_destination">A: %1$s. Tocca per cambiare.</string>
+    <string name="ride_anyway">Prendi comunque i mezzi · %1$d min</string>
+    <string name="walk_instead">Vai a piedi · %1$d min</string>
 </resources>

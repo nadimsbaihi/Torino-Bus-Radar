@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The bubble over a tapped marker. A bus fills it with its line, where it heads, then how far and how fresh. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:maxWidth="300dp"
+    android:orientation="vertical">
+
+    <!-- osmdroid's bubble code looks for these without checking they exist. -->
+    <ImageView
+        android:id="@id/bubble_image"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@id/bubble_moreinfo"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@id/bubble_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/bubble_accent"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@id/bubble_subdescription"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="@color/bubble_ink"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@id/bubble_description"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="@color/bubble_muted"
+        android:textSize="13sp" />
+</LinearLayout>

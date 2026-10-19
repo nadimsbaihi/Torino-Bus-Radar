@@ -25,10 +25,14 @@ class LiveStatusFreshnessTest {
         return method.invoke(activity, seconds) as String
     }
 
-    @Test fun aFreshFetchReadsAsPlainLive() = assertEquals("", suffix(2))
+    @Test fun aFreshFetchReadsAsPlainLive() {
+        assertEquals("", suffix(2))
+        // Between two routine refreshes the label stays still.
+        assertEquals("", suffix(20))
+    }
 
     @Test fun secondsThenMinutesTickUp() {
-        assertEquals(" · updated 12 s ago", suffix(12))
+        assertEquals(" · updated 45 s ago", suffix(45))
         assertEquals(" · updated 3 min ago", suffix(190))
     }
 }

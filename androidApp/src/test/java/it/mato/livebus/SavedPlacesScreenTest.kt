@@ -102,8 +102,7 @@ class SavedPlacesScreenTest {
             .apply { isAccessible = true }.get(activity) as GeoPoint
         assertEquals(45.07031, destination.latitude, 1e-9)
         assertEquals(View.VISIBLE, binding.journeyCard.visibility)
-        assertFalse(binding.findRouteButton.isEnabled && binding.searchProgress.visibility != View.VISIBLE &&
-            binding.sharedDirections.text.isNullOrEmpty())
+        assertFalse(binding.searchProgress.visibility != View.VISIBLE && binding.sharedDirections.text.isNullOrEmpty())
     }
 
     private fun receiver(binding: ActivityMainBinding): org.osmdroid.events.MapEventsReceiver {

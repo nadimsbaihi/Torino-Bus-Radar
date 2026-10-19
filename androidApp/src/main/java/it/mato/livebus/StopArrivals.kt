@@ -40,6 +40,7 @@ class StopArrivalsWindow(mapView: MapView, private val onClosed: () -> Unit) :
     private val empty = mView.findViewById<TextView>(R.id.stopArrivalsEmpty)
 
     init {
+        MapBubble.style(mView)
         mView.setOnClickListener { close() }
     }
 
@@ -53,11 +54,11 @@ class StopArrivalsWindow(mapView: MapView, private val onClosed: () -> Unit) :
             val row = inflater.inflate(R.layout.item_stop_arrival, rows, false)
             val minutes = ceilMinutes(arrival.etaSeconds)
             row.findViewById<TextView>(R.id.arrivalRoute).text = arrival.route
-            row.findViewById<TextView>(R.id.arrivalHeadsign).text = arrival.headsign
+            row.findViewById<TextView>(R.id.arrivalHeadsign).text = TransitIndex.readableCase(arrival.headsign)
             row.findViewById<TextView>(R.id.arrivalEta).text =
                 mView.context.getString(R.string.stop_arrival_eta, minutes)
             row.contentDescription = mView.context.getString(R.string.stop_arrival_row,
-                arrival.route, arrival.headsign, minutes)
+                arrival.route, TransitIndex.readableCase(arrival.headsign), minutes)
             rows.addView(row)
         }
     }

@@ -1,6 +1,7 @@
 package it.mato.livebus
 
 import android.os.Looper
+import android.view.MotionEvent
 import android.view.View
 import android.widget.TextView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -204,19 +205,60 @@ class NavigationBackTest {
         assertEquals(View.VISIBLE, binding.liveStatus.visibility)
     }
 
-    @Test fun theRideOrWalkToggleChecksTheWayOnScreen() {
+    // A ride so slow that walking wins.
+    private val slowRide get() = journey.copy(estimatedTotalSeconds = 100_000f)
+
+    @Test fun aRideQuickerThanWalkingOffersNoWalk() {
         val (activity, binding) = screen()
         show(activity)
-        assertEquals(R.id.busAnywayButton, binding.travelModeChoices.checkedButtonId)
+
+        assertEquals(4, binding.journeySteps.childCount)
         assertTrue(binding.journeySummary.text.isNotEmpty())
+        assertEquals(View.GONE, binding.modeSwitchButton.visibility)
+    }
 
-        binding.walkButton.performClick()
-        settle()
-        assertEquals(R.id.walkButton, binding.travelModeChoices.checkedButtonId)
+    @Test fun quickerOnFootTheJourneyWalksAndOffersTheRideAnyway() {
+        val (activity, binding) = screen()
+        show(activity, slowRide)
 
-        binding.busAnywayButton.performClick()
+        assertEquals(1, binding.journeySteps.childCount)
+        fun prefix(id: Int) = activity.getString(id, 0).substringBefore("0").trimEnd('(', '~', ' ')
+        // The quickest way needs no saying; only the ride is offered.
+        assertTrue(binding.sharedDirections.text.isNullOrEmpty())
+        assertEquals(View.VISIBLE, binding.modeSwitchButton.visibility)
+        assertTrue(binding.modeSwitchButton.text.startsWith(prefix(R.string.ride_anyway)))
+
+        binding.modeSwitchButton.performClick()
         settle()
-        assertEquals(R.id.busAnywayButton, binding.travelModeChoices.checkedButtonId)
+        assertEquals(4, binding.journeySteps.childCount)
+        assertTrue(binding.modeSwitchButton.text.startsWith(prefix(R.string.walk_instead)))
+        // A live update keeps the ride the rider chose.
+        show(activity, slowRide)
+        assertEquals(4, binding.journeySteps.childCount)
+
+        binding.modeSwitchButton.performClick()
+        settle()
+        assertEquals(1, binding.journeySteps.childCount)
+    }
+
+    @Test fun zoomingWithTwoFingersPutsTheZoomButtonsAwayForGood() {
+        val (_, binding) = screen()
+        assertEquals(View.VISIBLE, binding.zoomControls.visibility)
+
+        fun touch(action: Int, pointers: Int) {
+            val properties = Array(pointers) { MotionEvent.PointerProperties().apply { id = it; toolType = MotionEvent.TOOL_TYPE_FINGER } }
+            val coords = Array(pointers) { MotionEvent.PointerCoords().apply { x = 400f + it * 200; y = 900f } }
+            val event = MotionEvent.obtain(0, 0, action, pointers, properties, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
+            binding.map.dispatchTouchEvent(event)
+            event.recycle()
+        }
+        touch(MotionEvent.ACTION_DOWN, 1)
+        touch(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2)
+        settle()
+
+        assertEquals(View.GONE, binding.zoomControls.visibility)
+        val (_, again) = screen()
+        assertEquals(View.GONE, again.zoomControls.visibility)
     }
 
     @Test fun backFirstClearsAHighlightedBusThenClosesTheJourney() {
@@ -329,37 +371,31 @@ class NavigationBackTest {
 
     @Test fun walkingDoesNotLaunchMapsUntilAsked() {
         val (activity, binding) = screen()
-        show(activity)
+        show(activity, slowRide)
         shadowOf(activity).clearNextStartedActivities()
-
-        binding.walkButton.performClick()
         settle()
 
         assertNull(shadowOf(activity).nextStartedActivity)
         assertEquals(1, binding.journeySteps.childCount)
-        assertEquals(View.VISIBLE, binding.boardStopDirectionsButton.visibility)
-        assertEquals(activity.getString(R.string.open_walking_directions),
-            binding.boardStopDirectionsButton.text.toString())
+        val directions = binding.journeySteps.getChildAt(0).findViewById<View>(R.id.stepDirections)
+        assertEquals(View.VISIBLE, directions.visibility)
 
-        binding.boardStopDirectionsButton.performClick()
+        directions.performClick()
         val maps = shadowOf(activity).nextStartedActivity
         assertEquals("google.navigation:q=${exit.latitude},${exit.longitude}&mode=w", maps.data.toString())
         // Back from Maps, the route can be opened again.
-        binding.boardStopDirectionsButton.performClick()
+        directions.performClick()
         assertEquals("google.navigation:q=${exit.latitude},${exit.longitude}&mode=w",
             shadowOf(activity).nextStartedActivity.data.toString())
     }
 
     @Test fun choosingTransitAgainRestoresTheSteps() {
         val (activity, binding) = screen()
-        show(activity)
+        show(activity, slowRide)
 
-        binding.walkButton.performClick()
-        binding.busAnywayButton.performClick()
+        binding.modeSwitchButton.performClick()
 
         assertEquals(4, binding.journeySteps.childCount)
-        assertEquals(activity.getString(R.string.walk_to_boarding_stop),
-            binding.boardStopDirectionsButton.text.toString())
     }
 
     @Test fun theBoardingStepOffersDirectionsToThatStop() {
@@ -378,7 +414,7 @@ class NavigationBackTest {
         val (activity, binding) = screen()
         shadowOf(RuntimeEnvironment.getApplication()).checkActivities(true)
 
-        call(activity, "openWalkingDirections", GeoPoint(45.07, 7.68))
+        call(activity, "openWalkingDirections", GeoPoint(45.07, 7.68), null)
         settle()
 
         val message = binding.coordinator.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
@@ -397,16 +433,27 @@ class NavigationBackTest {
             "&destination=45.08,7.69&travelmode=walking", intent.data.toString())
     }
 
-    @Test fun theFromRowBelongsToAJourneyAndGoesWithIt() {
+    @Test fun fromAndToBelongToAJourneyAndShowWhenItIsPulledUp() {
         val (activity, binding) = screen()
-        assertEquals(View.GONE, binding.startRow.visibility)
+        assertEquals(View.GONE, binding.routeCard.visibility)
 
         binding.destinationInput.setText("Piazza Castello", false)
         show(activity)
-        assertEquals(View.VISIBLE, binding.startRow.visibility)
-        assertEquals(activity.getString(R.string.start_from, activity.getString(R.string.start_my_location)),
-            binding.startButton.text.toString())
+        // At rest the search bar stays; the card is laid out, unseen, so the sheet stops below it.
+        assertEquals(View.INVISIBLE, binding.routeCard.visibility)
+        assertEquals(View.VISIBLE, binding.searchCard.visibility)
+        assertEquals(activity.getString(R.string.start_my_location), binding.routeFrom.text.toString())
+        assertEquals("Piazza Castello", binding.routeTo.text.toString())
         assertNotNull(binding.swapStartButton.contentDescription)
+
+        sheet(binding).state = BottomSheetBehavior.STATE_EXPANDED
+        settle()
+        assertEquals(View.VISIBLE, binding.routeCard.visibility)
+        assertEquals(View.INVISIBLE, binding.searchCard.visibility)
+        binding.routeBackButton.performClick()
+        settle()
+        assertEquals(BottomSheetBehavior.STATE_COLLAPSED, sheet(binding).state)
+        assertEquals(View.VISIBLE, binding.searchCard.visibility)
         assertEquals(View.VISIBLE, binding.alertButton.visibility)
 
         val start = Class.forName("it.mato.livebus.CustomStart").declaredConstructors.first()
@@ -418,7 +465,7 @@ class NavigationBackTest {
 
         call(activity, "closeJourney")
         settle()
-        assertEquals(View.GONE, binding.startRow.visibility)
+        assertEquals(View.GONE, binding.routeCard.visibility)
         assertNull(field(activity, "customStart"))
     }
 
@@ -430,7 +477,7 @@ class NavigationBackTest {
         binding.destinationInput.setText("Piazza Castello", false)
         show(activity)
 
-        assertEquals(View.VISIBLE, binding.startRow.visibility)
+        assertEquals(View.INVISIBLE, binding.routeCard.visibility)
         // The live count steps aside for a journey, so the search box is shorter then.
         val journeyTop = binding.topControls.height
         val covered = minOf(peek(binding), binding.journeyCard.height)

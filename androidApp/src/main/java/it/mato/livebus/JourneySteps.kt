@@ -68,8 +68,7 @@ object JourneySteps {
             addAll(trainLeg(context, train))
             walkToDestination(context, train.destinationWalkMetres, train.destination.asTransitStop(), destination)
                 ?.let(::add)
-        },
-        listOf(timetableNote(context, train))
+        }
     )
 
     fun forMixed(context: Context, mixed: MixedJourney, destination: GeoPoint? = null): JourneyGuide {
@@ -93,15 +92,14 @@ object JourneySteps {
             }
         }
         // A bus planned for after the train is judged by the clock then; "in N min" from now would mislead.
-        return JourneyGuide(steps, busNotes(context, bus, withBackup = mixed.busFirst) +
-            timetableNote(context, train))
+        return JourneyGuide(steps, busNotes(context, bus, withBackup = mixed.busFirst))
     }
 
-    fun forWalking(context: Context, metres: Int, minutes: Int, destination: GeoPoint) = JourneyGuide(
+    // The title and the step already say how far and how long; nothing more to add.
+    fun forWalking(context: Context, metres: Int, destination: GeoPoint) = JourneyGuide(
         listOf(JourneyStep(StepKind.WALK,
             context.getString(R.string.step_walk_to_destination, formatDistance(context, metres.toFloat())),
-            destination)),
-        listOf(JourneyNote(R.drawable.ic_info, context.getString(R.string.walking_selected, metres, minutes)))
+            destination))
     )
 
     /**
@@ -184,10 +182,6 @@ object JourneySteps {
         "REGIONALE VELOCE" -> "RV"
         else -> TransitIndex.readableCase(category.trim())
     }
-
-    private fun timetableNote(context: Context, train: ScheduledTrainJourney) =
-        JourneyNote(if (train.isMetro) R.drawable.ic_metro else R.drawable.ic_train,
-            context.getString(R.string.train_timetable_note))
 
     private fun walkTo(context: Context, metres: Float, stop: TransitStop, from: TransitStop? = null) =
         walkTo(context, metres, stop.name, GeoPoint(stop.latitude, stop.longitude), from)

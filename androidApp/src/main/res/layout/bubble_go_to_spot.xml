@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The question over a spot pressed and held on the map. The bubble is white in both themes. -->
+<!-- The question over a spot pressed and held on the map; MapBubble gives it its card and point. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:background="@drawable/bonuspack_bubble"
     android:orientation="vertical">
 
     <!-- osmdroid's bubble code looks for these without checking they exist. -->

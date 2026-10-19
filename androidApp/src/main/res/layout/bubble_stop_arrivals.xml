@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The bubble over a tapped stop: white in both themes, like the pressed-spot one. -->
+<!-- The bubble over a tapped stop; MapBubble gives it its card and point. -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:background="@drawable/bonuspack_bubble"
     android:minWidth="220dp"
     android:orientation="vertical">
 

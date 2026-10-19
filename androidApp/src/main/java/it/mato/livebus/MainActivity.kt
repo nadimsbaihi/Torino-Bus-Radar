@@ -41,12 +41,14 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.currentCoroutineContext
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import androidx.annotation.ColorRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
@@ -101,8 +103,10 @@ import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.views.CustomZoomButtonsController
+import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.infowindow.MarkerInfoWindow
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
 import kotlin.math.hypot
@@ -152,6 +156,11 @@ class MainActivity : AppCompatActivity() {
     private var selectedOption = -1
     private var plannedDestination: Pair<String, Pair<Double, Double>>? = null
     private var walkingMode = false
+    // Walking beats the ride to this destination; the journey then opens on the walk.
+    private var walkingIsFaster = false
+    private var zoomButtonsRetired = false
+    // Where the rider chose to ride although walking is quicker, so live updates keep the ride.
+    private var rideAnywayTo: GeoPoint? = null
     private var directWalkingMetres = 0f
     private var directWalkingSeconds = 0f
     private var walkingFromOrigin: WalkGraph.Distances? = null
@@ -174,6 +183,10 @@ class MainActivity : AppCompatActivity() {
     // A start other than the rider's own position, set from the journey panel and gone with the journey.
     private var customStart: CustomStart? = null
     private val appUpdates by lazy { AppUpdates(this) }
+    // One bubble serves every marker, as osmdroid's own does; only one is open at a time.
+    private val markerBubble by lazy {
+        MarkerInfoWindow(R.layout.bubble_marker, binding.map).also { MapBubble.style(it.view) }
+    }
     private var pendingUpdate: File? = null
     private var stopWindow: StopArrivalsWindow? = null
     private var openStop: TransitStop? = null
@@ -216,7 +229,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         setupDestinationPicker()
         setupSearchPresets()
-        setupStartRow()
+        setupRouteCard()
         setupAppMenu()
         setupHints()
         binding.mapAttribution.setOnClickListener { Credits.show(this) }
@@ -224,21 +237,17 @@ class MainActivity : AppCompatActivity() {
             if (deviceLocationEnabled()) requestLocation() else openLocationSettings()
         }
         binding.locationSettingsButton.setOnClickListener { messageAction?.invoke() }
-        binding.findRouteButton.setOnClickListener { findDestinationRoute() }
         binding.liveStatus.setOnClickListener { startRefreshing(forceRefresh = true) }
         binding.alertButton.setOnClickListener { if (isAlertActive()) stopAlert() else requestAlert() }
-        binding.walkButton.setOnClickListener { selectWalkingMode() }
-        binding.busAnywayButton.setOnClickListener { selectBusMode() }
-        binding.boardStopDirectionsButton.setOnClickListener {
-            val stop = if (walkingMode) {
-                directDestination
-            } else if (mixedJourneyChoice?.busFirst == false) {
-                trainJourneyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+        binding.modeSwitchButton.setOnClickListener {
+            planningJob?.cancel()
+            if (walkingMode) {
+                rideAnywayTo = directDestination
+                selectBusMode()
             } else {
-                journeyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
-                    ?: trainJourneyChoice?.boardAt?.let { GeoPoint(it.latitude, it.longitude) }
+                rideAnywayTo = null
+                selectWalkingMode()
             }
-            stop?.let { openWalkingDirections(it) }
         }
         binding.closeJourneyButton.setOnClickListener { closeJourney() }
         binding.refreshJourneyButton.setOnClickListener { refreshJourney() }
@@ -330,21 +339,23 @@ class MainActivity : AppCompatActivity() {
                 if (newState == BottomSheetBehavior.STATE_HIDDEN &&
                     binding.journeyCard.visibility == View.VISIBLE) closeJourney()
                 // A state set without a slide (before layout, say) still settles the map controls.
-                if (newState == BottomSheetBehavior.STATE_EXPANDED) fadeMapControls(1f)
-                if (newState == BottomSheetBehavior.STATE_COLLAPSED) fadeMapControls(0f)
+                if (newState == BottomSheetBehavior.STATE_EXPANDED) followSheet(1f)
+                if (newState == BottomSheetBehavior.STATE_COLLAPSED) followSheet(0f)
             }
 
             // The map's own controls ride up with the sheet; once it is pulled over the map they
             // would land on the search bar, so they fade out on the way.
-            override fun onSlide(sheet: View, slideOffset: Float) = fadeMapControls(slideOffset)
+            override fun onSlide(sheet: View, slideOffset: Float) = followSheet(slideOffset)
         })
         binding.journeyHandle.setOnClickListener {
             journeySheet.state = if (journeySheet.state == BottomSheetBehavior.STATE_EXPANDED)
                 BottomSheetBehavior.STATE_COLLAPSED else BottomSheetBehavior.STATE_EXPANDED
         }
-        // The sheet never grows over the search box, and the map is framed around what is left.
+        // The sheet never grows over the search box, nor the From/To card that replaces it, and the
+        // map is framed around what is left.
         binding.coordinator.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            val available = binding.coordinator.height - binding.topControls.height
+            val routeBottom = if (binding.routeCard.visibility == View.GONE) 0 else binding.routeCard.bottom
+            val available = binding.coordinator.height - maxOf(binding.topControls.height, routeBottom)
             if (available > 0) journeySheet.maxHeight = available
             updateMapInsets()
         }
@@ -414,6 +425,7 @@ class MainActivity : AppCompatActivity() {
         planningJob?.cancel()
         stopWindow?.close()
         customStart = null
+        rideAnywayTo = null
         // After a swap the box holds "My location", which is no destination to leave behind.
         if (binding.destinationInput.text.toString().trim() == myLocationLabel) binding.destinationInput.setText("")
         journeyChoice = null
@@ -432,9 +444,25 @@ class MainActivity : AppCompatActivity() {
         renderVehicles()
     }
 
+    private fun followSheet(slideOffset: Float) {
+        fadeMapControls(slideOffset)
+        revealRouteCard(slideOffset)
+    }
+
+    /** Past halfway up, the search bar hands over to the From/To card; on the way down it takes over again. */
+    private fun revealRouteCard(slideOffset: Float) {
+        if (binding.routeCard.visibility == View.GONE) return
+        val shown = ((slideOffset - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        binding.routeCard.alpha = shown
+        binding.routeCard.visibility = if (shown > 0f) View.VISIBLE else View.INVISIBLE
+        binding.searchCard.alpha = 1f - shown
+        binding.searchCard.visibility = if (shown < 1f) View.VISIBLE else View.INVISIBLE
+    }
+
     private fun fadeMapControls(slideOffset: Float) {
         val alpha = (1f - slideOffset.coerceAtLeast(0f) * 3f).coerceIn(0f, 1f)
-        listOf(binding.locationButton, binding.zoomControls, binding.mapAttribution).forEach {
+        listOfNotNull(binding.locationButton, binding.zoomControls.takeUnless { zoomButtonsRetired },
+            binding.mapAttribution).forEach {
             it.alpha = alpha
             it.visibility = if (alpha == 0f) View.INVISIBLE else View.VISIBLE
         }
@@ -451,7 +479,7 @@ class MainActivity : AppCompatActivity() {
         // which the sheet's own refresh button stands in for.
         binding.hintsCard.visibility = View.GONE
         binding.liveStatus.visibility = View.GONE
-        updateStartRow()
+        updateRouteCard()
         updateMapInsets()
     }
 
@@ -461,7 +489,7 @@ class MainActivity : AppCompatActivity() {
         binding.journeyCard.visibility = View.GONE
         binding.liveStatus.visibility = View.VISIBLE
         fadeMapControls(0f)
-        updateStartRow()
+        updateRouteCard()
         updateMapInsets()
     }
 
@@ -506,7 +534,9 @@ class MainActivity : AppCompatActivity() {
      * A message shows its text instead; before layout, the dimension is the guess.
      */
     private fun journeyPeek(): Int {
-        val first = binding.journeySteps.getChildAt(0)
+        // Quicker on foot, the peek reaches down to the question of riding anyway, so it is asked at rest.
+        val first = binding.modeSwitchButton.takeIf { walkingMode && it.visibility == View.VISIBLE && it.height > 0 }
+            ?: binding.journeySteps.getChildAt(0)
             ?: binding.sharedDirections.takeIf { it.visibility == View.VISIBLE && it.height > 0 }
         if (first == null || first.height == 0 || binding.journeyCard.height == 0) {
             return resources.getDimensionPixelSize(R.dimen.journey_peek_height)
@@ -536,7 +566,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderJourneyGuide(guide: JourneyGuide) {
         binding.journeySteps.removeAllViews()
-        guide.steps.forEach { step ->
+        var railIn: Rail? = null
+        guide.steps.forEachIndexed { index, step ->
             val row = ItemJourneyStepBinding.inflate(layoutInflater, binding.journeySteps, false)
             row.stepText.text = step.text
             step.detail?.let { detail ->
@@ -553,11 +584,11 @@ class MainActivity : AppCompatActivity() {
                 step.kind == StepKind.METRO -> R.drawable.ic_metro
                 else -> R.drawable.ic_bus
             })
-            ImageViewCompat.setImageTintList(row.stepIcon, ColorStateList.valueOf(getColor(when (step.kind) {
-                StepKind.TRAIN -> R.color.train_blue
-                StepKind.METRO -> R.color.metro_red
-                else -> R.color.deep_green
-            })))
+            ImageViewCompat.setImageTintList(row.stepIcon, ColorStateList.valueOf(getColor(stepColor(step.kind))))
+            val railOut = if (index == guide.steps.lastIndex) null else railAfter(step)
+            paintRail(row.stepRailAbove, railIn)
+            paintRail(row.stepRailBelow, railOut)
+            railIn = railOut
             step.target?.let { target ->
                 row.stepDirections.visibility = View.VISIBLE
                 row.stepDirections.contentDescription = getString(R.string.step_directions_for,
@@ -568,6 +599,30 @@ class MainActivity : AppCompatActivity() {
         }
         binding.sharedDirections.text = notesText(guide.notes)
         binding.sharedDirections.visibility = if (guide.notes.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun stepColor(kind: StepKind) = when (kind) {
+        StepKind.TRAIN -> R.color.train_blue
+        StepKind.METRO -> R.color.metro_red
+        else -> R.color.deep_green
+    }
+
+    /** How the thread between two steps is drawn: a ride in its line's colour, a walk thin and grey. */
+    private class Rail(@ColorRes val color: Int, val widthDp: Int)
+
+    /** Boarding starts a ride, so the thread below it is the vehicle's; anything else leads on foot. */
+    private fun railAfter(step: JourneyStep): Rail =
+        if (!step.getOff && step.kind in setOf(StepKind.BUS, StepKind.METRO, StepKind.TRAIN)) Rail(stepColor(step.kind), 4)
+        else Rail(R.color.line, 2)
+
+    private fun paintRail(view: View, rail: Rail?) {
+        if (rail == null) {
+            view.visibility = View.INVISIBLE
+            return
+        }
+        view.visibility = View.VISIBLE
+        view.setBackgroundColor(getColor(rail.color))
+        view.layoutParams = view.layoutParams.apply { width = (rail.widthDp * resources.displayMetrics.density).roundToInt() }
     }
 
     /** Each note on its own line, behind an icon the height of the text that says what it is about. */
@@ -619,6 +674,23 @@ class MainActivity : AppCompatActivity() {
                 return false
             }
         })
+        // Someone who zooms with two fingers knows the gesture: the buttons step aside, for good.
+        zoomButtonsRetired = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE).getBoolean(ZOOM_BUTTONS_RETIRED, false)
+        if (zoomButtonsRetired) binding.zoomControls.visibility = View.GONE
+        overlays.add(object : Overlay() {
+            override fun onTouchEvent(event: MotionEvent, mapView: MapView): Boolean {
+                if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) retireZoomButtons()
+                return false
+            }
+        })
+    }
+
+    private fun retireZoomButtons() {
+        if (zoomButtonsRetired) return
+        zoomButtonsRetired = true
+        getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE).edit().putBoolean(ZOOM_BUTTONS_RETIRED, true).apply()
+        binding.zoomControls.animate().alpha(0f).setDuration(250)
+            .withEndAction { binding.zoomControls.visibility = View.GONE }
     }
 
     private fun setupMap() = with(binding.map) {
@@ -750,7 +822,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         binding.destinationInput.doAfterTextChanged {
             binding.destinationLayout.error = null
             refreshSavedPlaceButton()
-            updateStartRow()
+            updateRouteCard()
         }
         // An empty search box offers the saved places. The clear-text icon relies on the
         // field's own focus listener, so keep it and add to it.
@@ -1040,18 +1112,50 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
-    /** The "From" row sits in the journey panel: it needs a journey to apply to, and goes with it. */
-    private fun updateStartRow() {
-        val shown = binding.journeyCard.visibility == View.VISIBLE && !binding.destinationInput.text.isNullOrBlank()
-        binding.startRow.visibility = if (shown) View.VISIBLE else View.GONE
-        val name = customStart?.name ?: myLocationLabel
-        binding.startButton.text = getString(R.string.start_from, name)
-        binding.startButton.contentDescription = getString(R.string.start_change, name)
+    /**
+     * The From/To card needs a journey to describe, and goes with it. While one is open it stays laid
+     * out, unseen until the sheet is pulled up, so the sheet's top never has to move.
+     */
+    private fun updateRouteCard() {
+        // A place that was never found is no destination to show.
+        val journey = binding.journeyCard.visibility == View.VISIBLE && directDestination != null &&
+            !binding.destinationInput.text.isNullOrBlank()
+        if (!journey) {
+            binding.routeCard.visibility = View.GONE
+            binding.searchCard.visibility = View.VISIBLE
+            binding.searchCard.alpha = 1f
+        } else if (binding.routeCard.visibility == View.GONE) {
+            binding.routeCard.visibility = View.INVISIBLE
+            revealRouteCard(if (journeySheet.state == BottomSheetBehavior.STATE_EXPANDED) 1f else 0f)
+        }
+        val start = customStart?.name ?: myLocationLabel
+        val iconSize = binding.routeFrom.textSize * 1.3f
+        binding.routeFrom.text = start
+        binding.routeFrom.contentDescription = getString(R.string.start_change, start)
+        binding.routeFrom.setCompoundDrawablesRelative(sizedIcon(
+            if (customStart == null) R.drawable.ic_my_location else R.drawable.ic_place, iconSize, R.color.deep_green),
+            null, null, null)
+        val destination = binding.destinationInput.text.toString().substringBefore(" · ")
+        binding.routeTo.text = destination
+        binding.routeTo.contentDescription = getString(R.string.route_change_destination, destination)
+        binding.routeTo.setCompoundDrawablesRelative(sizedIcon(R.drawable.ic_place, iconSize, R.color.warning),
+            null, null, null)
     }
 
-    private fun setupStartRow() {
-        binding.startButton.setOnClickListener(::showStartMenu)
+    private fun setupRouteCard() {
+        binding.routeFrom.setOnClickListener(::showStartMenu)
+        binding.routeTo.setOnClickListener { editDestination() }
         binding.swapStartButton.setOnClickListener { swapStartAndDestination() }
+        binding.routeBackButton.setOnClickListener { journeySheet.state = BottomSheetBehavior.STATE_COLLAPSED }
+    }
+
+    /** Back to the search bar, with the destination ready to be typed over. */
+    private fun editDestination() {
+        journeySheet.state = BottomSheetBehavior.STATE_COLLAPSED
+        binding.destinationInput.requestFocus()
+        binding.destinationInput.selectAll()
+        getSystemService(InputMethodManager::class.java)
+            .showSoftInput(binding.destinationInput, InputMethodManager.SHOW_IMPLICIT)
     }
 
     /** Where the journey can start from, in a menu under [anchor]. */
@@ -1081,7 +1185,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun chooseStart(start: CustomStart?) {
         if (start == customStart) return
         customStart = start
-        updateStartRow()
+        updateRouteCard()
         replanForPreset()
     }
 
@@ -1192,7 +1296,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         planningJob?.cancel()
         planningJob = lifecycleScope.launch {
             val started = SystemClock.elapsedRealtime()
-            binding.findRouteButton.isEnabled = false
             binding.searchProgress.visibility = View.VISIBLE
             journeyOptions = emptyList()
             showOptionsRow(false)
@@ -1358,7 +1461,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     MessageAction(R.string.retry) { refreshJourney() })
             } finally {
                 if (currentCoroutineContext()[Job] == planningJob) {
-                    binding.findRouteButton.isEnabled = true
                     binding.searchProgress.visibility = View.GONE
                     automaticReplanPending = false
                 }
@@ -1418,9 +1520,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
 
     /** The other journeys on offer and the label that names them come and go together. */
     private fun showOptionsRow(show: Boolean) {
-        val visibility = if (show) View.VISIBLE else View.GONE
-        binding.journeyOptionsScroll.visibility = visibility
-        binding.journeyOptionsLabel.visibility = visibility
+        binding.journeyOptions.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     private fun renderJourneyOptionChips() {
@@ -1503,7 +1603,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val guide = mixedJourneyChoice?.let { JourneySteps.forMixed(this, it, directDestination) }
             ?: trainJourneyChoice?.let { JourneySteps.forTrain(this, it, directDestination) }
             ?: JourneySteps.forBus(this, requireNotNull(choice))
-        val walkingFaster = directWalkingSeconds < transitSeconds
+        walkingIsFaster = directWalkingSeconds < transitSeconds
         // The timetable cannot know the metro is shut; GTT's notices can.
         val metroNotes = if (trainJourneyChoice?.isMetro == true) {
             metroAlerts.map { JourneyNote(R.drawable.ic_metro, getString(R.string.metro_alert_note, it)) }
@@ -1516,26 +1616,19 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         ))
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
         showSummary(transitSeconds)
-        binding.walkButton.text = getString(R.string.walk_option, minutes(directWalkingSeconds))
-        binding.walkButton.contentDescription = listOfNotNull(getString(R.string.walk_there),
-            getString(R.string.walk_summary, minutes(directWalkingSeconds)),
-            getString(R.string.faster).takeIf { walkingFaster }).joinToString(", ")
-        binding.busAnywayButton.text = getString(R.string.transit_option, minutes(transitSeconds))
-        binding.busAnywayButton.contentDescription = listOfNotNull(binding.busAnywayButton.text,
-            getString(R.string.faster).takeIf { !walkingFaster }).joinToString(", ")
-        // The quicker way carries a bolt rather than a sentence saying so.
-        binding.walkButton.setIconResource(if (walkingFaster) R.drawable.ic_bolt else 0)
-        binding.busAnywayButton.setIconResource(if (walkingFaster) 0 else R.drawable.ic_bolt)
-        binding.travelModeChoices.visibility = View.VISIBLE
-        syncModeToggle()
-        binding.boardStopDirectionsButton.setText(R.string.walk_to_boarding_stop)
-        binding.boardStopDirectionsButton.visibility = View.VISIBLE
         renderJourneyGuide(transitGuide!!)
+        updateModeSwitch()
         binding.alertButton.visibility =
             if (choice != null && trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
         updateAlertButton()
         // A journey already pulled open stays open through live updates; a new one starts at the peek.
         showJourneySheet(if (wasShowingSteps) null else BottomSheetBehavior.STATE_COLLAPSED)
+        // Quicker on foot: the journey says so and walks, with the ride a tap away. A ride the rider
+        // chose anyway stays through live updates.
+        if (walkingIsFaster && rideAnywayTo != directDestination) {
+            selectWalkingMode(frame)
+            return
+        }
         renderVehicles()
         if (frame) frameCurrentJourney()
     }
@@ -1594,8 +1687,12 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private suspend fun fetchVehicles(forceRefresh: Boolean) {
-        liveStatusFetchedAt = null
-        setLiveStatus(getString(R.string.connecting), R.color.ink)
+        // The routine refresh keeps the label as it is: "Connecting…" every 15 s would read as trouble.
+        // Only a first fetch, or one the rider asked for, says it is under way.
+        if (forceRefresh || liveVehicles.isEmpty()) {
+            liveStatusFetchedAt = null
+            setLiveStatus(getString(R.string.connecting), R.color.ink)
+        }
         runCatching { inService(repository.vehicles(forceRefresh)) }
             .onSuccess {
                 liveVehicles = it
@@ -1641,7 +1738,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         setLiveStatus(status + ago, if (liveVehicles.isEmpty()) R.color.warning else R.color.live_green)
     }
 
-    /** " · updated 12 s ago"; quiet for the first few seconds so a fresh fetch reads as plain "live". */
+    /** " · updated 45 s ago"; quiet while the 15-second refresh keeps up, so it shows only when one is overdue. */
     private fun freshnessSuffix(seconds: Long): String = when {
         seconds < FRESHNESS_QUIET_SECONDS -> ""
         seconds < 60 -> " · " + getString(R.string.updated_seconds_ago, seconds.toInt())
@@ -1717,6 +1814,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     " · " + getString(R.string.bus_position_age, (vehicle.ageSeconds + 59) / 60)
                 alpha = if (vehicle.ageSeconds > 120) 0.65f else 1f
                 relatedObject = vehicle
+                setInfoWindow(markerBubble)
                 icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute)
                 setOnMarkerClickListener { clickedMarker, mapView ->
                     clearAskedSpot()
@@ -1730,19 +1828,18 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     val direction = when {
                         layover != null -> null
                         pattern == null -> getString(R.string.bus_direction_unavailable)
-                        else -> getString(R.string.bus_destination, pattern.headsign)
+                        else -> getString(R.string.bus_destination, TransitIndex.readableCase(pattern.headsign))
                     }
                     // Waiting at the terminus, where it will go next and when is all there is to say.
-                    if (layover != null) {
-                        val minutes = (layover.departsInSeconds / 60f).roundToInt()
-                        clickedMarker.snippet = if (minutes < 1) getString(R.string.at_terminus_leaving)
+                    val details = layover?.let {
+                        val minutes = (it.departsInSeconds / 60f).roundToInt()
+                        if (minutes < 1) getString(R.string.at_terminus_leaving)
                             else getString(R.string.at_terminus_leaves_in, minutes)
-                    }
-                    // The fleet number is for the curious, so it sits last, small and grey.
-                    clickedMarker.subDescription = (direction?.let { TextUtils.htmlEncode(it) + "<br/>" } ?: "") +
-                        "<small><font color=\"#8A8A8A\">" +
-                        TextUtils.htmlEncode(getString(R.string.bus_fleet_number, vehicle.fleetNumber)) +
-                        "</font></small>"
+                    } ?: (getString(R.string.distance_away, distanceTo(vehicle).roundToInt()) +
+                        " · " + getString(R.string.bus_position_age, (vehicle.ageSeconds + 59) / 60))
+                    // Where it is going reads first, then how far and how fresh.
+                    clickedMarker.subDescription = direction?.let(TextUtils::htmlEncode).orEmpty()
+                    clickedMarker.snippet = TextUtils.htmlEncode(details)
                     highlightCourse(vehicle, pattern)
                     clickedMarker.showInfoWindow()
                     mapView.controller.animateTo(clickedMarker.position)
@@ -2100,6 +2197,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             title = label
             snippet = TransitIndex.cleanStopName(stop.name)
+            setInfoWindow(markerBubble)
             // Buses can be listed only for a bus stop; a station keeps its plain label.
             if (busStop) setOnMarkerClickListener { _, _ ->
                 showStopArrivals(stop, sizeDp)
@@ -2136,6 +2234,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             position = GeoPoint(latitude, longitude)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             title = getString(R.string.final_destination)
+            setInfoWindow(markerBubble)
             snippet = binding.destinationInput.text.toString()
             icon = destinationPinIcon()
         })
@@ -2318,6 +2417,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 position = start.point
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 title = start.name
+                setInfoWindow(markerBubble)
                 icon = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(getColor(R.color.deep_green))
@@ -2333,6 +2433,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             position = GeoPoint(location.latitude, location.longitude)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             title = getString(R.string.you_are_here)
+            setInfoWindow(markerBubble)
             icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_my_location)
         })
     }
@@ -2603,23 +2704,19 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun normalizeRoute(route: String) = transitIndex.routeName(route)
         ?: route.removePrefix("gtt:").replace(TRAILING_LETTERS, "")
 
-    private fun selectWalkingMode() {
+    private fun selectWalkingMode(frame: Boolean = true) {
         val destination = directDestination ?: return
+        // Not cancelling planning here: a journey that turns out quicker on foot lands here from within it.
         if (journeyChoice == null && trainJourneyChoice == null) return
-        planningJob?.cancel()
         walkingMode = true
         showOptionsRow(false)
         binding.journeyTitle.text = getString(R.string.walk_summary, minutes(directWalkingSeconds))
         showSummary(directWalkingSeconds)
-        syncModeToggle()
-        renderJourneyGuide(JourneySteps.forWalking(this, directWalkingMetres.roundToInt(),
-            minutes(directWalkingSeconds), destination))
-        // Maps opens only when asked, and the button stays so the route can be reopened.
-        binding.boardStopDirectionsButton.setText(R.string.open_walking_directions)
-        binding.boardStopDirectionsButton.visibility = View.VISIBLE
+        updateModeSwitch()
+        renderJourneyGuide(JourneySteps.forWalking(this, directWalkingMetres.roundToInt(), destination))
         binding.alertButton.visibility = View.GONE
         renderVehicles()
-        frameCurrentJourney()
+        if (frame) frameCurrentJourney()
     }
 
     /**
@@ -2647,12 +2744,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         walkingMode = true
         binding.journeyTitle.text = getString(R.string.walk_summary, minutes(directWalkingSeconds))
         showSummary(directWalkingSeconds)
-        val guide = JourneySteps.forWalking(this, directWalkingMetres.roundToInt(),
-            minutes(directWalkingSeconds), target)
+        val guide = JourneySteps.forWalking(this, directWalkingMetres.roundToInt(), target)
         renderJourneyGuide(guide.copy(notes =
             listOf(JourneyNote(R.drawable.ic_bolt, getString(R.string.no_ride_beats_walking))) + guide.notes))
-        binding.boardStopDirectionsButton.setText(R.string.open_walking_directions)
-        binding.boardStopDirectionsButton.visibility = View.VISIBLE
         showJourneySheet(BottomSheetBehavior.STATE_COLLAPSED)
         renderVehicles()
         frameCurrentJourney()
@@ -2664,17 +2758,12 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
 
     private fun selectBusMode() {
         if (journeyChoice == null && trainJourneyChoice == null) return
-        planningJob?.cancel()
         walkingMode = false
         renderJourneyOptionChips()
-        binding.boardStopDirectionsButton.setText(R.string.walk_to_boarding_stop)
-        binding.boardStopDirectionsButton.visibility = View.VISIBLE
-        val transitSeconds = mixedJourneyChoice?.estimatedTotalSeconds
-            ?: trainJourneyChoice?.estimatedTotalSeconds
-            ?: journeyChoice!!.estimatedTotalSeconds
+        val transitSeconds = transitSeconds()
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
         showSummary(transitSeconds)
-        syncModeToggle()
+        updateModeSwitch()
         transitGuide?.let(::renderJourneyGuide)
         binding.alertButton.visibility =
             if (trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
@@ -2691,17 +2780,32 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         binding.journeySummary.visibility = View.VISIBLE
     }
 
-    /** The ride-or-walk toggle shows the way on screen as the checked one. */
-    private fun syncModeToggle() {
-        binding.travelModeChoices.check(if (walkingMode) R.id.walkButton else R.id.busAnywayButton)
+    private fun transitSeconds() = mixedJourneyChoice?.estimatedTotalSeconds
+        ?: trainJourneyChoice?.estimatedTotalSeconds
+        ?: journeyChoice?.estimatedTotalSeconds ?: 0f
+
+    /**
+     * Walking is offered only when it beats the ride: the journey then walks, and this button offers
+     * the ride anyway (or, once riding, the walk back). When the ride is quicker there is no choice to make.
+     */
+    private fun updateModeSwitch() {
+        val button = binding.modeSwitchButton
+        if (!walkingIsFaster || (journeyChoice == null && trainJourneyChoice == null)) {
+            button.visibility = View.GONE
+            return
+        }
+        button.text = if (walkingMode) getString(R.string.ride_anyway, minutes(transitSeconds()))
+            else getString(R.string.walk_instead, minutes(directWalkingSeconds))
+        button.setIconResource(if (walkingMode) R.drawable.ic_bus else R.drawable.ic_walk)
+        button.visibility = View.VISIBLE
     }
 
     private fun hideTravelModeChoices() {
         walkingMode = false
         journeyOptions = emptyList()
         showOptionsRow(false)
-        binding.travelModeChoices.visibility = View.GONE
-        binding.boardStopDirectionsButton.visibility = View.GONE
+        walkingIsFaster = false
+        binding.modeSwitchButton.visibility = View.GONE
         binding.alertButton.visibility = View.GONE
     }
 
@@ -2720,8 +2824,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     /** Walking directions in Maps; an [origin] sets where a leg starts, otherwise Maps starts from the rider. */
-    private fun openWalkingDirections(destination: GeoPoint) = openWalkingDirections(destination, null)
-
     private fun openWalkingDirections(destination: GeoPoint, origin: GeoPoint?) {
         val from = origin ?: startPoint
         val webDirections = Uri.parse(
@@ -2789,6 +2891,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         const val STALE_NOTICE_VERSION = "stale_notice_version"
         const val HINTS_SEEN = "hints_seen"
         const val COURSE_HINT_SEEN = "course_hint_seen"
+        const val ZOOM_BUTTONS_RETIRED = "zoom_buttons_retired"
         const val INCLUDE_TRAINS = "include_trains"
         const val WALKING_METRES_PER_SECOND = 1.2f
         /** A ride is not offered when it takes more than 1.5 times the walk and 15 minutes more. */
@@ -2798,7 +2901,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"
         const val MISSING_REFRESHES_BEFORE_REPLAN = 3
         const val FRESHNESS_TICK_MILLIS = 5_000L
-        const val FRESHNESS_QUIET_SECONDS = 5
+        const val FRESHNESS_QUIET_SECONDS = 30
         const val STOP_DOT_DP = 9
         // Half a 48dp touch target: a tap this close to a stop dot opens that stop.
         const val STOP_TAP_REACH_DP = 24

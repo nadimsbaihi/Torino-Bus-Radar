@@ -6,21 +6,44 @@
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
     android:minHeight="48dp"
-    android:orientation="horizontal"
-    android:paddingVertical="4dp">
+    android:orientation="horizontal">
 
-    <ImageView
-        android:id="@+id/stepIcon"
+    <!-- The journey's thread: rails above and below the icon meet the next row's, so the steps read
+         as one path. A ride's rail takes its line's colour; a walk's is thin and grey. -->
+    <LinearLayout
         android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_height="match_parent"
         android:layout_marginEnd="12dp"
-        android:importantForAccessibility="no" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <View
+            android:id="@+id/stepRailAbove"
+            android:layout_width="4dp"
+            android:layout_height="0dp"
+            android:layout_marginBottom="3dp"
+            android:layout_weight="1" />
+
+        <ImageView
+            android:id="@+id/stepIcon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:importantForAccessibility="no" />
+
+        <View
+            android:id="@+id/stepRailBelow"
+            android:layout_width="4dp"
+            android:layout_height="0dp"
+            android:layout_marginTop="3dp"
+            android:layout_weight="1" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingVertical="4dp">
 
         <TextView
             android:id="@+id/stepText"

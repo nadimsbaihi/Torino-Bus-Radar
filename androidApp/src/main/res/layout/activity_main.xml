@@ -8,12 +8,14 @@
     android:layout_height="match_parent"
     android:background="@color/warm_white">
 
-<!-- The frame takes the system-bar padding so the coordinator, and the sheet inside it, line up with the screen it can use. -->
+<!-- The frame takes the system-bar padding so the coordinator, and the sheet inside it, line up with the screen it can use.
+     It takes focus from the search box, so it must not draw the focus veil Android puts over a focused view. -->
 <FrameLayout
     android:id="@+id/appContent"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/warm_white"
+    android:defaultFocusHighlightEnabled="false"
     android:focusable="true"
     android:focusableInTouchMode="true">
 
@@ -115,21 +117,6 @@
                         app:iconGravity="textStart"
                         app:iconPadding="0dp"
                         app:iconTint="@color/deep_green" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/findRouteButton"
-                        android:layout_width="48dp"
-                        android:layout_height="48dp"
-                        android:contentDescription="@string/find_direct_route"
-                        android:insetLeft="0dp"
-                        android:insetRight="0dp"
-                        android:minWidth="0dp"
-                        android:text=""
-                        app:cornerRadius="12dp"
-                        app:icon="@drawable/ic_search"
-                        app:iconGravity="textStart"
-                        app:iconPadding="0dp"
-                        app:iconTint="@color/warm_white" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -147,7 +134,7 @@
                 android:focusable="true"
                 android:foreground="?attr/selectableItemBackground"
                 android:gravity="center_vertical"
-                android:maxWidth="280dp"
+                android:layout_marginEnd="16dp"
                 android:minHeight="36dp"
                 android:paddingHorizontal="12dp"
                 android:paddingVertical="4dp"
@@ -179,6 +166,130 @@
                 android:text="@string/offline_map_loading"
                 android:textColor="@color/ink" />
         </LinearLayout>
+
+        <!-- With the journey pulled up, the search bar gives way to where it goes from and to, as map apps
+             do. It stays laid out (invisible) while a journey is open, so the sheet always stops below it. -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/routeCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            app:cardBackgroundColor="@color/card"
+            app:cardCornerRadius="@dimen/search_bar_radius"
+            app:cardElevation="3dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingVertical="8dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/routeBackButton"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:contentDescription="@string/route_back"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        app:icon="@drawable/ic_arrow_back"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconTint="@color/ink" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/routeFrom"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:background="@drawable/bg_route_field"
+                            android:drawablePadding="10dp"
+                            android:ellipsize="end"
+                            android:gravity="center_vertical"
+                            android:maxLines="1"
+                            android:paddingHorizontal="12dp"
+                            android:textColor="@color/ink"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/routeTo"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="6dp"
+                            android:background="@drawable/bg_route_field"
+                            android:drawablePadding="10dp"
+                            android:ellipsize="end"
+                            android:gravity="center_vertical"
+                            android:maxLines="1"
+                            android:paddingHorizontal="12dp"
+                            android:textColor="@color/ink"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/swapStartButton"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:contentDescription="@string/swap_start_destination"
+                        android:insetLeft="0dp"
+                        android:insetRight="0dp"
+                        android:minWidth="0dp"
+                        android:padding="0dp"
+                        android:tooltipText="@string/swap_start_destination"
+                        app:icon="@drawable/ic_swap_vert"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
+                        app:iconTint="@color/ink" />
+                </LinearLayout>
+
+                <!-- The planner's other ways to go, in one row under From and To as map apps have it. -->
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipToPadding="false"
+                    android:paddingHorizontal="12dp"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <!-- Shown whenever the planner offers more than one way by transit. -->
+                        <com.google.android.material.chip.ChipGroup
+                            android:id="@+id/journeyOptions"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp"
+                            android:layout_marginTop="8dp"
+                            android:visibility="gone"
+                            app:selectionRequired="true"
+                            app:singleLine="true"
+                            app:singleSelection="true" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- The journey sits at the bottom so the map stays in view; pull it up for every step. -->
         <com.google.android.material.card.MaterialCardView
@@ -324,6 +435,15 @@
                             android:visibility="gone"
                             android:text="@string/turn_on_location" />
 
+                        <!-- Only when walking beats the ride: the walk is shown, and the ride a tap away (or back). -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/modeSwitchButton"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="8dp"
+                            android:visibility="gone" />
+
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/alertButton"
                             android:layout_width="match_parent"
@@ -334,115 +454,6 @@
                             app:icon="@drawable/ic_bus_notification"
                             app:iconGravity="textStart" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/boardStopDirectionsButton"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="match_parent"
-                            android:layout_height="48dp"
-                            android:layout_marginTop="4dp"
-                            android:visibility="gone"
-                            android:text="@string/walk_to_boarding_stop"
-                            app:icon="@drawable/ic_directions"
-                            app:iconGravity="textStart" />
-
-                        <TextView
-                            android:id="@+id/journeyOptionsLabel"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="16dp"
-                            android:text="@string/other_ways"
-                            android:textColor="@color/muted"
-                            android:textSize="13sp"
-                            android:textStyle="bold"
-                            android:visibility="gone" />
-
-                        <!-- Shown with the label above whenever the planner offers more than one way. -->
-                        <HorizontalScrollView
-                            android:id="@+id/journeyOptionsScroll"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:scrollbars="none"
-                            android:visibility="gone">
-
-                            <com.google.android.material.chip.ChipGroup
-                                android:id="@+id/journeyOptions"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                app:selectionRequired="true"
-                                app:singleLine="true"
-                                app:singleSelection="true" />
-                        </HorizontalScrollView>
-
-                        <!-- Ride or walk: the one showing is the one checked. -->
-                        <com.google.android.material.button.MaterialButtonToggleGroup
-                            android:id="@+id/travelModeChoices"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:visibility="gone"
-                            app:selectionRequired="true"
-                            app:singleSelection="true">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/busAnywayButton"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_weight="1"
-                                android:text="@string/lazy_bus_option" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/walkButton"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_weight="1"
-                                android:text="@string/walk_there" />
-                        </com.google.android.material.button.MaterialButtonToggleGroup>
-
-                        <!-- Where the journey starts; only a journey has one to change. -->
-                        <LinearLayout
-                            android:id="@+id/startRow"
-                            android:layout_width="match_parent"
-                            android:layout_height="48dp"
-                            android:layout_marginTop="8dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal"
-                            android:visibility="gone">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/startButton"
-                                style="@style/Widget.Material3.Button.TextButton"
-                                android:layout_width="0dp"
-                                android:layout_height="48dp"
-                                android:layout_weight="1"
-                                android:ellipsize="end"
-                                android:gravity="start|center_vertical"
-                                android:maxLines="1"
-                                android:paddingStart="0dp"
-                                android:text="@string/start_my_location"
-                                android:textAllCaps="false"
-                                android:textColor="@color/deep_green"
-                                android:textSize="14sp"
-                                app:icon="@drawable/ic_my_location"
-                                app:iconTint="@color/deep_green" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/swapStartButton"
-                                style="@style/Widget.Material3.Button.IconButton"
-                                android:layout_width="48dp"
-                                android:layout_height="48dp"
-                                android:contentDescription="@string/swap_start_destination"
-                                android:insetLeft="0dp"
-                                android:insetRight="0dp"
-                                android:minWidth="0dp"
-                                android:padding="0dp"
-                                android:tooltipText="@string/swap_start_destination"
-                                app:icon="@drawable/ic_swap_vert"
-                                app:iconGravity="textStart"
-                                app:iconPadding="0dp"
-                                app:iconTint="@color/ink" />
-                        </LinearLayout>
 
                         <!-- Which kinds of journey to look for: a setting, so it comes last. -->
                         <com.google.android.material.switchmaterial.SwitchMaterial

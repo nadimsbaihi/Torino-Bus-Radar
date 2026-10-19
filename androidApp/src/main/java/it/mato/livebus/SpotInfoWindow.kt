@@ -11,6 +11,7 @@ internal class SpotInfoWindow(
     onCancel: () -> Unit
 ) : MarkerInfoWindow(R.layout.bubble_go_to_spot, mapView) {
     init {
+        MapBubble.style(view)
         view.findViewById<View>(R.id.spotGo).setOnClickListener { onGo() }
         view.findViewById<View>(R.id.spotCancel).setOnClickListener { onCancel() }
         // The stock bubble closes when touched; here that would leave the pin with no question.

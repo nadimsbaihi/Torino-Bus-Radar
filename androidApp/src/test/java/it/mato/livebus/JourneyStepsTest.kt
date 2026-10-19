@@ -148,7 +148,7 @@ class JourneyStepsTest {
         assertEquals(listOf(R.drawable.ic_schedule), guide.notes.map { it.icon })
     }
 
-    @Test fun aTrainJourneyListsTimesAndCreditsTheTimetable() {
+    @Test fun aTrainJourneyListsItsTimesWithoutATimetableCaveat() {
         val guide = JourneySteps.forTrain(context, train())
 
         assertEquals(listOf(
@@ -157,7 +157,7 @@ class JourneyStepsTest {
             "Chieri | 09:42",
             "500 m → destination"
         ), lines(guide))
-        assertEquals(listOf("Timetable times"), noteTexts(guide))
+        assertTrue(guide.notes.isEmpty())
         assertEquals(StepKind.TRAIN, guide.steps[1].kind)
     }
 
@@ -174,7 +174,7 @@ class JourneyStepsTest {
             "Metro Porta Susa | 07:43"
         ), lines(guide))
         assertEquals(listOf(StepKind.METRO, StepKind.METRO), guide.steps.drop(1).map { it.kind })
-        assertEquals(listOf(R.drawable.ic_metro), guide.notes.map { it.icon })
+        assertTrue(guide.notes.isEmpty())
     }
 
     @Test fun trainCategoriesAreAbbreviated() {
@@ -206,7 +206,7 @@ class JourneyStepsTest {
         assertEquals(StepKind.WALK, guide.steps[3].kind)
         assertEquals(exit.latitude, guide.steps[3].origin!!.latitude, 1e-9)
         assertNotNull(guide.steps[3].target)
-        assertTrue(noteTexts(guide).contains("Timetable times"))
+        assertTrue(noteTexts(guide).none { it.contains("Timetable") })
     }
 
     @Test fun trainThenBusDoesNotPromiseABusArrivalTime() {
@@ -226,13 +226,13 @@ class JourneyStepsTest {
         assertEquals(trainStart.latitude, guide.steps.first().target!!.latitude, 1e-9)
     }
 
-    @Test fun walkingIsOneStepWithDirectionsAndAnEstimate() {
+    @Test fun walkingIsOneStepWithDirectionsAndNothingSaidTwice() {
         val destination = GeoPoint(45.07, 7.68)
-        val guide = JourneySteps.forWalking(context, 900, 13, destination)
+        val guide = JourneySteps.forWalking(context, 900, destination)
 
         assertEquals(listOf("900 m → destination"), texts(guide))
         assertEquals(destination, guide.steps.single().target)
-        assertTrue(guide.notes.single().text.contains("900 m"))
+        assertTrue(guide.notes.isEmpty())
     }
 
     @Test @Config(qualifiers = "it") fun stepsAreInItalian() {
@@ -257,6 +257,8 @@ class JourneyStepsTest {
         assertEquals("Corso XX Settembre", TransitIndex.cleanStopName("CORSO XX SETTEMBRE"))
         assertEquals("Massimo D'Azeglio", TransitIndex.cleanStopName("MASSIMO D'AZEGLIO"))
         assertEquals("Porta Nuova FS", TransitIndex.cleanStopName("PORTA NUOVA FS"))
+        assertEquals("Metro XVIII Dicembre", TransitIndex.cleanStopName("Metro Xviii Dicembre"))
+        assertEquals("Il Vico di Civita", TransitIndex.cleanStopName("Il Vico di Civita"))
         assertEquals("P.zza Statuto", TransitIndex.cleanStopName("P.ZZA STATUTO"))
         assertEquals("Via Roma", TransitIndex.cleanStopName("Via Roma"))
         assertEquals("Montalenghe", TransitIndex.cleanStopName("Fermata 123 - MONTALENGHE"))

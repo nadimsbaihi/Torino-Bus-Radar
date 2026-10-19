@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One end of the journey in the From/To card: a soft field, pressed like a button. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/line">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface_variant" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</ripple>

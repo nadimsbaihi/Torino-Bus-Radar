@@ -3,8 +3,6 @@
     <string name="planning_journey">Finding your journey…</string>
     <string name="transit_summary">Transit · ~%1$d min total</string>
     <string name="walk_summary">Walk · ~%1$d min</string>
-    <string name="walk_option">Walk · %1$d min</string>
-    <string name="transit_option">Transit · %1$d min</string>
     <string name="option_best">Best</string>
     <string name="option_fewest_changes">Fewest changes</string>
     <string name="option_fastest">Fastest</string>
@@ -25,7 +23,6 @@
     <string name="data_out_of_date">Bus data may be out of date: many live buses do not match the app’s timetable. Update the app for accurate journeys.</string>
     <string name="bus_position_age">Position %1$d min ago</string>
     <string name="missed_it_next_bus">Missed it? %1$s in ~%2$d min</string>
-    <string name="bus_fleet_number">Bus no. %1$s</string>
     <string name="delayed_bus_journey">Bus positions are up to %1$d minutes old. Arrival estimates account for this delay, but the bus may have moved differently.</string>
     <string name="live_updated">● LIVE · UPDATED NOW</string>
     <string name="feed_unavailable">GTT unavailable · Retry</string>
@@ -38,7 +35,6 @@
     <string name="gtt_route">Optional map route filter</string>
     <string name="all_routes">All routes</string>
     <string name="destination">Where to?</string>
-    <string name="find_direct_route">Find the best live bus</string>
     <string name="search">Go</string>
     <string name="searching_short">…</string>
     <string name="finding_address">Finding address and live buses…</string>
@@ -61,11 +57,7 @@
     <string name="transfer_journey_found">Take %1$s → %2$s (live bus %3$d m away) · walk %6$d m to %4$s; bus expected there in ~%7$d min · get off near %5$s · the app will replan there using current live buses.</string>
     <string name="replanning_from_here">Checkpoint reached · refreshing your location and all live buses…</string>
     <string name="bus_passed_replanning">That bus is no longer catchable · recalculating the whole journey with current live vehicles…</string>
-    <string name="walking_selected">Estimate: %1$d m, ~%2$d min. Maps may differ.</string>
     <string name="no_ride_beats_walking">No ride beats walking</string>
-    <string name="walk_there">Walk instead</string>
-    <string name="walk_to_boarding_stop">Directions to boarding stop</string>
-    <string name="lazy_bus_option">Take transit</string>
     <string name="board_here">Board here</string>
     <string name="exit_here">Exit here</string>
     <string name="intermediate_destination">Intermediate destination</string>
@@ -107,7 +99,6 @@
     <string name="live_vehicle_overview_count">Showing the %1$d closest of %2$d live GTT vehicles</string>
     <string name="scheduled_train_no_live_vehicles">Scheduled Trenitalia journey · GTT buses hidden</string>
     <string name="directions_unavailable">No app on this phone can open walking directions.</string>
-    <string name="open_walking_directions">Open walking directions</string>
     <string name="journey_details">Journey details</string>
     <string name="step_directions">Walking directions in Maps</string>
     <string name="step_directions_for">Walking directions in Maps: %1$s</string>
@@ -122,7 +113,6 @@
     <string name="change_tight">tight change</string>
     <string name="step_take_train">%1$s %2$s → %3$s</string>
     <string name="step_take_metro">%1$s → %2$s</string>
-    <string name="train_timetable_note">Timetable times</string>
     <plurals name="live_vehicle_count">
         <item quantity="one">%1$d live vehicle found for route %2$s</item>
         <item quantity="other">%1$d live vehicles found for route %2$s</item>
@@ -169,7 +159,6 @@
     <string name="stop_arrival_eta">~%1$d min</string>
     <string name="stop_arrival_row">Line %1$s towards %2$s, about %3$d minutes</string>
     <string name="start_my_location">My location</string>
-    <string name="start_from">From: %1$s</string>
     <string name="start_change">Starting point: %1$s. Tap to change.</string>
     <string name="start_pick_saved">A saved place…</string>
     <string name="start_pick_search">Search for a place…</string>
@@ -177,7 +166,6 @@
     <string name="start_search_hint">Start from</string>
     <string name="swap_start_destination">Swap start and destination</string>
     <string name="planned_from_note">Alert off: different start</string>
-    <string name="faster">faster</string>
     <string name="at_terminus_leaves_in">At the terminus · leaves in ~%1$d min</string>
     <string name="at_terminus_leaving">At the terminus · leaving shortly</string>
     <string name="menu">Menu</string>
@@ -188,7 +176,6 @@
     <string name="hint_long_press">Press and hold on the map to go to that spot</string>
     <string name="got_it">Got it</string>
     <string name="course_hint">Tap a stop on the route to see the next buses</string>
-    <string name="other_ways">Other ways</string>
     <string name="journey_arrive">Arrive ~%1$s</string>
     <string name="choose_start">Choose a starting point</string>
     <string name="allow_location">Allow location</string>
@@ -206,4 +193,8 @@
     <string name="update_up_to_date">You have the latest version (%1$s)</string>
     <string name="update_check_failed">Could not check for updates</string>
     <string name="update_allow_install">Allow installing the update to finish it</string>
+    <string name="route_back">Back to the map</string>
+    <string name="route_change_destination">To: %1$s. Tap to change.</string>
+    <string name="ride_anyway">Take transit anyway · %1$d min</string>
+    <string name="walk_instead">Walk instead · %1$d min</string>
 </resources>

@@ -339,13 +339,12 @@ class BusMapVisibilityTest {
             invoke(activity, "Destination", exit.latitude to exit.longitude, journey, null, false)
         }
         assertTrue(binding.journeyTitle.text.startsWith("Transit"))
-        assertEquals(android.view.View.VISIBLE, binding.travelModeChoices.visibility)
-        assertTrue(binding.walkButton.text.contains("min"))
-        assertTrue(binding.busAnywayButton.text.contains("min"))
-        assertEquals(android.view.View.VISIBLE, binding.boardStopDirectionsButton.visibility)
-        MainActivity::class.java.getDeclaredMethod("openWalkingDirections", org.osmdroid.util.GeoPoint::class.java).apply {
+        // The ride is quicker than walking there, so walking is not offered.
+        assertEquals(android.view.View.GONE, binding.modeSwitchButton.visibility)
+        MainActivity::class.java.getDeclaredMethod("openWalkingDirections",
+            org.osmdroid.util.GeoPoint::class.java, org.osmdroid.util.GeoPoint::class.java).apply {
             isAccessible = true
-            invoke(activity, org.osmdroid.util.GeoPoint(board.latitude, board.longitude))
+            invoke(activity, org.osmdroid.util.GeoPoint(board.latitude, board.longitude), null)
         }
         val mapsIntent = org.robolectric.Shadows.shadowOf(activity).nextStartedActivity
         assertEquals("com.google.android.apps.maps", mapsIntent.`package`)
@@ -356,8 +355,7 @@ class BusMapVisibilityTest {
             isAccessible = true
             invoke(activity, activity.getString(R.string.journey_failed))
         }
-        assertEquals(android.view.View.GONE, binding.travelModeChoices.visibility)
-        assertEquals(android.view.View.GONE, binding.boardStopDirectionsButton.visibility)
+        assertEquals(android.view.View.GONE, binding.modeSwitchButton.visibility)
         assertEquals(android.view.View.GONE, binding.alertButton.visibility)
         assertEquals(activity.getString(R.string.your_journey), binding.journeyTitle.text.toString())
         binding.map.onDetach()
@@ -382,10 +380,11 @@ class BusMapVisibilityTest {
             invoke(activity, "Destination", 45.09 to 7.6869)
         }
         assertTrue(binding.journeyTitle.text.startsWith("Walk"))
-        assertEquals(android.view.View.GONE, binding.travelModeChoices.visibility)
+        assertEquals(android.view.View.GONE, binding.modeSwitchButton.visibility)
         assertEquals(android.view.View.GONE, binding.alertButton.visibility)
-        assertEquals(activity.getString(R.string.open_walking_directions), binding.boardStopDirectionsButton.text)
-        assertEquals(android.view.View.VISIBLE, binding.boardStopDirectionsButton.visibility)
+        // The one walk carries its own directions button.
+        assertEquals(android.view.View.VISIBLE,
+            binding.journeySteps.getChildAt(0).findViewById<android.view.View>(R.id.stepDirections).visibility)
         assertTrue(binding.sharedDirections.text.contains(activity.getString(R.string.no_ride_beats_walking)))
         assertEquals(1, binding.journeySteps.childCount)
         binding.map.onDetach()
@@ -473,13 +472,12 @@ class BusMapVisibilityTest {
     private fun get(activity: MainActivity, name: String): Any? =
         MainActivity::class.java.getDeclaredField(name).apply { isAccessible = true }.get(activity)
 
-    @Test fun aTappedBusShowsItsFleetNumberLastAndQuietly() {
+    @Test fun aTappedBusSaysWhereItHeadsThenHowFarAndHowFresh() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
         activity.setTheme(R.style.Theme_MatoLiveBus)
         val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
         set(activity, "binding", binding)
         val now = System.currentTimeMillis() / 1000
-        // The feed's id carries a company suffix and, for some buses, is not the number on the side.
         set(activity, "liveVehicles", listOf(
             LiveVehicle("1150U", "60U", null, 45.07, 7.65, null, now, label = "14687"),
             LiveVehicle("9643U", "56U", null, 45.08, 7.66, null, now)))
@@ -494,16 +492,12 @@ class BusMapVisibilityTest {
             return marker
         }
 
-        val labelled = tap("60").subDescription
-        assertTrue(labelled.contains(activity.getString(R.string.bus_fleet_number, "14687")))
-        assertTrue(labelled.indexOf(activity.getString(R.string.bus_direction_unavailable)) <
-            labelled.indexOf("14687"))
-        assertTrue(labelled.contains("<small>"))
-        assertFalse(labelled.contains("1150"))
-        // Without a label the id, minus its suffix, is the number.
-        set(activity, "highlightedVehicleId", null)
-        MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }.invoke(activity)
-        assertTrue(tap("56").subDescription.contains(activity.getString(R.string.bus_fleet_number, "9643")))
+        // Where it heads comes second, then distance and age; the fleet number means nothing to a rider.
+        val tapped = tap("60")
+        assertEquals(activity.getString(R.string.bus_direction_unavailable), tapped.subDescription)
+        assertTrue(tapped.snippet.contains(" min"))
+        assertFalse(tapped.snippet.contains("14687"))
+        assertFalse(tapped.snippet.contains("1150"))
     }
 
     private fun set(activity: MainActivity, name: String, value: Any?) {

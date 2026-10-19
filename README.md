@@ -10,7 +10,7 @@ with walking, the metro or regional trains, and get directions to your boarding 
 
 1. Download and install the APK from the latest release.
 2. Allow location access and search for a destination.
-3. Choose a journey, then open walking directions to your boarding stop in Google Maps.
+3. Choose a journey, then tap the directions button on a walking step to open it in Google Maps.
 
 Your phone's location is the starting point unless you pick another. The app opens on the map
 each time; your recent destinations wait in the search box, and it remembers whether to include trains.
@@ -31,7 +31,9 @@ each time; your recent destinations wait in the search box, and it remembers whe
   the live buses and says how long ago they were fetched, with a refresh icon: a
   tap fetches them again. When GTT's feed fails, it says so in orange and keeps
   the last buses on the map, fading, for up to five minutes. Select a journey or line to focus the map, or tap a bus
-  to highlight its whole course and the stops it has yet to reach.
+  to highlight its whole course and the stops it has yet to reach. Zoom buttons
+  sit above the location button until you first zoom with two fingers; then they
+  step aside for good.
 - **What is coming to a stop.** Tap a stop on a highlighted course, or the
   boarding and exit stops of a journey, to see the next few buses heading there
   with their line, direction and estimated minutes. The list updates with each
@@ -46,9 +48,11 @@ each time; your recent destinations wait in the search box, and it remembers whe
 - **Journey steps, out of the way of the map.** Your journey opens in a panel at
   the bottom that says how long it takes, when you arrive and when to leave, with
   the first step (walk, board, get off, walk) in view, so the map stays in view
-  too. Pull the panel up for every step, Notify me, directions, other ways to go,
-  the Transit or Walk choice and where you start from, or swipe it down to
-  close it. The back button closes things one level at a time: the expanded
+  too. Pull the panel up for every step and Notify me, or swipe it down to
+  close it. Pulled up, the search bar turns into From and To, as in map apps,
+  with the other ways to go in one row beneath. When walking there is quicker
+  than any ride, the journey walks, with a button to take transit anyway (and
+  one to walk again). The back button closes things one level at a time: the expanded
   panel, a highlighted bus, then the journey, before it leaves the app.
   The refresh button beside the close button fetches fresh bus positions and
   plans the journey again.
@@ -58,15 +62,16 @@ each time; your recent destinations wait in the search box, and it remembers whe
 - **Leave-by time.** The walk to your boarding stop says when to set off, such
   as "leave in ~3 min", or "leave now" when the bus is about as far away as
   your walk.
-- **Start somewhere else.** Once a journey is on screen, its panel says "From:
-  My location". Tap it to plan from a saved place or any place you search for,
-  or use the arrows to swap start and destination and plan the way back. The
+- **Start somewhere else.** Pull a journey's panel up and From reads "My
+  location". Tap it to plan from a saved place or any place you search for, tap
+  To to change the destination, or use the arrows to swap start and destination
+  and plan the way back. The
   journey, the walking estimates and the directions all start from there, and
   the approach alert is off, since you are not at that start. Closing the
   journey goes back to your location.
 - **Other ways to go.** The app picks the journey that best weighs time against
   walking. When another journey has fewer changes, arrives sooner, or walks less,
-  a button under "Other ways" shows that one instead. Include or exclude regional trains.
+  a button in the row under From and To shows that one instead. Include or exclude regional trains.
   A ride that takes more than 1.5 times the walk and 15 minutes longer, such as
   tomorrow's first train, is not offered; when no ride is left, the app shows the walk.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
@@ -86,11 +91,10 @@ each time; your recent destinations wait in the search box, and it remembers whe
   that spot, even where the bundled data has no address. Bookmark it to keep it.
 - **Open locations from other apps.** Share a place from a maps app or a link
   to Torino Bus Radar and it plans a journey to that spot.
-- **Walking directions.** Compare a ride with walking, then open Google Maps
-  directions to the destination or boarding stop. Maps opens only when you tap
-  a directions button, and the button stays so you can reopen the route.
-  Every walking step in the journey, such as the walk from where you get off
-  one bus to the next stop, has its own directions button for just that leg.
+- **Walking directions.** Open Google Maps
+  directions for any walk in the journey: to the boarding stop, between two
+  rides, or to the destination. Each walking step has its own directions button,
+  and Maps opens only when you tap it.
 - **Shared routes.** Share directions text from another app to find a bus line
   mentioned in it.
 

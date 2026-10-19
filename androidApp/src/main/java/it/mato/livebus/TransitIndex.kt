@@ -1369,16 +1369,23 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         private val NAME_PARTICLES = setOf("a", "al", "alla", "da", "dal", "dalla", "de", "dei", "degli",
             "del", "della", "delle", "di", "e", "in", "per", "sul", "sulla")
         private val ROMAN_NUMERAL = Regex("^[IVXLC]+$")
+        // Three letters at least: two-letter ones are words too ("Il", "Vi").
+        private val WORDLIKE_ROMAN_NUMERAL = Regex("^[IVXLC][ivxlc]{2,}$")
         private val HAS_VOWEL = Regex("[AEIOUÀÈÉÌÒÙ]")
         private val WORD_START = Regex("""(^|['’\-/(])(\p{L})""")
 
         /**
          * GTT writes most stop names in capitals ("CHIESA DELLA SALUTE"); they read better as
          * "Chiesa della Salute". Names already in mixed case are left alone, as are roman numerals
-         * ("XX Settembre") and words without vowels, which are abbreviations ("FS").
+         * ("XX Settembre") and words without vowels, which are abbreviations ("FS"). A mixed-case
+         * name can still carry a numeral cased like a word ("Metro Xviii Dicembre"); that one is fixed.
          */
         internal fun readableCase(name: String): String {
-            if (name.any { it.isLowerCase() }) return name
+            if (name.any { it.isLowerCase() }) {
+                return name.split(" ").joinToString(" ") { word ->
+                    if (WORDLIKE_ROMAN_NUMERAL.matches(word)) word.uppercase() else word
+                }
+            }
             return name.split(" ").mapIndexed { index, word ->
                 when {
                     word.isEmpty() -> word
