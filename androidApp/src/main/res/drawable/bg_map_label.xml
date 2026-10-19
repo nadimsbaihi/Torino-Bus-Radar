@@ -1,0 +1,7 @@
+<!-- A soft backing behind small text on the map, only as tall as the text in a 48dp touch target. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:insetTop="22dp">
+    <shape android:shape="rectangle">
+        <solid android:color="@color/map_label_bg" />
+        <corners android:radius="6dp" />
+    </shape>
+</inset>

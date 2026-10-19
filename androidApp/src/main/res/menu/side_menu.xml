@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What is not about one journey: the rider's places, help, updates, and where the data comes from. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <group android:id="@+id/sideMenuMain">
+        <item
+            android:id="@+id/menuSavedPlaces"
+            android:icon="@drawable/ic_bookmark"
+            android:title="@string/saved_places_title" />
+        <item
+            android:id="@+id/menuHowTo"
+            android:icon="@drawable/ic_help"
+            android:title="@string/how_to_use" />
+        <item
+            android:id="@+id/menuUpdates"
+            android:icon="@drawable/ic_refresh"
+            android:title="@string/check_for_updates" />
+        <item
+            android:id="@+id/menuCredits"
+            android:icon="@drawable/ic_info"
+            android:title="@string/credits_title" />
+    </group>
+</menu>

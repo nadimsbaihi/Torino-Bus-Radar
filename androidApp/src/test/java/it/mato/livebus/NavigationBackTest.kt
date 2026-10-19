@@ -83,8 +83,19 @@ class NavigationBackTest {
 
     private fun sheet(binding: ActivityMainBinding) = BottomSheetBehavior.from(binding.journeyCard)
 
-    private fun peek(activity: MainActivity) =
-        activity.resources.getDimensionPixelSize(R.dimen.journey_peek_height)
+    /** The peek the sheet settled on, measured from where its first step sits. */
+    private fun peek(binding: ActivityMainBinding) = sheet(binding).peekHeight
+
+    @Test fun theAppOpensOnTheMapNotOnAnOldJourney() {
+        // What older versions stored to reopen the last journey.
+        RuntimeEnvironment.getApplication().getSharedPreferences("active_journey", 0).edit()
+            .putString("last_destination", "45.13660, 7.61250").commit()
+
+        val (_, binding) = screen()
+
+        assertEquals(View.GONE, binding.journeyCard.visibility)
+        assertEquals("", binding.destinationInput.text.toString())
+    }
 
     @Test fun aNewJourneyOpensAtThePeekSoTheMapStaysInView() {
         val (activity, binding) = screen()
@@ -95,7 +106,12 @@ class NavigationBackTest {
         assertEquals(BottomSheetBehavior.STATE_COLLAPSED, sheet(binding).state)
         assertEquals(4, binding.journeySteps.childCount)
         val covered = binding.coordinator.height - binding.journeyCard.top
-        assertTrue("collapsed sheet covers $covered px, peek is ${peek(activity)}", covered <= peek(activity))
+        assertTrue("collapsed sheet covers $covered px, peek is ${peek(binding)}", covered <= peek(binding))
+        // What the peek is for: the first step is in view without pulling the sheet up.
+        val firstStep = IntArray(2).also { binding.journeySteps.getChildAt(0).getLocationInWindow(it) }[1] +
+            binding.journeySteps.getChildAt(0).height
+        val sheetBottom = IntArray(2).also { binding.coordinator.getLocationInWindow(it) }[1] + binding.coordinator.height
+        assertTrue("first step ends at $firstStep, below the screen at $sheetBottom", firstStep <= sheetBottom)
     }
 
     @Test fun theExpandedSheetNeverCoversTheSearchBox() {
@@ -107,7 +123,7 @@ class NavigationBackTest {
 
         assertEquals(BottomSheetBehavior.STATE_EXPANDED, sheet(binding).state)
         assertTrue("sheet is only ${binding.journeyCard.height} px tall",
-            binding.journeyCard.height > peek(activity))
+            binding.journeyCard.height > peek(binding))
         assertTrue("sheet top ${binding.journeyCard.top} is above the search box bottom ${binding.topControls.bottom}",
             binding.journeyCard.top >= binding.topControls.bottom)
     }
@@ -126,11 +142,81 @@ class NavigationBackTest {
     }
 
     @Test fun backLeavesTheAppOnceNothingIsOpen() {
-        val (activity, _) = screen()
+        val (activity, binding) = screen()
+        binding.hintsDoneButton.performClick()
 
         back(activity)
 
         assertTrue(activity.isFinishing)
+    }
+
+    @Test fun theFirstVisitShowsTheTipsUntilTheRiderHasThem() {
+        val (activity, binding) = screen()
+        assertEquals(View.VISIBLE, binding.hintsCard.visibility)
+
+        // Back puts them away for now, as it does anything else on top of the map...
+        back(activity)
+        assertEquals(View.GONE, binding.hintsCard.visibility)
+        assertFalse(activity.isFinishing)
+        val (_, again) = screen()
+        assertEquals(View.VISIBLE, again.hintsCard.visibility)
+
+        // ...but "Got it" puts them away for good.
+        again.hintsDoneButton.performClick()
+        assertEquals(View.GONE, again.hintsCard.visibility)
+        val (_, later) = screen()
+        assertEquals(View.GONE, later.hintsCard.visibility)
+    }
+
+    @Test fun backClosesTheSideMenuInsteadOfLeavingTheApp() {
+        val (activity, binding) = screen()
+        binding.hintsDoneButton.performClick()
+        // Robolectric never draws, and a drawer only slides while it is drawn: open it outright.
+        binding.drawer.openDrawer(androidx.core.view.GravityCompat.START, false)
+        settle()
+        assertTrue(binding.drawer.isDrawerOpen(androidx.core.view.GravityCompat.START))
+
+        back(activity)
+
+        assertFalse(activity.isFinishing)
+    }
+
+    @Test fun noLocationWithoutAJourneyLeavesTheMapAlone() {
+        val (activity, binding) = screen()
+
+        call(activity, "showLocationHint")
+        settle()
+
+        // A bar at the bottom says so; no journey panel opens around the complaint.
+        assertEquals(View.GONE, binding.journeyCard.visibility)
+    }
+
+    @Test fun aJourneyPutsTheTipsAndTheLiveCountAway() {
+        val (activity, binding) = screen()
+        assertEquals(View.VISIBLE, binding.liveStatus.visibility)
+
+        show(activity)
+
+        assertEquals(View.GONE, binding.hintsCard.visibility)
+        assertEquals(View.GONE, binding.liveStatus.visibility)
+        binding.closeJourneyButton.performClick()
+        settle()
+        assertEquals(View.VISIBLE, binding.liveStatus.visibility)
+    }
+
+    @Test fun theRideOrWalkToggleChecksTheWayOnScreen() {
+        val (activity, binding) = screen()
+        show(activity)
+        assertEquals(R.id.busAnywayButton, binding.travelModeChoices.checkedButtonId)
+        assertTrue(binding.journeySummary.text.isNotEmpty())
+
+        binding.walkButton.performClick()
+        settle()
+        assertEquals(R.id.walkButton, binding.travelModeChoices.checkedButtonId)
+
+        binding.busAnywayButton.performClick()
+        settle()
+        assertEquals(R.id.busAnywayButton, binding.travelModeChoices.checkedButtonId)
     }
 
     @Test fun backFirstClearsAHighlightedBusThenClosesTheJourney() {
@@ -344,12 +430,12 @@ class NavigationBackTest {
         binding.destinationInput.setText("Piazza Castello", false)
         show(activity)
 
-        // The start row, shown once there is a destination, is part of the peek.
         assertEquals(View.VISIBLE, binding.startRow.visibility)
-        val startRow = activity.resources.getDimensionPixelSize(R.dimen.journey_start_row_height)
-        val covered = minOf(peek(activity) + startRow, binding.journeyCard.height)
+        // The live count steps aside for a journey, so the search box is shorter then.
+        val journeyTop = binding.topControls.height
+        val covered = minOf(peek(binding), binding.journeyCard.height)
         assertTrue("the sheet should reserve map space", covered > 0)
-        assertEquals((top - covered) / 2, binding.map.mapCenterOffsetY)
+        assertEquals((journeyTop - covered) / 2, binding.map.mapCenterOffsetY)
 
         binding.closeJourneyButton.performClick()
         settle()

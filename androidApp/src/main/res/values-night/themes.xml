@@ -14,6 +14,12 @@
         <item name="colorOnSurfaceVariant">@color/muted</item>
         <item name="colorSurface">@color/card</item>
         <item name="colorOnSurface">@color/ink</item>
+        <!-- Drawers, dropdowns, menus and dialogs draw on these; unset, Material tints them purple. -->
+        <item name="colorSurfaceContainerLowest">@color/card</item>
+        <item name="colorSurfaceContainerLow">@color/card</item>
+        <item name="colorSurfaceContainer">@color/card</item>
+        <item name="colorSurfaceContainerHigh">@color/card</item>
+        <item name="colorSurfaceContainerHighest">@color/card</item>
         <item name="android:navigationBarColor">@color/warm_white</item>
         <item name="android:statusBarColor">@color/warm_white</item>
         <item name="android:windowLightStatusBar">false</item>

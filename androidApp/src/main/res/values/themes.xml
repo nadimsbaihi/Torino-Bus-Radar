@@ -14,6 +14,12 @@
         <item name="colorOnSurfaceVariant">@color/muted</item>
         <item name="colorSurface">@color/card</item>
         <item name="colorOnSurface">@color/ink</item>
+        <!-- Drawers, dropdowns, menus and dialogs draw on these; unset, Material tints them purple. -->
+        <item name="colorSurfaceContainerLowest">@color/card</item>
+        <item name="colorSurfaceContainerLow">@color/card</item>
+        <item name="colorSurfaceContainer">@color/card</item>
+        <item name="colorSurfaceContainerHigh">@color/card</item>
+        <item name="colorSurfaceContainerHighest">@color/card</item>
         <item name="android:navigationBarColor">@color/warm_white</item>
         <item name="android:statusBarColor">@color/warm_white</item>
         <item name="android:windowLightStatusBar">true</item>
@@ -24,5 +30,17 @@
         <item name="cornerSizeTopRight">20dp</item>
         <item name="cornerSizeBottomLeft">0dp</item>
         <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <!-- One line of the hints card: a tinted icon and what to do. -->
+    <style name="MatoLiveBus.Hint" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:drawablePadding">12dp</item>
+        <item name="android:drawableTint">@color/deep_green</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">15sp</item>
     </style>
 </resources>

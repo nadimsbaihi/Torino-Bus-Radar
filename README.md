@@ -12,14 +12,25 @@ with walking, the metro or regional trains, and get directions to your boarding 
 2. Allow location access and search for a destination.
 3. Choose a journey, then open walking directions to your boarding stop in Google Maps.
 
-Your phone's location is the starting point unless you pick another. The app remembers your last
-destination and whether to include trains.
+Your phone's location is the starting point unless you pick another. The app opens on the map
+each time; your recent destinations wait in the search box, and it remembers whether to include trains.
 
 ## Features
 
+- **Updates in the app.** About twice a day the app looks for a newer release on
+  GitHub and offers it at the bottom of the map; Check for updates in the side menu
+  looks right away. The app downloads the APK, checks it against the release's
+  checksum, and hands it to Android, which asks before installing.
+- **Tips to start with.** The first time you open the app, a card at the bottom
+  shows what the map answers to: search, tap a bus, tap a stop, press and hold.
+  Tap Got it to put it away. The menu button at the left of the search bar opens
+  a side menu that brings it back under How to use, beside your saved places and
+  the data credits.
 - **Live bus map.** See GTT vehicles across the city, with positions refreshed
-  every 15 seconds while the app is open, with a note of how long ago they
-  were fetched. Select a journey or line to focus the map, or tap a bus
+  every 15 seconds while the app is open. A label under the search bar counts
+  the live buses and says how long ago they were fetched, with a refresh icon: a
+  tap fetches them again. When GTT's feed fails, it says so in orange and keeps
+  the last buses on the map, fading, for up to five minutes. Select a journey or line to focus the map, or tap a bus
   to highlight its whole course and the stops it has yet to reach.
 - **What is coming to a stop.** Tap a stop on a highlighted course, or the
   boarding and exit stops of a journey, to see the next few buses heading there
@@ -32,9 +43,11 @@ destination and whether to include trains.
   current notices about the metro, such as a closure or replacement buses.
 - **Changes.** A change to a second bus says when that bus is due and how long you
   wait for it, or "tight change" when it is under a minute or likely to be missed.
-- **Journey steps, out of the way of the map.** Your journey opens as a short
-  list of steps (walk, board, get off, walk) in a panel at the bottom, so the
-  map stays in view. Pull the panel up for every step, or swipe it down to
+- **Journey steps, out of the way of the map.** Your journey opens in a panel at
+  the bottom that says how long it takes, when you arrive and when to leave, with
+  the first step (walk, board, get off, walk) in view, so the map stays in view
+  too. Pull the panel up for every step, Notify me, directions, other ways to go,
+  the Transit or Walk choice and where you start from, or swipe it down to
   close it. The back button closes things one level at a time: the expanded
   panel, a highlighted bus, then the journey, before it leaves the app.
   The refresh button beside the close button fetches fresh bus positions and
@@ -53,17 +66,19 @@ destination and whether to include trains.
   journey goes back to your location.
 - **Other ways to go.** The app picks the journey that best weighs time against
   walking. When another journey has fewer changes, arrives sooner, or walks less,
-  a button beside it shows that one instead. Include or exclude regional trains.
+  a button under "Other ways" shows that one instead. Include or exclude regional trains.
   A ride that takes more than 1.5 times the walk and 15 minutes longer, such as
   tomorrow's first train, is not offered; when no ride is left, the app shows the walk.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
   and regional stations without a connection or an API key.
 - **Dark mode.** The app and its offline map follow your phone's dark-mode
-  setting. Tap the half-moon button at the top to hold it light or dark instead.
+  setting.
 - **Saved places.** Tap the bookmark beside the search box to give any
   destination a name of your own, such as "Mum's" or "Work". Saved names come
   first in search, and an empty search box lists them, followed by the last few
-  places you went to. Tap the bookmark again to rename or remove one. Saved and
+  places you went to. Each suggestion has an icon for what it is: a saved place,
+  a recent one, an address, a GTT stop or a train station. The side menu lists every
+  saved place too. Tap the bookmark again to rename or remove one. Saved and
   recent places stay on your phone.
 - **Home-screen shortcuts.** Your first four saved places appear when you press
   and hold the app icon; tap one to plan a journey there.
@@ -192,8 +207,8 @@ their own licences too; their texts are in `androidApp/src/main/assets/licenses`
 
 The app reads your location from the phone's location service (Google Play services) to plan
 journeys, measure the distance to buses and, while an approach alert is on, to tell when you reach
-the stop where you change buses. The app itself never sends your location anywhere. Requests to GTT
-carry no location or identifier. Searching, saved places and recent destinations work offline and
+the stop where you change buses. The app itself never sends your location anywhere. Requests to GTT,
+and the update check to GitHub, carry no location or identifier. Searching, saved places and recent destinations work offline and
 are stored only on the phone. Your location leaves the phone only when you choose to open walking
 directions in Google Maps. The app has no accounts, analytics or ads.
 
@@ -201,7 +216,8 @@ directions in Google Maps. The app has no accounts, analytics or ads.
 
 Push a version tag such as `v0.2.1`. [GitHub Actions](.github/workflows/release.yml)
 runs the tests and lint, builds and signs the APK, then attaches it to a GitHub
-Release. Failed validation prevents publishing.
+Release. Failed validation prevents publishing. Installed copies find the new
+release within about 12 hours, or at once from Check for updates.
 
 The workflow requires the repository secrets `ANDROID_KEYSTORE_BASE64` and
 `ANDROID_KEYSTORE_PASSWORD`. Keep a secure backup of the signing key and

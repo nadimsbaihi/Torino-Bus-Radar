@@ -15,6 +15,10 @@ import org.robolectric.annotation.SQLiteMode
 @LooperMode(LooperMode.Mode.LEGACY)
 class LiveStatusFreshnessTest {
     private fun suffix(seconds: Long): String {
+        // Without the first-visit tips: under the legacy looper their card's bottom inset re-enters
+        // the coordinator's pre-draw, which a phone never does.
+        org.robolectric.RuntimeEnvironment.getApplication().getSharedPreferences("active_journey", 0).edit()
+            .putBoolean("hints_seen", true).commit()
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         val method = MainActivity::class.java.getDeclaredMethod("freshnessSuffix", Long::class.javaPrimitiveType)
             .apply { isAccessible = true }

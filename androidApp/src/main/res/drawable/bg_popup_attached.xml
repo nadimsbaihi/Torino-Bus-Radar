@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The search suggestions hanging from the search bar: square on top, a hairline where they meet, rounded below like the bar. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/card" />
+            <corners
+                android:bottomLeftRadius="@dimen/search_bar_radius"
+                android:bottomRightRadius="@dimen/search_bar_radius"
+                android:topLeftRadius="0dp"
+                android:topRightRadius="0dp" />
+        </shape>
+    </item>
+    <item
+        android:gravity="top"
+        android:height="1dp"
+        android:left="16dp"
+        android:right="16dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/line" />
+        </shape>
+    </item>
+</layer-list>

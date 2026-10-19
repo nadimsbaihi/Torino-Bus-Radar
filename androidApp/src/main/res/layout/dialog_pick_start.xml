@@ -16,5 +16,6 @@
         android:imeOptions="actionSearch"
         android:inputType="textPostalAddress"
         android:maxLines="1"
+        android:popupBackground="@drawable/bg_popup"
         android:singleLine="true" />
 </com.google.android.material.textfield.TextInputLayout>

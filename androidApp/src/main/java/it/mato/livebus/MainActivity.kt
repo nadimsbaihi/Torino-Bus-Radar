@@ -25,6 +25,7 @@ import android.annotation.SuppressLint
 import androidx.core.widget.ImageViewCompat
 import androidx.core.widget.doAfterTextChanged
 import android.content.res.ColorStateList
+import android.database.DataSetObserver
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
@@ -41,17 +42,21 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.currentCoroutineContext
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.Insets
+import androidx.core.view.GravityCompat
 import androidx.core.view.doOnLayout
 import android.graphics.Typeface
 import androidx.core.view.ViewCompat
@@ -64,6 +69,7 @@ import it.mato.livebus.databinding.ActivityMainBinding
 import it.mato.livebus.databinding.DialogPickStartBinding
 import it.mato.livebus.databinding.DialogSavePlaceBinding
 import it.mato.livebus.databinding.ItemJourneyStepBinding
+import it.mato.livebus.databinding.ItemPlaceSuggestionBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -87,17 +93,29 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import java.io.File
 import java.util.UUID
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.MapTileProviderBase
+import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.coroutines.resume
 
 private data class CustomStart(val name: String, val point: GeoPoint)
+
+/** The button under a journey message, and what it does. */
+private class MessageAction(@StringRes val label: Int, val run: () -> Unit) {
+    operator fun invoke() = run()
+}
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -155,9 +173,13 @@ class MainActivity : AppCompatActivity() {
     private var mapInsets = 0 to 0
     // A start other than the rider's own position, set from the journey panel and gone with the journey.
     private var customStart: CustomStart? = null
+    private val appUpdates by lazy { AppUpdates(this) }
+    private var pendingUpdate: File? = null
     private var stopWindow: StopArrivalsWindow? = null
     private var openStop: TransitStop? = null
     private var stopJob: Job? = null
+    // What the button under a journey message does, while one shows.
+    private var messageAction: MessageAction? = null
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -183,8 +205,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val handlingReplan = intent.action == BusAlertService.ACTION_REPLAN ||
-            intent.action == PlaceShortcuts.ACTION_GO_TO_PLACE || geoTarget(intent) != null
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.root.requestFocus()
@@ -197,12 +217,13 @@ class MainActivity : AppCompatActivity() {
         setupDestinationPicker()
         setupSearchPresets()
         setupStartRow()
-        setupAppearanceMenu()
+        setupAppMenu()
+        setupHints()
         binding.mapAttribution.setOnClickListener { Credits.show(this) }
         binding.locationButton.setOnClickListener {
             if (deviceLocationEnabled()) requestLocation() else openLocationSettings()
         }
-        binding.locationSettingsButton.setOnClickListener { openLocationSettings() }
+        binding.locationSettingsButton.setOnClickListener { messageAction?.invoke() }
         binding.findRouteButton.setOnClickListener { findDestinationRoute() }
         binding.liveStatus.setOnClickListener { startRefreshing(forceRefresh = true) }
         binding.alertButton.setOnClickListener { if (isAlertActive()) stopAlert() else requestAlert() }
@@ -228,7 +249,69 @@ class MainActivity : AppCompatActivity() {
         consumeGoToPlace(intent)
         consumeGeoLink(intent)
         savedPlaces.publishShortcuts()
-        if (savedInstanceState == null && !handlingReplan) restoreLastJourney()
+        checkForUpdate()
+    }
+
+    /**
+     * Now and then, looks for a newer release and offers it; [asked] looks right away and says when
+     * there is none. Debug builds are never released, so they only look when asked.
+     */
+    private fun checkForUpdate(asked: Boolean = false) {
+        if (!asked && (BuildConfig.DEBUG || !appUpdates.dueForCheck())) return
+        lifecycleScope.launch {
+            val release = try {
+                appUpdates.newerRelease(BuildConfig.VERSION_NAME)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Update check failed", error)
+                if (asked) Snackbar.make(binding.coordinator, R.string.update_check_failed, Snackbar.LENGTH_LONG).show()
+                return@launch
+            }
+            when {
+                release != null -> Snackbar.make(binding.coordinator,
+                    getString(R.string.update_available, release.version), Snackbar.LENGTH_INDEFINITE)
+                    .setAction(R.string.update_action) { downloadUpdate(release) }.show()
+                asked -> Snackbar.make(binding.coordinator,
+                    getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME), Snackbar.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun downloadUpdate(release: AppRelease) {
+        val progress = Snackbar.make(binding.coordinator, getString(R.string.update_downloading, 0),
+            Snackbar.LENGTH_INDEFINITE).also { it.show() }
+        lifecycleScope.launch {
+            try {
+                val apk = appUpdates.download(release) { percent ->
+                    progress.setText(getString(R.string.update_downloading, percent))
+                }
+                progress.dismiss()
+                installUpdate(apk)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Update download failed", error)
+                progress.dismiss()
+                Snackbar.make(binding.coordinator, R.string.update_failed, Snackbar.LENGTH_LONG)
+                    .setAction(R.string.retry) { downloadUpdate(release) }.show()
+            }
+        }
+    }
+
+    /** Hands the APK to the system installer, first sending the rider to allow it if they never have. */
+    private fun installUpdate(apk: File) {
+        if (!packageManager.canRequestPackageInstalls()) {
+            pendingUpdate = apk
+            Snackbar.make(binding.coordinator, R.string.update_allow_install, Snackbar.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        pendingUpdate = null
+        val uri = FileProvider.getUriForFile(this, "$packageName.updates", apk)
+        startActivity(Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -246,9 +329,14 @@ class MainActivity : AppCompatActivity() {
                 // Swiping the sheet away closes the journey, like the close button does.
                 if (newState == BottomSheetBehavior.STATE_HIDDEN &&
                     binding.journeyCard.visibility == View.VISIBLE) closeJourney()
+                // A state set without a slide (before layout, say) still settles the map controls.
+                if (newState == BottomSheetBehavior.STATE_EXPANDED) fadeMapControls(1f)
+                if (newState == BottomSheetBehavior.STATE_COLLAPSED) fadeMapControls(0f)
             }
 
-            override fun onSlide(sheet: View, slideOffset: Float) = Unit
+            // The map's own controls ride up with the sheet; once it is pulled over the map they
+            // would land on the search bar, so they fade out on the way.
+            override fun onSlide(sheet: View, slideOffset: Float) = fadeMapControls(slideOffset)
         })
         binding.journeyHandle.setOnClickListener {
             journeySheet.state = if (journeySheet.state == BottomSheetBehavior.STATE_EXPANDED)
@@ -260,7 +348,10 @@ class MainActivity : AppCompatActivity() {
             if (available > 0) journeySheet.maxHeight = available
             updateMapInsets()
         }
-        binding.journeyCard.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateMapInsets() }
+        binding.journeyCard.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            updateJourneyPeek()
+            updateMapInsets()
+        }
     }
 
     private fun setupBackNavigation() {
@@ -280,8 +371,16 @@ class MainActivity : AppCompatActivity() {
         val journeyOpen = binding.journeyCard.visibility == View.VISIBLE
         val peek = journeyPeek()
         return when {
+            binding.drawer.isDrawerOpen(GravityCompat.START) -> {
+                binding.drawer.closeDrawer(GravityCompat.START)
+                true
+            }
             binding.destinationInput.isPopupShowing -> {
                 binding.destinationInput.dismissDropDown()
+                true
+            }
+            binding.hintsCard.visibility == View.VISIBLE -> {
+                hideHints()
                 true
             }
             journeyOpen && journeySheet.state == BottomSheetBehavior.STATE_EXPANDED &&
@@ -333,6 +432,14 @@ class MainActivity : AppCompatActivity() {
         renderVehicles()
     }
 
+    private fun fadeMapControls(slideOffset: Float) {
+        val alpha = (1f - slideOffset.coerceAtLeast(0f) * 3f).coerceIn(0f, 1f)
+        listOf(binding.locationButton, binding.zoomControls, binding.mapAttribution).forEach {
+            it.alpha = alpha
+            it.visibility = if (alpha == 0f) View.INVISIBLE else View.VISIBLE
+        }
+    }
+
     /** Shows the journey sheet. A null [state] leaves it wherever the rider put it. */
     private fun showJourneySheet(state: Int? = null) {
         binding.journeyCard.visibility = View.VISIBLE
@@ -340,6 +447,10 @@ class MainActivity : AppCompatActivity() {
             journeySheet.state == BottomSheetBehavior.STATE_HIDDEN
         }
         if (target != null) journeySheet.state = target
+        // A journey has the map to itself: the tips step aside, and so does the live count,
+        // which the sheet's own refresh button stands in for.
+        binding.hintsCard.visibility = View.GONE
+        binding.liveStatus.visibility = View.GONE
         updateStartRow()
         updateMapInsets()
     }
@@ -348,8 +459,37 @@ class MainActivity : AppCompatActivity() {
         // Gone is enough: there is nothing to animate once it is out of sight, and the next
         // journey sets the state it wants. A swipe has already left the sheet hidden.
         binding.journeyCard.visibility = View.GONE
+        binding.liveStatus.visibility = View.VISIBLE
+        fadeMapControls(0f)
         updateStartRow()
         updateMapInsets()
+    }
+
+    /** The first visit opens on tips for what the map answers to, until the rider says they have them. */
+    private fun setupHints() {
+        binding.hintsDoneButton.setOnClickListener {
+            getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE).edit().putBoolean(HINTS_SEEN, true).apply()
+            hideHints()
+        }
+        val seen = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE).getBoolean(HINTS_SEEN, false)
+        if (!seen) showHints()
+    }
+
+    private fun showHints() {
+        if (binding.journeyCard.visibility == View.VISIBLE) closeJourney()
+        binding.hintsCard.visibility = View.VISIBLE
+    }
+
+    private fun hideHints() {
+        binding.hintsCard.visibility = View.GONE
+    }
+
+    /** Tells the rider once, as the first course appears, that its stops answer to a tap too. */
+    private fun hintAtStopsOnce() {
+        val preferences = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
+        if (preferences.getBoolean(COURSE_HINT_SEEN, false)) return
+        preferences.edit().putBoolean(COURSE_HINT_SEEN, true).apply()
+        Snackbar.make(binding.coordinator, R.string.course_hint, Snackbar.LENGTH_LONG).show()
     }
 
     /** Keeps the map centred on the part of it that the search box and journey sheet leave visible. */
@@ -360,10 +500,32 @@ class MainActivity : AppCompatActivity() {
         binding.map.setMapCenterOffset(0, (insets.first - insets.second) / 2)
     }
 
-    /** What shows of the sheet before it is pulled up: the handle, title and first step, and the start row when there is one. */
-    private fun journeyPeek() = resources.getDimensionPixelSize(R.dimen.journey_peek_height) +
-        if (binding.startRow.visibility == View.VISIBLE)
-            resources.getDimensionPixelSize(R.dimen.journey_start_row_height) else 0
+    /**
+     * What shows of the sheet before it is pulled up: the handle, the summary and the first step,
+     * measured where they are laid out, so whatever sits above the steps can never push them out.
+     * A message shows its text instead; before layout, the dimension is the guess.
+     */
+    private fun journeyPeek(): Int {
+        val first = binding.journeySteps.getChildAt(0)
+            ?: binding.sharedDirections.takeIf { it.visibility == View.VISIBLE && it.height > 0 }
+        if (first == null || first.height == 0 || binding.journeyCard.height == 0) {
+            return resources.getDimensionPixelSize(R.dimen.journey_peek_height)
+        }
+        // Layout positions, not drawn ones: a sheet scrolled while open keeps the same peek.
+        var bottom = first.bottom
+        var parent = first.parent as? View
+        while (parent != null && parent != binding.journeyCard) {
+            bottom += parent.top
+            parent = parent.parent as? View
+        }
+        return bottom + resources.getDimensionPixelSize(R.dimen.journey_peek_margin)
+    }
+
+    /** Follows the first step wherever layout put it; the sheet then settles to the new peek. */
+    private fun updateJourneyPeek() {
+        val peek = journeyPeek()
+        if (journeySheet.peekHeight != peek) journeySheet.peekHeight = peek
+    }
 
     /** The height of map the sheet covers at rest: its peek, or less when the content is short. */
     private fun journeyInset(): Int {
@@ -440,10 +602,28 @@ class MainActivity : AppCompatActivity() {
     private fun tintLoadingTiles() = binding.map.overlayManager.tilesOverlay.run {
         setLoadingBackgroundColor(getColor(R.color.map_loading))
         setLoadingLineColor(getColor(R.color.map_loading_line))
+        // Zooming out, osmdroid pieces tiles together from closer ones and fills the gaps light grey.
+        MapTileProviderBase.setApproximationBackgroundColor(getColor(R.color.map_loading))
+    }
+
+    private fun setupZoomButtons() = with(binding.map) {
+        // osmdroid's own buttons are plain white squares that sit over the attribution.
+        zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+        binding.zoomInButton.setOnClickListener { controller.zoomIn() }
+        binding.zoomOutButton.setOnClickListener { controller.zoomOut() }
+        addMapListener(object : MapListener {
+            override fun onScroll(event: ScrollEvent?) = false
+            override fun onZoom(event: ZoomEvent?): Boolean {
+                binding.zoomInButton.isEnabled = canZoomIn()
+                binding.zoomOutButton.isEnabled = canZoomOut()
+                return false
+            }
+        })
     }
 
     private fun setupMap() = with(binding.map) {
         setMultiTouchControls(true)
+        setupZoomButtons()
         setUseDataConnection(false)
         setTilesScaledToDpi(false)
         tintLoadingTiles()
@@ -453,6 +633,11 @@ class MainActivity : AppCompatActivity() {
             override fun singleTapConfirmedHelper(point: GeoPoint?): Boolean {
                 if (askedSpot != null) {
                     clearAskedSpot()
+                    return true
+                }
+                // A stop dot is small; a tap that nearly hits one is meant for it, not for clearing the course.
+                courseStopNear(point)?.let { stop ->
+                    showStopArrivals(stop, STOP_DOT_DP / 2)
                     return true
                 }
                 if (openStop != null) {
@@ -512,7 +697,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     else -> savedPlaces.search(query)
                 }
                 val found = if (query.isBlank()) recentSuggestions() else if (query.length < 2) emptyList() else try {
-                    offlineCity.search(query, currentLocation.latitude, currentLocation.longitude)
+                    PlaceSuggestion.collapseNearby(
+                        offlineCity.search(query, currentLocation.latitude, currentLocation.longitude))
                 } catch (error: Exception) {
                     Log.e(TAG, "Offline destination search failed", error)
                     emptyList()
@@ -535,6 +721,19 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
 
         override fun getFilter(): Filter = searchFilter
+
+        // Each suggestion says what kind of place it is, so a saved place, a stop and an address differ at a glance.
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val row = convertView?.let(ItemPlaceSuggestionBinding::bind)
+                ?: ItemPlaceSuggestionBinding.inflate(layoutInflater, parent, false)
+            val suggestion = PlaceSuggestion.of(this@MainActivity, getItem(position) ?: return row.root)
+            row.suggestionIcon.setImageResource(suggestion.icon)
+            ImageViewCompat.setImageTintList(row.suggestionIcon, ColorStateList.valueOf(getColor(R.color.deep_green)))
+            row.suggestionName.text = suggestion.title
+            row.suggestionDetail.text = suggestion.detail
+            row.suggestionDetail.visibility = if (suggestion.detail.isEmpty()) View.GONE else View.VISIBLE
+            return row.root
+        }
     }
 
     private fun setupDestinationPicker() {
@@ -542,6 +741,12 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         destinationAdapter = adapter
         binding.destinationInput.setAdapter(adapter)
         binding.destinationInput.threshold = 2
+        // The list shows once filtering is done, after the adapter changes; check the bar's corners then.
+        adapter.registerDataSetObserver(object : DataSetObserver() {
+            override fun onChanged() { binding.searchCard.post(::joinSearchBarToSuggestions) }
+            override fun onInvalidated() { binding.searchCard.post(::joinSearchBarToSuggestions) }
+        })
+        binding.destinationInput.setOnDismissListener { joinSearchBarToSuggestions() }
         binding.destinationInput.doAfterTextChanged {
             binding.destinationLayout.error = null
             refreshSavedPlaceButton()
@@ -661,6 +866,17 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
+    /** While the suggestions show, they hang from the search bar as one card, so the bar's bottom corners square off. */
+    private fun joinSearchBarToSuggestions() {
+        val card = binding.searchCard
+        val radius = resources.getDimension(R.dimen.search_bar_radius)
+        val bottom = if (binding.destinationInput.isPopupShowing) 0f else radius
+        card.shapeAppearanceModel = card.shapeAppearanceModel.toBuilder()
+            .setTopLeftCornerSize(radius).setTopRightCornerSize(radius)
+            .setBottomLeftCornerSize(bottom).setBottomRightCornerSize(bottom)
+            .build()
+    }
+
     /** With nothing typed, the search box offers the saved places, then recent destinations. */
     private fun showSavedSuggestions() {
         val input = binding.destinationInput
@@ -768,9 +984,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private fun onPlaceSaved(place: SavedPlace) {
-        val shown = binding.destinationInput.text.toString().trim()
-        // From now on the search box, and the journey restored next time, go by the new name.
-        replaceLastDestination(shown, place.name)
+        // From now on the search box goes by the new name.
         lastGeocodedAddress = place.name to (place.latitude to place.longitude)
         lastResolvedPlace = place.asOfflinePlace(exactMatch = true)
         binding.destinationInput.setText(place.name, false)
@@ -782,12 +996,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun removeSavedPlace(place: SavedPlace) {
         savedPlaces.remove(place)
         // The journey on screen keeps its destination, now as a plain pin that still replans
-        // and restores without the name.
+        // without the name.
         val pin = MapPin.format(place.latitude, place.longitude)
         val wasShownByName = SavedPlaces.key(binding.destinationInput.text.toString()) ==
             SavedPlaces.key(place.name)
         if (wasShownByName) {
-            replaceLastDestination(binding.destinationInput.text.toString().trim(), pin)
             lastGeocodedAddress = pin to (place.latitude to place.longitude)
             binding.destinationInput.setText(pin, false)
         }
@@ -798,13 +1011,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             if (binding.destinationInput.text.toString().trim() == pin) onPlaceSaved(place)
             else refreshSavedPlaceButton()
         }.show()
-    }
-
-    private fun replaceLastDestination(from: String, to: String) {
-        val preferences = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
-        if (preferences.getString(LAST_DESTINATION, null) == from) {
-            preferences.edit().putString(LAST_DESTINATION, to).apply()
-        }
     }
 
     private fun setupSearchPresets() {
@@ -818,32 +1024,19 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
-    private fun setupAppearanceMenu() {
-        binding.appearanceButton.setOnClickListener { anchor ->
-            val current = Appearance.load(this)
-            PopupMenu(this, anchor).apply {
-                Appearance.entries.forEach { option ->
-                    menu.add(1, option.ordinal + 1, option.ordinal, getString(when (option) {
-                        Appearance.SYSTEM -> R.string.appearance_system
-                        Appearance.LIGHT -> R.string.appearance_light
-                        Appearance.DARK -> R.string.appearance_dark
-                    })).apply {
-                        isCheckable = true
-                        isChecked = option == current
-                    }
-                }
-                menu.setGroupCheckable(1, true, true)
-                setOnMenuItemClickListener { item ->
-                    val selected = Appearance.entries[item.itemId - 1]
-                    if (selected != current) {
-                        Appearance.save(this@MainActivity, selected)
-                        // Switching recreates this activity, which rebuilds the map in the new theme.
-                        Appearance.apply(this@MainActivity)
-                    }
-                    true
-                }
-                show()
+    /** The few things that are not about one journey, in a side menu rather than hidden behind gestures. */
+    private fun setupAppMenu() {
+        binding.menuButton.setOnClickListener { binding.drawer.openDrawer(GravityCompat.START) }
+        binding.sideMenu.setNavigationItemSelectedListener { item ->
+            binding.drawer.closeDrawer(GravityCompat.START)
+            when (item.itemId) {
+                R.id.menuSavedPlaces -> showAllSavedPlaces()
+                R.id.menuHowTo -> showHints()
+                R.id.menuUpdates -> checkForUpdate(asked = true)
+                R.id.menuCredits -> Credits.show(this)
             }
+            // Each item opens something; none stays selected in the menu.
+            false
         }
     }
 
@@ -851,35 +1044,37 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun updateStartRow() {
         val shown = binding.journeyCard.visibility == View.VISIBLE && !binding.destinationInput.text.isNullOrBlank()
         binding.startRow.visibility = if (shown) View.VISIBLE else View.GONE
-        journeySheet.peekHeight = journeyPeek()
         val name = customStart?.name ?: myLocationLabel
         binding.startButton.text = getString(R.string.start_from, name)
         binding.startButton.contentDescription = getString(R.string.start_change, name)
     }
 
     private fun setupStartRow() {
-        binding.startButton.setOnClickListener { anchor ->
-            PopupMenu(this, anchor).apply {
-                menu.add(1, 1, 0, R.string.start_my_location).apply {
-                    isCheckable = true
-                    isChecked = customStart == null
-                }
-                menu.add(1, 2, 1, R.string.start_pick_saved)
-                menu.add(1, 3, 2, R.string.start_pick_search)
-                if (recentSuggestions().isNotEmpty()) menu.add(1, 4, 3, R.string.start_pick_recent)
-                setOnMenuItemClickListener { item ->
-                    when (item.itemId) {
-                        1 -> chooseStart(null)
-                        2 -> pickSavedStart()
-                        4 -> pickRecentStart()
-                        else -> searchForStart()
-                    }
-                    true
-                }
-                show()
-            }
-        }
+        binding.startButton.setOnClickListener(::showStartMenu)
         binding.swapStartButton.setOnClickListener { swapStartAndDestination() }
+    }
+
+    /** Where the journey can start from, in a menu under [anchor]. */
+    private fun showStartMenu(anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menu.add(1, 1, 0, R.string.start_my_location).apply {
+                isCheckable = true
+                isChecked = customStart == null
+            }
+            menu.add(1, 2, 1, R.string.start_pick_saved)
+            menu.add(1, 3, 2, R.string.start_pick_search)
+            if (recentSuggestions().isNotEmpty()) menu.add(1, 4, 3, R.string.start_pick_recent)
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> chooseStart(null)
+                    2 -> pickSavedStart()
+                    4 -> pickRecentStart()
+                    else -> searchForStart()
+                }
+                true
+            }
+            show()
+        }
     }
 
     /** Plans the journey again from [start], or from the rider's own position when it is null. */
@@ -1000,7 +1195,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             binding.findRouteButton.isEnabled = false
             binding.searchProgress.visibility = View.VISIBLE
             journeyOptions = emptyList()
-            binding.journeyOptionsScroll.visibility = View.GONE
+            showOptionsRow(false)
             journeyChoice = null
             trainJourneyChoice = null
             mixedJourneyChoice = null
@@ -1029,7 +1224,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     val vehiclesTask = async {
                         timed("vehicles") {
                             try {
-                                Result.success(transitIndex.inService(repository.vehicles()))
+                                Result.success(inService(repository.vehicles()))
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (error: Exception) {
@@ -1054,6 +1249,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                         metroAlertsTask.cancel()
                         showJourneyMessage(getString(R.string.address_not_found))
                         binding.destinationInput.showDropDown()
+                        joinSearchBarToSuggestions()
                         return@coroutineScope
                     }
                     directDestination = GeoPoint(address.first, address.second)
@@ -1077,10 +1273,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                         }
                     }
                     val planningTime = TrainIndex.now()
-                    // The metro is always on offer; the trains only when the rider wants them.
-                    val scheduled = if (searchTrains) trainIndex else trainIndex.metroOnly
                     val trainTask = async(Dispatchers.Default) {
                         timed("trains") {
+                            // The metro is always on offer; the trains only when the rider wants them.
+                            val scheduled = if (searchTrains) trainIndex else trainIndex.metroOnly
                             val (fromOrigin, fromDestination) = walkingTask.await()
                             scheduled.planScheduledJourney(
                                 origin.latitude, origin.longitude, address.first, address.second,
@@ -1147,7 +1343,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                             else if (liveVehicles.isEmpty()) R.string.no_live_vehicles_now
                             else if (!hasMatchedVehicles) R.string.live_directions_unavailable
                             else R.string.no_direct_route
-                        ))
+                        ), null, MessageAction(R.string.retry) { refreshJourney() })
                     } else {
                         val changed = mixedChoice != mixedJourneyChoice ||
                             (busChoice != journeyChoice && trainJourneyChoice == null)
@@ -1158,7 +1354,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 throw cancelled
             } catch (error: Exception) {
                 Log.e(TAG, "Journey planning failed", error)
-                showJourneyMessage(getString(R.string.journey_failed))
+                showJourneyMessage(getString(R.string.journey_failed), null,
+                    MessageAction(R.string.retry) { refreshJourney() })
             } finally {
                 if (currentCoroutineContext()[Job] == planningJob) {
                     binding.findRouteButton.isEnabled = true
@@ -1219,13 +1416,20 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         renderJourneyOptionChips()
     }
 
+    /** The other journeys on offer and the label that names them come and go together. */
+    private fun showOptionsRow(show: Boolean) {
+        val visibility = if (show) View.VISIBLE else View.GONE
+        binding.journeyOptionsScroll.visibility = visibility
+        binding.journeyOptionsLabel.visibility = visibility
+    }
+
     private fun renderJourneyOptionChips() {
         val group = binding.journeyOptions
         group.setOnCheckedStateChangeListener(null)
         group.removeAllViews()
         // Not while a train alone is showing (selectedOption is -1 then), nor for a single option.
         val show = journeyOptions.size > 1 && selectedOption >= 0
-        binding.journeyOptionsScroll.visibility = if (show) View.VISIBLE else View.GONE
+        showOptionsRow(show)
         if (!show) return
         journeyOptions.forEachIndexed { index, option ->
             val chip = Chip(this, null, com.google.android.material.R.attr.chipStyle).apply {
@@ -1266,7 +1470,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         binding.locationSettingsButton.visibility = View.GONE
         // Where the rider came from is not a place to remember going to.
         if (remember && destination.trim() != myLocationLabel) {
-            saveLastDestination(destination.trim())
             recentDestinations.add(destination, address.first, address.second)
         }
         val busScore = busChoice?.let {
@@ -1312,6 +1515,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 } else null
         ))
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
+        showSummary(transitSeconds)
         binding.walkButton.text = getString(R.string.walk_option, minutes(directWalkingSeconds))
         binding.walkButton.contentDescription = listOfNotNull(getString(R.string.walk_there),
             getString(R.string.walk_summary, minutes(directWalkingSeconds)),
@@ -1323,6 +1527,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         binding.walkButton.setIconResource(if (walkingFaster) R.drawable.ic_bolt else 0)
         binding.busAnywayButton.setIconResource(if (walkingFaster) 0 else R.drawable.ic_bolt)
         binding.travelModeChoices.visibility = View.VISIBLE
+        syncModeToggle()
         binding.boardStopDirectionsButton.setText(R.string.walk_to_boarding_stop)
         binding.boardStopDirectionsButton.visibility = View.VISIBLE
         renderJourneyGuide(transitGuide!!)
@@ -1373,6 +1578,13 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
+    /**
+     * The buses in service among [vehicles]. The bus index is several megabytes of timetable: reading
+     * it on the main thread held the splash screen for seconds, so it is read, and used, off it.
+     */
+    private suspend fun inService(vehicles: List<LiveVehicle>) =
+        withContext(Dispatchers.Default) { transitIndex.inService(vehicles) }
+
     /** Every feed shows how far each bus got since the last one; the planner's speeds learn from that. */
     private fun learnBusSpeeds(vehicles: List<LiveVehicle>) {
         lifecycleScope.launch(Dispatchers.Default) {
@@ -1384,7 +1596,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private suspend fun fetchVehicles(forceRefresh: Boolean) {
         liveStatusFetchedAt = null
         setLiveStatus(getString(R.string.connecting), R.color.ink)
-        runCatching { transitIndex.inService(repository.vehicles(forceRefresh)) }
+        runCatching { inService(repository.vehicles(forceRefresh)) }
             .onSuccess {
                 liveVehicles = it
                 liveStatusFetchedAt = SystemClock.elapsedRealtime()
@@ -1401,7 +1613,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             .onFailure {
                 if (it is CancellationException) return
                 Log.e(TAG, "Unable to refresh GTT live positions", it)
-                liveVehicles = emptyList()
+                // One failed refresh does not empty the map: the last buses stay, fading as they age, until too old.
+                liveVehicles = liveVehicles.filter { vehicle ->
+                    vehicle.ageSeconds <= GttRepository.MAX_POSITION_AGE_SECONDS }
                 liveStatusFetchedAt = null
                 renderVehicles()
                 refreshStopArrivals()
@@ -1419,16 +1633,12 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             .setAction(android.R.string.ok) {}.show()
     }
 
+    // A late bus is already faded on the map; the label only counts them.
     private fun updateLiveStatus() {
-        val oldest = liveVehicles.maxOfOrNull { it.ageSeconds } ?: 0
         val ago = liveStatusFetchedAt?.let { freshnessSuffix((SystemClock.elapsedRealtime() - it) / 1000) }.orEmpty()
-        val status = when {
-            liveVehicles.isEmpty() -> getString(R.string.no_bus_positions)
-            oldest > 120 -> getString(R.string.delayed_bus_positions, liveVehicles.size, (oldest + 59) / 60)
-            else -> getString(R.string.live_bus_count, liveVehicles.size)
-        } + ago
-        setLiveStatus(status,
-            if (liveVehicles.isEmpty() || oldest > 120) R.color.warning else R.color.live_green)
+        val status = if (liveVehicles.isEmpty()) getString(R.string.no_bus_positions)
+            else getString(R.string.live_bus_count, liveVehicles.size)
+        setLiveStatus(status + ago, if (liveVehicles.isEmpty()) R.color.warning else R.color.live_green)
     }
 
     /** " · updated 12 s ago"; quiet for the first few seconds so a fresh fetch reads as plain "live". */
@@ -1441,6 +1651,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun setLiveStatus(status: String, color: Int) {
         binding.liveStatus.text = status
         binding.liveStatus.setTextColor(getColor(color))
+        // The refresh icon is always there, so the label reads as the button it is: a tap fetches the buses again.
+        binding.liveStatus.setCompoundDrawablesRelative(null, null,
+            sizedIcon(R.drawable.ic_refresh, binding.liveStatus.textSize * 1.2f, color), null)
         binding.liveStatus.contentDescription = getString(R.string.live_status_retry, status)
     }
 
@@ -1597,6 +1810,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         courseOverlays = buildCourse(vehicle, pattern)
         binding.map.overlays.addAll(at, courseOverlays)
         binding.map.invalidate()
+        hintAtStopsOnce()
     }
 
     private fun clearHighlightedCourse() {
@@ -1646,6 +1860,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             position = GeoPoint(stop.latitude, stop.longitude)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             title = TransitIndex.cleanStopName(stop.name)
+            relatedObject = stop
             setOnMarkerClickListener { _, _ ->
                 showStopArrivals(stop, STOP_DOT_DP / 2)
                 true
@@ -1666,6 +1881,22 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             course.passedStops.forEach { add(stopDot(it, faded)) }
             course.aheadStops.forEach { add(stopDot(it, colour)) }
         }
+    }
+
+    /** The highlighted course's stop closest to [point] on screen, if it is within a fingertip's reach. */
+    private fun courseStopNear(point: GeoPoint?): TransitStop? {
+        if (point == null) return null
+        val projection = binding.map.projection
+        val tap = projection.toPixels(point, null)
+        val reach = STOP_TAP_REACH_DP * resources.displayMetrics.density
+        return courseOverlays.filterIsInstance<Marker>()
+            .mapNotNull { dot ->
+                val stop = dot.relatedObject as? TransitStop ?: return@mapNotNull null
+                val at = projection.toPixels(dot.position, null)
+                stop to hypot((at.x - tap.x).toFloat(), (at.y - tap.y).toFloat())
+            }
+            .filter { it.second <= reach }
+            .minByOrNull { it.second }?.first
     }
 
     private fun drawJourneyLine() {
@@ -1957,12 +2188,16 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
 
     private fun showJourneyMessage(message: String) = showJourneyMessage(message, null)
 
-    private fun showJourneyMessage(message: String, @DrawableRes icon: Int?) {
+    /** A message in the sheet, with the one button that gets past it when there is one. */
+    private fun showJourneyMessage(message: String, @DrawableRes icon: Int?, action: MessageAction? = null) {
         hideTravelModeChoices()
         transitGuide = null
         binding.journeySteps.removeAllViews()
         binding.journeyTitle.setText(R.string.your_journey)
-        binding.locationSettingsButton.visibility = View.GONE
+        binding.journeySummary.visibility = View.GONE
+        messageAction = action
+        binding.locationSettingsButton.visibility = if (action == null) View.GONE else View.VISIBLE
+        action?.let { binding.locationSettingsButton.setText(it.label) }
         binding.destinationLayout.error = null
         binding.sharedDirections.text = icon?.let { notesText(listOf(JourneyNote(it, message))) } ?: message
         binding.sharedDirections.visibility = View.VISIBLE
@@ -2259,13 +2494,43 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private fun showLocationHint() {
-        val enabled = deviceLocationEnabled()
-        showJourneyMessage(getString(
-            if (!enabled) R.string.device_location_off
-            else if (!hasLocationPermission()) R.string.location_permission_required
-            else R.string.location_unavailable
-        ), R.drawable.ic_my_location)
-        binding.locationSettingsButton.visibility = if (enabled) View.GONE else View.VISIBLE
+        val hasDestination = !binding.destinationInput.text.isNullOrBlank()
+        // With no journey asked for, a journey panel holding only a complaint is the wrong place:
+        // the map stays as it is and a bar at the bottom says what is wrong.
+        if (!hasDestination && binding.journeyCard.visibility != View.VISIBLE) {
+            val (message, action) = when {
+                !deviceLocationEnabled() ->
+                    R.string.device_location_off to MessageAction(R.string.turn_on_location) { openLocationSettings() }
+                !hasLocationPermission() ->
+                    R.string.location_permission_required to MessageAction(R.string.allow_location) { askForLocationAgain() }
+                else -> R.string.location_unavailable to MessageAction(R.string.retry) { requestLocation() }
+            }
+            Snackbar.make(binding.coordinator, message, Snackbar.LENGTH_LONG)
+                .setAction(action.label) { action() }
+                .show()
+            return
+        }
+        when {
+            !deviceLocationEnabled() -> showJourneyMessage(getString(R.string.device_location_off),
+                R.drawable.ic_my_location, MessageAction(R.string.turn_on_location) { openLocationSettings() })
+            !hasLocationPermission() -> showJourneyMessage(getString(R.string.location_permission_required),
+                R.drawable.ic_my_location, MessageAction(R.string.allow_location) { askForLocationAgain() })
+            // No fix yet, often indoors: a journey can still start from somewhere chosen.
+            else -> showJourneyMessage(getString(R.string.location_unavailable), R.drawable.ic_my_location,
+                if (hasDestination) MessageAction(R.string.choose_start) {
+                    showStartMenu(binding.locationSettingsButton)
+                } else null)
+        }
+    }
+
+    /** Asks again while Android still lets the app ask; once it does not, the app's settings page is the way. */
+    private fun askForLocationAgain() {
+        if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            if (binding.destinationInput.text.isNullOrBlank()) requestLocation() else findDestinationRoute()
+        } else {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null)))
+        }
     }
 
     private fun consumeSharedDirections(intent: Intent?) {
@@ -2333,27 +2598,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         findDestinationRoute()
     }
 
-    private fun saveLastDestination(destination: String) {
-        getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
-            .edit()
-            .putString(LAST_DESTINATION, destination)
-            .apply()
-    }
-
-    private fun restoreLastJourney() {
-        val destination = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
-            .getString(LAST_DESTINATION, null)
-            ?.takeIf { it.isNotBlank() }
-            ?: return
-        // Labels carry a " · town" suffix that the search does not want; a saved name is kept whole.
-        binding.destinationInput.setText(
-            destination.takeIf { savedPlaces.byName(it) != null } ?: destination.substringBefore(" · "))
-        binding.sharedDirections.text = getString(R.string.restoring_journey)
-        binding.sharedDirections.visibility = View.VISIBLE
-        showJourneySheet(BottomSheetBehavior.STATE_EXPANDED)
-        findDestinationRoute()
-    }
-
     // Lines that differ only by a suffix ("13" and "13+", "10" and "10N") must stay apart, so take
     // the name from the feed; stripping letters is only the guess for an unknown route.
     private fun normalizeRoute(route: String) = transitIndex.routeName(route)
@@ -2364,8 +2608,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         if (journeyChoice == null && trainJourneyChoice == null) return
         planningJob?.cancel()
         walkingMode = true
-        binding.journeyOptionsScroll.visibility = View.GONE
+        showOptionsRow(false)
         binding.journeyTitle.text = getString(R.string.walk_summary, minutes(directWalkingSeconds))
+        showSummary(directWalkingSeconds)
+        syncModeToggle()
         renderJourneyGuide(JourneySteps.forWalking(this, directWalkingMetres.roundToInt(),
             minutes(directWalkingSeconds), destination))
         // Maps opens only when asked, and the button stays so the route can be reopened.
@@ -2383,7 +2629,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun showWalkingOnly(destination: String, address: Pair<Double, Double>) {
         hideTravelModeChoices()
         if (destination.trim() != myLocationLabel) {
-            saveLastDestination(destination.trim())
             recentDestinations.add(destination, address.first, address.second)
         }
         journeyChoice = null
@@ -2401,6 +2646,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         directWalkingSeconds = directWalkingMetres / WALKING_METRES_PER_SECOND
         walkingMode = true
         binding.journeyTitle.text = getString(R.string.walk_summary, minutes(directWalkingSeconds))
+        showSummary(directWalkingSeconds)
         val guide = JourneySteps.forWalking(this, directWalkingMetres.roundToInt(),
             minutes(directWalkingSeconds), target)
         renderJourneyGuide(guide.copy(notes =
@@ -2427,6 +2673,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             ?: trainJourneyChoice?.estimatedTotalSeconds
             ?: journeyChoice!!.estimatedTotalSeconds
         binding.journeyTitle.text = getString(R.string.transit_summary, minutes(transitSeconds))
+        showSummary(transitSeconds)
+        syncModeToggle()
         transitGuide?.let(::renderJourneyGuide)
         binding.alertButton.visibility =
             if (trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
@@ -2435,10 +2683,23 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         frameCurrentJourney()
     }
 
+    /** Under the title: when the rider gets there. When to set off rides on the first step, just below. */
+    private fun showSummary(totalSeconds: Float) {
+        val arrival = java.time.LocalTime.now().plusSeconds(totalSeconds.toLong())
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+        binding.journeySummary.text = getString(R.string.journey_arrive, arrival)
+        binding.journeySummary.visibility = View.VISIBLE
+    }
+
+    /** The ride-or-walk toggle shows the way on screen as the checked one. */
+    private fun syncModeToggle() {
+        binding.travelModeChoices.check(if (walkingMode) R.id.walkButton else R.id.busAnywayButton)
+    }
+
     private fun hideTravelModeChoices() {
         walkingMode = false
         journeyOptions = emptyList()
-        binding.journeyOptionsScroll.visibility = View.GONE
+        showOptionsRow(false)
         binding.travelModeChoices.visibility = View.GONE
         binding.boardStopDirectionsButton.visibility = View.GONE
         binding.alertButton.visibility = View.GONE
@@ -2491,7 +2752,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun TrainStop.asTransitStop() = TransitStop(id, name, latitude, longitude)
 
     private fun applySystemBarInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
+        // The content keeps clear of the system bars; the side menu takes them on its own.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.appContent) { view, windowInsets ->
             val bars: Insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
             val keyboard = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
             view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
@@ -2503,6 +2765,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         super.onResume()
         binding.map.onResume()
         updateAlertButton()
+        // Back from allowing installs: carry on with the update the rider started.
+        pendingUpdate?.takeIf { packageManager.canRequestPackageInstalls() && it.exists() }?.let(::installUpdate)
     }
 
     override fun onPause() {
@@ -2522,8 +2786,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"
         const val MAX_SUGGESTIONS = 12
-        const val LAST_DESTINATION = "last_destination"
         const val STALE_NOTICE_VERSION = "stale_notice_version"
+        const val HINTS_SEEN = "hints_seen"
+        const val COURSE_HINT_SEEN = "course_hint_seen"
         const val INCLUDE_TRAINS = "include_trains"
         const val WALKING_METRES_PER_SECOND = 1.2f
         /** A ride is not offered when it takes more than 1.5 times the walk and 15 minutes more. */
@@ -2535,6 +2800,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         const val FRESHNESS_TICK_MILLIS = 5_000L
         const val FRESHNESS_QUIET_SECONDS = 5
         const val STOP_DOT_DP = 9
+        // Half a 48dp touch target: a tap this close to a stop dot opens that stop.
+        const val STOP_TAP_REACH_DP = 24
         const val TURNAROUND_GRACE_MILLIS = 5 * 60_000L
         val TRAILING_LETTERS = Regex("[A-Za-z]+$")
         val ROUTE_PATTERN = Regex("""(?i)(?:bus|linea|line|route)\s*#?\s*(\d{1,3})""")

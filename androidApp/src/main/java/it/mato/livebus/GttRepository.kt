@@ -90,7 +90,7 @@ class GttRepository {
 
     private fun freshVehicles(vehicles: List<LiveVehicle>): List<LiveVehicle> {
         val now = System.currentTimeMillis() / 1000
-        return vehicles.filter { now - it.timestampSeconds in -30..300 }
+        return vehicles.filter { now - it.timestampSeconds in -30..MAX_POSITION_AGE_SECONDS }
     }
 
     private val alertsLock = Mutex()
@@ -202,6 +202,9 @@ class GttRepository {
                     updates.sortedBy { it.trip.startDate + it.trip.startTime.padStart(8, '0') }
                         .map { it.trip.tripId }.distinct()
                 }
+
+        /** Older than this, a bus position says more about where it was than where it is. */
+        const val MAX_POSITION_AGE_SECONDS = 300L
 
         private const val VEHICLE_POSITIONS_URL =
             "https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx"

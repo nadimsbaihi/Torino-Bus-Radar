@@ -26,7 +26,10 @@ class SavedPlacesScreenTest {
     @Before fun startEmpty() {
         val application = RuntimeEnvironment.getApplication()
         application.getSharedPreferences("saved_places", 0).edit().clear().commit()
-        application.getSharedPreferences("active_journey", 0).edit().clear().commit()
+        // The first-visit tips are not what these screens are about; under the legacy looper the
+        // card's bottom inset also re-enters the coordinator's pre-draw, which a phone never does.
+        application.getSharedPreferences("active_journey", 0).edit().clear()
+            .putBoolean("hints_seen", true).commit()
     }
 
     private fun screen(): Pair<MainActivity, ActivityMainBinding> {

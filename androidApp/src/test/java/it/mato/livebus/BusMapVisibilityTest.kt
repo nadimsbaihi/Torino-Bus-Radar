@@ -2,10 +2,12 @@ package it.mato.livebus
 
 import android.content.Intent
 import android.view.LayoutInflater
+import android.view.View
 import it.mato.livebus.databinding.ActivityMainBinding
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.robolectric.Robolectric
@@ -54,8 +56,9 @@ class BusMapVisibilityTest {
             isAccessible = true
             invoke(activity)
         }
-        assertTrue(binding.liveStatus.text.toString().contains("40 buses"))
-        assertTrue(binding.liveStatus.text.toString().contains("4 min"))
+        // The markers say how old each position is; the label only counts the buses.
+        assertTrue(binding.liveStatus.text.toString().contains("40 live buses"))
+        assertFalse(binding.liveStatus.text.toString().contains("min"))
 
         set(activity, "selectedRoute", "60")
         render.invoke(activity)
@@ -216,10 +219,26 @@ class BusMapVisibilityTest {
         assertTrue(binding.map.overlays.indexOfLast { it is Polyline } <
             binding.map.overlays.indexOfFirst { it is Marker })
         // Every stop gets a small dot, and the bus stays on top of them.
-        val dots = binding.map.overlays.filterIsInstance<Marker>().filter { it.relatedObject == null }
+        val dots = binding.map.overlays.filterIsInstance<Marker>().filter { it.relatedObject is TransitStop }
         assertEquals(listOf("A", "B", "C", "D"), dots.map { it.title })
         assertTrue(dots.all { it.icon.intrinsicWidth <= (12 * activity.resources.displayMetrics.density).toInt() })
         assertTrue(binding.map.overlays.indexOf(dots.last()) < binding.map.overlays.indexOf(marker))
+        // A tap that nearly hits a dot is meant for that stop; one well away from every stop is not.
+        binding.map.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(2000, View.MeasureSpec.EXACTLY))
+        binding.map.layout(0, 0, 1080, 2000)
+        binding.map.controller.setZoom(17.0)
+        binding.map.controller.setCenter(dots.first().position)
+        val near = MainActivity::class.java.getDeclaredMethod("courseStopNear", GeoPoint::class.java)
+            .apply { isAccessible = true }
+        val stopA = dots.first().position
+        val reach = binding.map.projection.toPixels(stopA, null).let { at ->
+            { dx: Int -> binding.map.projection.fromPixels(at.x + dx, at.y) as GeoPoint }
+        }
+        val density = activity.resources.displayMetrics.density
+        assertEquals("A", (near.invoke(activity, reach((15 * density).toInt())) as TransitStop?)?.let {
+            TransitIndex.cleanStopName(it.name) })
+        assertNull(near.invoke(activity, reach((40 * density).toInt())))
 
         // It survives the 15-second refresh without doubling up.
         render.invoke(activity)
@@ -297,7 +316,7 @@ class BusMapVisibilityTest {
         assertEquals(listOf(45.070, 45.070, 45.080), ahead.map { it.latitude })
         assertEquals(listOf(7.665, 7.670, 7.670), ahead.map { it.longitude })
         assertEquals(listOf("A", "B", "C", "D"), binding.map.overlays.filterIsInstance<Marker>()
-            .filter { it.relatedObject == null }.map { it.title })
+            .filter { it.relatedObject is TransitStop }.map { it.title })
         binding.map.onDetach()
     }
 

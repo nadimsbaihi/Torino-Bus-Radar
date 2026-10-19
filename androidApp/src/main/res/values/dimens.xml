@@ -1,6 +1,8 @@
 <resources>
-    <!-- Drag handle, title row and the first journey step: what shows before the sheet is pulled up. -->
-    <dimen name="journey_peek_height">128dp</dimen>
-    <!-- The "From" row, which lifts the peek by its own height while a journey shows it. -->
-    <dimen name="journey_start_row_height">48dp</dimen>
+    <!-- Drag handle, summary and the first journey step: the guess before the sheet is laid out. -->
+    <dimen name="journey_peek_height">152dp</dimen>
+    <!-- Room under the first step at the peek, so it does not end at the sheet's edge. -->
+    <dimen name="journey_peek_margin">8dp</dimen>
+    <!-- The search bar's corners, shared with the suggestions that hang from it. -->
+    <dimen name="search_bar_radius">16dp</dimen>
 </resources>

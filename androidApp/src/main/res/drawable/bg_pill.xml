@@ -1,0 +1,5 @@
+<!-- A small label floating on the map, such as the live-bus count. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/card" />
+    <corners android:radius="99dp" />
+</shape>
