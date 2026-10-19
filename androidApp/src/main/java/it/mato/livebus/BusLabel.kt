@@ -4,6 +4,9 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 
+/** How sure the map is of a bus's place: a fresh fix, a late one, or only estimated from its trip. */
+internal enum class BusLook { LIVE, LATE, ESTIMATED }
+
 /** A line's name as it is set inside its round bus marker: "16 CD" and "STAR 1" take two lines. */
 internal fun busLabelLines(route: String): List<String> =
     route.trim().split(Regex("\\s+"), limit = 2).filter(String::isNotEmpty).ifEmpty { listOf(route) }

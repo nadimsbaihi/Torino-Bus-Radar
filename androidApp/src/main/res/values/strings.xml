@@ -16,7 +16,7 @@
     <string name="connecting">Connecting…</string>
     <string name="retry_gtt_connection">Retry GTT connection</string>
     <string name="live_status_retry">%1$s. Retry GTT connection</string>
-    <string name="live_bus_count">● %1$d live buses</string>
+    <string name="live_bus_count">● %1$d buses located</string>
     <string name="updated_seconds_ago">updated %1$d s ago</string>
     <string name="updated_minutes_ago">updated %1$d min ago</string>
     <string name="no_bus_positions">No recent bus positions</string>
@@ -127,7 +127,7 @@
     <string name="journey_failed">Could not plan this journey. Please try again.</string>
     <string name="checking_transfers">Checking connections…</string>
     <string name="map_attribution">© OpenStreetMap · Data GTT</string>
-    <string name="credits_body"><![CDATA[<b>Buses, metro, stops and alerts</b><br/>Data source: GTT S.p.A. – Gruppo Torinese Trasporti, <a href="https://www.gtt.to.it">www.gtt.to.it</a>. Used under <a href="https://www.gtt.to.it/gtt_gtfs_license.html">GTT\'s open data licence</a>, which allows non-commercial use, and processed for this app. GTT does not guarantee the data, and this app is not affiliated with GTT.<br/><br/><b>Trains</b><br/>Timetables from Trenitalia, published on the CCISS National Access Point and converted to GTFS by <a href="https://github.com/deryclem/trenitalia-gtfs">Clément Desouche</a>, under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Changed: only local trains in the Torino area are kept.<br/><br/><b>Map, places and walking routes</b><br/>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, available under the Open Database License (ODbL). The search and walking databases in this app are derived from OpenStreetMap and are available under the ODbL too. Extract by <a href="https://extract.bbbike.org">BBBike</a>; maps drawn with Mapsforge and osmdroid.]]></string>
+    <string name="credits_body"><![CDATA[<b>Buses, metro, stops and alerts</b><br/>Data source: GTT S.p.A. – Gruppo Torinese Trasporti, <a href="https://www.gtt.to.it">www.gtt.to.it</a>. Used under <a href="https://www.gtt.to.it/gtt_gtfs_license.html">GTT\'s open data licence</a>, which allows non-commercial use, and processed for this app. GTT does not guarantee the data, and this app is not affiliated with GTT.<br/><br/><b>Trains</b><br/>Timetables from Trenitalia, published on the CCISS National Access Point and converted to GTFS by <a href="https://github.com/deryclem/trenitalia-gtfs">Clément Desouche</a>, under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Changed: only local trains in the Torino area are kept.<br/><br/><b>Map, places and walking routes</b><br/>© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, available under the Open Database License (ODbL). The search and walking databases in this app are derived from OpenStreetMap and are available under the ODbL too. Extract by <a href="https://extract.bbbike.org">BBBike</a>; maps drawn with Mapsforge and osmdroid.<br/><br/><b>Satellite photos</b><br/>World Imagery and street names by <a href="https://www.esri.com">Esri</a>, Maxar, Earthstar Geographics and the GIS User Community, loaded over the internet only when the satellite map is chosen.]]></string>
     <string name="close">Close</string>
     <string name="credits_open_source">Open-source licences</string>
     <string name="credits_title">Data and licences</string>
@@ -199,4 +199,13 @@
     <string name="walk_instead">Walk instead · %1$d min</string>
     <string name="bus_position_estimated">Position estimated</string>
     <string name="estimated_bus_count">%1$d estimated</string>
+    <string name="map_layer">Map type</string>
+    <string name="map_layer_streets">Map (works offline)</string>
+    <string name="map_layer_satellite">Satellite</string>
+    <string name="map_layer_hybrid">Satellite with street names</string>
+    <string name="photo_attribution">Imagery © Esri, Maxar · © OpenStreetMap · Data GTT</string>
+    <string name="appearance">Theme</string>
+    <string name="appearance_system">Follow phone setting</string>
+    <string name="appearance_light">Light</string>
+    <string name="appearance_dark">Dark</string>
 </resources>

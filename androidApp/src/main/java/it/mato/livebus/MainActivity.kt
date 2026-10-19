@@ -11,6 +11,7 @@ import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Point
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -102,13 +103,16 @@ import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.MapTileProviderBase
+import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
+import org.osmdroid.views.Projection
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.infowindow.MarkerInfoWindow
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.TilesOverlay
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -130,6 +134,8 @@ class MainActivity : AppCompatActivity() {
     private val offlineCity get() = (application as MatoApplication).offlineCity
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var offlineMapSource: MapsForgeTileSource? = null
+    private var mapLayerJob: Job? = null
+    private var photoLabels: List<TilesOverlay> = emptyList()
     private var currentLocation = GeoPoint(45.0703, 7.6869)
     private var originLocation: Location? = null
     private var locationRequest: Deferred<Location?>? = null
@@ -174,7 +180,7 @@ class MainActivity : AppCompatActivity() {
     private var metroAlerts: List<String> = emptyList()
     // The journey options offer the least walking and the fastest trip; the first pick weighs both.
     private val walkingPreference = WalkingPreference.BALANCED
-    private val busIconCache = mutableMapOf<Triple<Boolean, Int, String>, BitmapDrawable>()
+    private val busIconCache = mutableMapOf<BusIconKey, BitmapDrawable>()
     /** Where walking is measured from and the journey is drawn from. */
     private val startPoint get() = customStart?.point ?: currentLocation
     private val myLocationLabel get() = getString(R.string.start_my_location)
@@ -728,21 +734,46 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
         }))
-        lifecycleScope.launch {
+        showMapLayer(MapLayer.load(this@MainActivity))
+    }
+
+    /** Draws the map from [layer]: the bundled street map, or Esri's photos with or without names on top. */
+    private fun showMapLayer(layer: MapLayer) = with(binding.map) {
+        mapLayerJob?.cancel()
+        photoLabels.forEach { overlays.remove(it); it.onDetach(this) }
+        photoLabels = emptyList()
+        binding.mapAttribution.setText(if (layer.online) R.string.photo_attribution else R.string.map_attribution)
+        mapLayerJob = lifecycleScope.launch {
             try {
                 val city = withContext(Dispatchers.IO) { offlineCity }
                 val night = MapTheme.isNight(this@MainActivity)
-                val source = MapsForgeTileSource.createFromFiles(arrayOf(city.mapFile),
+                // The street map's file also gives the city's edges, which hold the photos too.
+                val source = offlineMapSource ?: MapsForgeTileSource.createFromFiles(arrayOf(city.mapFile),
                     MapTheme.renderTheme(this@MainActivity, night),
                     MapTheme.cacheKey(city, night), "it")
                 offlineMapSource = source
-                val provider = MapsForgeTileProvider(SimpleRegisterReceiver(this@MainActivity), source, null)
-                setTileProvider(provider)
+                if (layer.online) {
+                    setTileProvider(MapTileProviderBasic(applicationContext, MapLayer.PHOTOS))
+                    if (layer.labels) {
+                        photoLabels = MapLayer.PHOTO_LABELS.map { labels ->
+                            TilesOverlay(MapTileProviderBasic(applicationContext, labels), this@MainActivity).apply {
+                                setLoadingBackgroundColor(Color.TRANSPARENT)
+                                setLoadingLineColor(Color.TRANSPARENT)
+                            }
+                        }
+                        // Under the buses and routes, over the photos.
+                        overlays.addAll(0, photoLabels)
+                    }
+                } else {
+                    setTileProvider(MapsForgeTileProvider(SimpleRegisterReceiver(this@MainActivity), source, null))
+                }
                 // A new provider brings a new tiles overlay with osmdroid's light grid again.
                 tintLoadingTiles()
-                setUseDataConnection(false)
+                setUseDataConnection(layer.online)
+                // Photos come as 256-pixel tiles; unscaled, their street names are too small to read on a phone.
+                isTilesScaledToDpi = layer.online
                 minZoomLevel = 11.0
-                maxZoomLevel = 20.0
+                maxZoomLevel = if (layer.online) MapLayer.PHOTO_MAX_ZOOM.toDouble() else 20.0
                 setScrollableAreaLimitDouble(source.boundsOsmdroid)
                 binding.mapStatus.visibility = View.GONE
                 invalidate()
@@ -753,6 +784,49 @@ class MainActivity : AppCompatActivity() {
                 binding.mapStatus.setText(R.string.offline_map_failed)
             }
         }
+    }
+
+    private fun chooseMapLayer() {
+        val current = MapLayer.load(this)
+        val names = MapLayer.entries.map { getString(when (it) {
+            MapLayer.STREETS -> R.string.map_layer_streets
+            MapLayer.SATELLITE -> R.string.map_layer_satellite
+            MapLayer.HYBRID -> R.string.map_layer_hybrid
+        }) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.map_layer)
+            .setSingleChoiceItems(names.toTypedArray(), current.ordinal) { dialog, which ->
+                val chosen = MapLayer.entries[which]
+                if (chosen != current) {
+                    MapLayer.save(this, chosen)
+                    showMapLayer(chosen)
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+    }
+
+    private fun chooseAppearance() {
+        val current = Appearance.load(this)
+        val names = Appearance.entries.map { getString(when (it) {
+            Appearance.SYSTEM -> R.string.appearance_system
+            Appearance.LIGHT -> R.string.appearance_light
+            Appearance.DARK -> R.string.appearance_dark
+        }) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.appearance)
+            .setSingleChoiceItems(names.toTypedArray(), current.ordinal) { dialog, which ->
+                dialog.dismiss()
+                val chosen = Appearance.entries[which]
+                if (chosen != current) {
+                    Appearance.save(this, chosen)
+                    // Switching recreates this activity, which rebuilds the map in the new theme.
+                    Appearance.apply(this)
+                }
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
     }
 
     /** The search suggestions: the rider's saved places first, then the bundled city. */
@@ -1104,6 +1178,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             when (item.itemId) {
                 R.id.menuSavedPlaces -> showAllSavedPlaces()
                 R.id.menuHowTo -> showHints()
+                R.id.menuMapLayer -> chooseMapLayer()
+                R.id.menuAppearance -> chooseAppearance()
                 R.id.menuUpdates -> checkForUpdate(asked = true)
                 R.id.menuCredits -> Credits.show(this)
             }
@@ -1794,7 +1870,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private fun renderVehicles() {
-        binding.map.overlays.removeAll { it is Marker || it is Polyline }
+        binding.map.overlays.removeAll { it is Marker || it is Polyline || it === busFrameStart }
         val visible = visibleVehicles()
         // Underneath the journey line and every marker.
         drawHighlightedCourse(visible)
@@ -1812,18 +1888,26 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val journeyMarkers = binding.map.overlays.filterIsInstance<Marker>().filter { it !in courseOverlays }
         val selectedIds = setOfNotNull(journeyChoice?.vehicle?.id, journeyChoice?.secondLeg?.vehicle?.id)
 
-        markers.forEach { vehicle ->
+        // Buses whose place is only estimated are drawn last, and only where they cover no other bus.
+        binding.map.overlays.add(busFrameStart)
+        markers.sortedBy { it.estimated && it.id !in selectedIds }.forEach { vehicle ->
             val vehicleRoute = normalizeRoute(vehicle.routeId)
-            val marker = Marker(binding.map).apply {
+            // The bus to catch is always shown, estimated or not.
+            val marker = BusMarker(binding.map, vehicle.estimated && vehicle.id !in selectedIds).apply {
                 position = GeoPoint(vehicle.latitude, vehicle.longitude)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 title = getString(R.string.vehicle_title, vehicleRoute)
                 snippet = busDetails(vehicle)
-                // A late fix fades a little; a place only estimated fades more.
-                alpha = if (vehicle.estimated) 0.5f else if (vehicle.ageSeconds > 120) 0.65f else 1f
+                // Solid, never see-through: translucent buses that overlapped showed each other's
+                // numbers through them. A place only estimated is drawn as an outline instead.
+                val look = when {
+                    vehicle.estimated && vehicle.id !in selectedIds -> BusLook.ESTIMATED
+                    vehicle.ageSeconds > 120 -> BusLook.LATE
+                    else -> BusLook.LIVE
+                }
                 relatedObject = vehicle
                 setInfoWindow(markerBubble)
-                icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute)
+                icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute, look)
                 setOnMarkerClickListener { clickedMarker, mapView ->
                     clearAskedSpot()
                     // Tapping the bus whose course is showing leaves the course again.
@@ -1858,6 +1942,34 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         binding.map.overlays.removeAll(journeyMarkers.toSet())
         binding.map.overlays.addAll(journeyMarkers)
         binding.map.invalidate()
+    }
+
+    /** Where the buses drawn so far in this frame sit on screen, for faded ones to keep clear of. */
+    private val drawnBuses = mutableListOf<Point>()
+
+    /** Drawn just before the buses, so each frame starts with no bus drawn. */
+    private val busFrameStart = object : Overlay() {
+        override fun draw(canvas: Canvas, projection: Projection) = drawnBuses.clear()
+    }
+
+    /**
+     * A bus marker. One whose place is only estimated (halfway between two stops) stays hidden
+     * while it would cover a bus already drawn: two runs between the same stops, or a bus whose
+     * real place is known nearby, would otherwise pile up as one blurred stack.
+     */
+    private inner class BusMarker(map: MapView, private val estimated: Boolean) : Marker(map) {
+        private var hidden = false
+
+        override fun draw(canvas: Canvas, projection: Projection) {
+            val point = projection.toPixels(position, null)
+            val clearance = (icon?.intrinsicWidth ?: 0) * 0.7f
+            hidden = estimated && drawnBuses.any { hypot((it.x - point.x).toFloat(), (it.y - point.y).toFloat()) < clearance }
+            if (hidden) return
+            drawnBuses.add(point)
+            super.draw(canvas, projection)
+        }
+
+        override fun hitTest(event: MotionEvent, mapView: MapView) = !hidden && super.hitTest(event, mapView)
     }
 
     /** Opens the bubble of buses heading to [stop], over the point [offsetDp] above where it sits. */
@@ -2445,19 +2557,21 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         })
     }
 
-    private fun busDirectionMarker(closest: Boolean, bearing: Float?, route: String): BitmapDrawable {
+    private data class BusIconKey(val closest: Boolean, val bearingBucket: Int, val route: String, val look: BusLook)
+
+    private fun busDirectionMarker(closest: Boolean, bearing: Float?, route: String, look: BusLook): BitmapDrawable {
         val bearingBucket = bearing?.let {
             (((it + 11.25f) / 22.5f).toInt() % 16)
         } ?: -1
-        return busIconCache.getOrPut(Triple(closest, bearingBucket, route)) {
+        return busIconCache.getOrPut(BusIconKey(closest, bearingBucket, route, look)) {
             createBusDirectionMarker(
                 closest,
-                bearingBucket.takeIf { it >= 0 }?.times(22.5f), route
+                bearingBucket.takeIf { it >= 0 }?.times(22.5f), route, look
             )
         }
     }
 
-    private fun createBusDirectionMarker(closest: Boolean, bearing: Float?, route: String): BitmapDrawable {
+    private fun createBusDirectionMarker(closest: Boolean, bearing: Float?, route: String, look: BusLook): BitmapDrawable {
         val density = resources.displayMetrics.density
         val lines = busLabelLines(route)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -2478,7 +2592,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val bitmap = Bitmap.createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val center = bitmapSize / 2f
-        val color = if (closest) getColor(R.color.route_orange) else getColor(R.color.deep_green)
+        // A late fix is paled towards the map's own colour, but stays solid.
+        val color = ColorUtils.blendARGB(getColor(if (closest) R.color.route_orange else R.color.bus_fill),
+            getColor(R.color.map_loading), if (look == BusLook.LATE) LATE_PALENESS else 0f)
+        val outlined = look == BusLook.ESTIMATED
 
         val outline = Path().apply { addCircle(center, center, busRadius - ring / 2f, Path.Direction.CW) }
         bearing?.let {
@@ -2501,17 +2618,18 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             }, Path.Op.UNION)
         }
 
+        // Filled, not outlined: a white face with a thin ring was lost among the streets and parks.
         paint.style = Paint.Style.FILL
-        paint.color = if (closest) color else getColor(R.color.map_face)
+        paint.color = if (outlined) getColor(R.color.map_face) else color
         canvas.drawPath(outline, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = ring
         paint.strokeJoin = Paint.Join.ROUND
-        paint.color = if (closest) getColor(R.color.map_on_accent) else color
+        paint.color = if (outlined) color else getColor(if (closest) R.color.map_on_accent else R.color.bus_ring)
         canvas.drawPath(outline, paint)
 
         paint.style = Paint.Style.FILL
-        paint.color = if (closest) getColor(R.color.map_on_accent) else color
+        paint.color = if (outlined) color else getColor(if (closest) R.color.map_on_accent else R.color.bus_text)
         lines.forEachIndexed { index, line ->
             val offset = (index - (lines.size - 1) / 2f) * paint.textSize
             canvas.drawText(line, center, center + offset - (paint.ascent() + paint.descent()) / 2, paint)
@@ -2892,6 +3010,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private companion object {
+        const val LATE_PALENESS = 0.3f
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"
         const val MAX_SUGGESTIONS = 12

@@ -30,8 +30,8 @@ each time; your recent destinations wait in the search box, and it remembers whe
   every 15 seconds while the app is open. A label under the search bar counts
   the live buses and says how long ago they were fetched, with a refresh icon: a
   tap fetches them again. When GTT's feed fails, it says so in orange and keeps
-  the last buses on the map, fading, for up to five minutes. When GTT's positions
-  leave buses out, those its trip updates still follow appear faded, halfway
+  the last buses on the map, paler, for up to five minutes. When GTT's positions
+  leave buses out, those its trip updates still follow appear as outlines, halfway
   between the last stop they passed and the next one, and the label counts them
   as estimated; journeys can use them too. Select a journey or line to focus the map, or tap a bus
   to highlight its whole course and the stops it has yet to reach. Zoom buttons
@@ -79,8 +79,13 @@ each time; your recent destinations wait in the search box, and it remembers whe
   tomorrow's first train, is not offered; when no ride is left, the app shows the walk.
 - **Offline search and maps.** Search bundled places, addresses, bus stops,
   and regional stations without a connection or an API key.
-- **Dark mode.** The app and its offline map follow your phone's dark-mode
-  setting.
+- **Theme and map type.** The app and its offline map follow your phone's dark-mode
+  setting, or stay light or dark if you choose so under Theme in the side menu. Map type
+  in the same menu switches between the offline map and Esri's satellite photos, with or
+  without street names. The photos need a connection and download only while you look at
+  them, so they add nothing to the app's size; ones already seen are kept, up to about 120 MB.
+- **Buses that stand out.** Buses are solid blue discs with white numbers, readable on
+  the light and dark maps and over the photos; the bus to catch is in the app's green.
 - **Saved places.** Tap the bookmark beside the search box to give any
   destination a name of your own, such as "Mum's" or "Work". Saved names come
   first in search, and an empty search box lists them, followed by the last few
@@ -181,7 +186,7 @@ network behavior, and map interaction.
   more than three hours away are ignored and tomorrow's are only offered by the
   train-only search. Beside the best journey, chips offer the one with fewest changes, the
   soonest, and the one with least walking, when they differ.
-- Bus positions older than two minutes are faded and labeled as delayed;
+- Bus positions older than two minutes are drawn paler (solid, so overlapping buses stay readable);
   positions older than five minutes are excluded. Arrival estimates account
   for the age of the position.
 - When a trip ID is missing, the app can estimate direction from the line,
@@ -245,6 +250,8 @@ for every data source and the licences of the libraries it is built with.
 - **Trenitalia:** train timetables from the national NeTEx feed (CCISS National Access Point),
   converted to GTFS by [Clément Desouche](https://github.com/deryclem/trenitalia-gtfs), CC BY 4.0.
 - **Mapsforge and osmdroid:** offline map rendering.
+- **Esri, Maxar, Earthstar Geographics and the GIS User Community:** the satellite photos and
+  their street names, loaded only when a satellite map type is chosen.
 
 Source details and license links are in the bundled
 [NOTICE](androidApp/src/main/assets/offline/NOTICE.txt). The

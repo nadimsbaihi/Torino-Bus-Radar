@@ -30,4 +30,8 @@
     <color name="surface_variant">#E6E9E4</color>
     <!-- The see-through backing of small text on the map. -->
     <color name="map_label_bg">#D9F8F7F3</color>
+    <!-- Buses on the map: a solid blue disc, like GTT's own, that the streets and parks never match. -->
+    <color name="bus_fill">#1565C0</color>
+    <color name="bus_ring">#FFFFFF</color>
+    <color name="bus_text">#FFFFFF</color>
 </resources>

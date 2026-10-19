@@ -30,4 +30,8 @@
     <color name="bubble_ink">#E8ECEA</color>
     <color name="bubble_muted">#A3AEAB</color>
     <color name="bubble_accent">#5CC8B9</color>
+    <!-- Buses on the map: a solid blue disc, like GTT's own, that the streets and parks never match. -->
+    <color name="bus_fill">#2F7BE0</color>
+    <color name="bus_ring">#FFFFFF</color>
+    <color name="bus_text">#FFFFFF</color>
 </resources>

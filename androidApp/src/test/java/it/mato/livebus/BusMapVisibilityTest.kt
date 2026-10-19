@@ -51,13 +51,14 @@ class BusMapVisibilityTest {
         render.invoke(activity)
         val buses = binding.map.overlays.filterIsInstance<Marker>()
         assertEquals(40, buses.size)
-        assertTrue(buses.all { it.alpha < 1f && it.snippet.contains("4 min") })
+        // Late buses are paler but solid, so overlapping ones never show through each other.
+        assertTrue(buses.all { it.alpha == 1f && it.snippet.contains("4 min") })
         MainActivity::class.java.getDeclaredMethod("updateLiveStatus").apply {
             isAccessible = true
             invoke(activity)
         }
         // The markers say how old each position is; the label only counts the buses.
-        assertTrue(binding.liveStatus.text.toString().contains("40 live buses"))
+        assertTrue(binding.liveStatus.text.toString().contains("40 buses located"))
         assertFalse(binding.liveStatus.text.toString().contains("min"))
 
         set(activity, "selectedRoute", "60")
