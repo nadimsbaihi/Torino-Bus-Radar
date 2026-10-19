@@ -133,7 +133,9 @@ class SpeedSamplerTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], application = Application::class)
 class LearnedSpeedPlanningTest {
-    private val now = System.currentTimeMillis() / 1000
+    // Midday in Rome, well inside one part of the day: learning in the last quarter hour and asking
+    // "now" must not straddle a boundary such as 19:30, where the evening peak ends.
+    private val now = 1_791_972_000L
     private val line = TransitPattern("l", "l", "L", "L", "0", setOf("l"), listOf(
         TransitStop("a", "a", 45.000, 7.0), TransitStop("b", "b", 45.010, 7.0),
         TransitStop("c", "c", 45.020, 7.0), TransitStop("d", "d", 45.030, 7.0)))
