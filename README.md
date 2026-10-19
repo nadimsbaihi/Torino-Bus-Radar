@@ -30,7 +30,10 @@ each time; your recent destinations wait in the search box, and it remembers whe
   every 15 seconds while the app is open. A label under the search bar counts
   the live buses and says how long ago they were fetched, with a refresh icon: a
   tap fetches them again. When GTT's feed fails, it says so in orange and keeps
-  the last buses on the map, fading, for up to five minutes. Select a journey or line to focus the map, or tap a bus
+  the last buses on the map, fading, for up to five minutes. When GTT's positions
+  leave buses out, those its trip updates still follow appear faded, halfway
+  between the last stop they passed and the next one, and the label counts them
+  as estimated; journeys can use them too. Select a journey or line to focus the map, or tap a bus
   to highlight its whole course and the stops it has yet to reach. Zoom buttons
   sit above the location button until you first zoom with two fingers; then they
   step aside for good.

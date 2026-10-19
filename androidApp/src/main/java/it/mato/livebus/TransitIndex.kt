@@ -223,9 +223,12 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
      * another since, or it is nowhere near the line it names. A bus that is merely between two
      * trips, waiting at its terminus, stays. Call it with every feed: it remembers what each bus
      * was last seen doing.
+     *
+     * A bus known only from the trip updates is placed on its route here (see [placeOnRoute]), or
+     * dropped when its trip is not in the index.
      */
     @Synchronized
-    fun inService(vehicles: List<LiveVehicle>): List<LiveVehicle> = vehicles.filter { vehicle ->
+    fun inService(vehicles: List<LiveVehicle>): List<LiveVehicle> = vehicles.mapNotNull(::placeOnRoute).filter { vehicle ->
         val tripId = vehicle.tripId
         if (tripId != null) {
             finishedVehicles.remove(vehicle.id)
@@ -250,6 +253,32 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         if (withTrips.size < STALE_MIN_VEHICLES) return false
         val known = withTrips.count { it.tripId in patternsByTripId }
         return known < withTrips.size * STALE_MAX_KNOWN_SHARE
+    }
+
+    /**
+     * Where a bus with no position most likely is: halfway along the road from the stop its trip
+     * last served to the one it is heading for, facing the way the road runs. A bus with a real
+     * position is returned as it is.
+     */
+    internal fun placeOnRoute(vehicle: LiveVehicle): LiveVehicle? {
+        val sequence = vehicle.nextStopSequence ?: return vehicle
+        val pattern = patternsByTripId[vehicle.tripId ?: return null] ?: return null
+        // Stop numbers count from 1 along the trip, as the pattern's stops do from 0.
+        val next = sequence - 1
+        if (next !in 1..pattern.stops.lastIndex) return null
+        val shape = pattern.shape
+        val alignment = alignmentOf(pattern)
+        val placed = if (shape != null && alignment != null) {
+            val middle = (alignment.chainages[next - 1] + alignment.chainages[next]) / 2
+            val point = shape.pointAt(middle)
+            Triple(point.latitude, point.longitude, shape.bearingAt(middle))
+        } else {
+            val from = pattern.stops[next - 1]
+            val to = pattern.stops[next]
+            Triple((from.latitude + to.latitude) / 2, (from.longitude + to.longitude) / 2, bearing(from, to).toFloat())
+        }
+        return vehicle.copy(routeId = pattern.routeId, latitude = placed.first, longitude = placed.second,
+            bearing = placed.third)
     }
 
     private fun hasFinishedItsDuty(vehicle: LiveVehicle): Boolean {
@@ -303,7 +332,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
             val speed = speedOf(pattern, nowSeconds)
             TrackedVehicle(vehicle, pattern, progress,
                 arrivalSeconds(vehicle, pattern, progress, nowSeconds, speed, position), speed = speed,
-                positionAgeSeconds = vehicle.ageSecondsAt(nowSeconds).toFloat())
+                // A place estimated halfway between two stops is about as uncertain as a fix a minute old.
+                positionAgeSeconds = vehicle.ageSecondsAt(nowSeconds).toFloat() +
+                    if (vehicle.estimated) ESTIMATED_PLACE_AGE_SECONDS else 0f)
         }
         return running + running.mapNotNull { turnaroundOf(it, nowSeconds) }
     }
@@ -323,7 +354,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         progress: Int,
         position: RoutePosition
     ) {
-        if (exactTripPattern(vehicle)?.id != pattern.id) {
+        // An estimated place jumps from stop to stop; it says nothing about how fast the bus goes.
+        if (vehicle.estimated || exactTripPattern(vehicle)?.id != pattern.id) {
             synchronized(speedFixes) { speedFixes.remove(vehicle.id) }
             return
         }
@@ -1300,6 +1332,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     }
 
     companion object {
+        private const val ESTIMATED_PLACE_AGE_SECONDS = 60f
         fun load(context: Context): TransitIndex {
             val root = JSONObject(
                 context.assets.open("transit_index.json").bufferedReader().use { it.readText() }

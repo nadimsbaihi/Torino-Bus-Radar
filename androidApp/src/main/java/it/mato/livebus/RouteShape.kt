@@ -110,7 +110,8 @@ class RouteShape(val latitudes: DoubleArray, val longitudes: DoubleArray) {
         return points
     }
 
-    private fun pointAt(chainage: Double): GeoPoint {
+    /** The point [chainage] metres along the shape. */
+    internal fun pointAt(chainage: Double): GeoPoint {
         var segment = 0
         while (segment < chain.size - 2 && chain[segment + 1] < chainage) segment++
         val length = chain[segment + 1] - chain[segment]

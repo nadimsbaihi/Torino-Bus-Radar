@@ -35,8 +35,16 @@ data class LiveVehicle(
      * soonest first: the one it is on, or the next one when it is about to finish. A shortlist
      * for working out its direction, never its trip.
      */
-    val tripHints: List<String> = emptyList()
+    val tripHints: List<String> = emptyList(),
+    /**
+     * Set for a bus the trip updates follow but the position feed leaves out: the stop number its
+     * trip is heading for. Its position is then only an estimate along the route (see
+     * [TransitIndex.inService]), never a fix.
+     */
+    val nextStopSequence: Int? = null
 ) {
+    val estimated: Boolean get() = nextStopSequence != null
+
     val ageSeconds: Long get() = ageSecondsAt(System.currentTimeMillis() / 1000)
 
     /** Age against a fixed clock reading, so one planning run sees one consistent "now". */
@@ -112,8 +120,9 @@ class GttRepository {
 
     private suspend fun fetchVehicles(): List<LiveVehicle> = coroutineScope {
         // Positions often come without their trip (most buses, some evenings); the trip updates
-        // still name the trips each vehicle is on or about to start.
-        val hintsTask = async { fetchTripHints() }
+        // still name the trips each vehicle is on or about to start, and follow buses the position
+        // feed leaves out altogether (two thirds of them on a bad day).
+        val updatesTask = async { fetchTripUpdates() }
         Log.d(TAG, "Requesting GTT vehicle positions")
         val response = fetch(VEHICLE_POSITIONS_URL)
         val vehicles = response.use {
@@ -123,24 +132,28 @@ class GttRepository {
             )
             decodeVehicles(feed)
         }
-        val hints = hintsTask.await()
-        vehicles.map { vehicle ->
+        val updates = updatesTask.await() ?: return@coroutineScope vehicles
+        val hints = tripHints(updates)
+        val positioned = vehicles.map { vehicle ->
             if (vehicle.tripId != null) vehicle
             else hints[vehicle.id]?.let { vehicle.copy(tripHints = it) } ?: vehicle
         }
+        val unplaced = unplaced(updates, positioned.mapTo(HashSet()) { it.id }, System.currentTimeMillis() / 1000)
+        Log.i(TAG, "${unplaced.size} more buses known only from trip updates")
+        positioned + unplaced
     }
 
-    /** The trips GTT's trip updates name for each vehicle, soonest first; empty if that feed fails. */
-    private suspend fun fetchTripHints(): Map<String, List<String>> = try {
+    /** GTT's trip updates, or null if that feed fails: the positions stand on their own. */
+    private suspend fun fetchTripUpdates(): GtfsRealtime.FeedMessage? = try {
         fetch(TRIP_UPDATES_URL).use { response ->
             check(response.isSuccessful) { "GTT trip updates returned ${response.code}" }
-            tripHints(GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream()))
+            GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream())
         }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: Exception) {
         Log.w(TAG, "GTT trip updates unavailable", error)
-        emptyMap()
+        null
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -199,6 +212,30 @@ class GttRepository {
                     updates.sortedBy { it.trip.startDate + it.trip.startTime.padStart(8, '0') }
                         .map { it.trip.tripId }.distinct()
                 }
+
+        /**
+         * The buses the trip updates follow that have no position among [positioned]: each on the
+         * trip it is running now (its earliest), with the next stop that trip lists. A bus that has
+         * not left its first stop is left out (it may still be finishing another run, or in the
+         * depot), as is one whose update is too old to place.
+         */
+        internal fun unplaced(
+            feed: GtfsRealtime.FeedMessage,
+            positioned: Set<String>,
+            nowSeconds: Long
+        ): List<LiveVehicle> = feed.entityList.asSequence()
+            .filter { it.hasTripUpdate() && it.tripUpdate.vehicle.id.isNotBlank() }
+            .map { it.tripUpdate }
+            .filter { it.vehicle.id !in positioned && it.trip.tripId.isNotBlank() && it.stopTimeUpdateCount > 0 }
+            .groupBy { it.vehicle.id }
+            .mapNotNull { (id, updates) ->
+                val current = updates.minBy { it.trip.startDate + it.trip.startTime.padStart(8, '0') }
+                val next = current.stopTimeUpdateList.minOf { it.stopSequence }
+                val timestamp = if (current.hasTimestamp()) current.timestamp else feed.header.timestamp
+                if (next <= 1 || nowSeconds - timestamp > MAX_POSITION_AGE_SECONDS) return@mapNotNull null
+                LiveVehicle(id, current.trip.routeId.removePrefix("gtt:"), current.trip.tripId, 0.0, 0.0, null,
+                    timestamp, label = current.vehicle.label.takeIf(String::isNotBlank), nextStopSequence = next)
+            }
 
         /** Older than this, a bus position says more about where it was than where it is. */
         const val MAX_POSITION_AGE_SECONDS = 300L

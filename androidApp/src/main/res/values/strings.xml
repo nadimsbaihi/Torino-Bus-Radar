@@ -197,4 +197,6 @@
     <string name="route_change_destination">To: %1$s. Tap to change.</string>
     <string name="ride_anyway">Take transit anyway · %1$d min</string>
     <string name="walk_instead">Walk instead · %1$d min</string>
+    <string name="bus_position_estimated">Position estimated</string>
+    <string name="estimated_bus_count">%1$d estimated</string>
 </resources>

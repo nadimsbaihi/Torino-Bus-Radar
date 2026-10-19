@@ -197,4 +197,6 @@
     <string name="route_change_destination">A: %1$s. Tocca per cambiare.</string>
     <string name="ride_anyway">Prendi comunque i mezzi · %1$d min</string>
     <string name="walk_instead">Vai a piedi · %1$d min</string>
+    <string name="bus_position_estimated">Posizione stimata</string>
+    <string name="estimated_bus_count">%1$d stimati</string>
 </resources>

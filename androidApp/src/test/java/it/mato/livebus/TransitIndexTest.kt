@@ -487,6 +487,27 @@ class TransitIndexTest {
         assertEquals(listOf(45.0, 45.01, 45.02), index(plain).pathBetween(plain, 0, 2).map { it.latitude })
     }
 
+    @Test fun aBusKnownOnlyFromItsTripIsPlacedHalfwayToItsNextStop() {
+        val line = pattern("line", listOf(stop("a", 45.00, 7.6), stop("b", 45.01, 7.6), stop("c", 45.03, 7.6)))
+        val index = index(line)
+        fun heading(next: Int) = LiveVehicle("ghost", "", "line", 0.0, 0.0, null,
+            System.currentTimeMillis() / 1000, nextStopSequence = next)
+
+        // Stop 3 is "c": the bus is between "b" and "c", going north.
+        val placed = index.inService(listOf(heading(3))).single()
+        assertEquals(45.02, placed.latitude, 1e-9)
+        assertEquals(7.6, placed.longitude, 1e-9)
+        assertEquals(0f, placed.bearing!!, 1f)
+        assertEquals("line", placed.routeId)
+        assertTrue(placed.estimated)
+        // Before its first stop, past its last, or on a trip the index does not know: not placed.
+        assertTrue(index.inService(listOf(heading(1), heading(4))).isEmpty())
+        assertTrue(index.inService(listOf(heading(2).copy(tripId = "unknown"))).isEmpty())
+        // A bus with a real position is left where it is.
+        val real = vehicle(line, 45.005, 7.6)
+        assertEquals(real, index.inService(listOf(real)).single())
+    }
+
     private fun stop(id: String, lat: Double, lon: Double) = TransitStop(id, id, lat, lon)
     private fun pattern(id: String, stops: List<TransitStop>) =
         TransitPattern(id, id, id, id, "0", setOf(id), stops)

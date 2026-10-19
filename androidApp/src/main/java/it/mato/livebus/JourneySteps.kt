@@ -170,7 +170,10 @@ object JourneySteps {
                 JourneyNote(R.drawable.ic_schedule, context.getString(R.string.bus_turnaround_note,
                     bus.pattern.route, ceilMinutes(it.departsInSeconds)))
             },
-            if (age > STALE_POSITION_SECONDS) {
+            // GTT gave no position for it: where it is comes from the stops its trip has passed.
+            if (bus.vehicle.estimated || bus.secondLeg?.vehicle?.estimated == true) {
+                JourneyNote(R.drawable.ic_schedule, context.getString(R.string.bus_position_estimated))
+            } else if (age > STALE_POSITION_SECONDS) {
                 JourneyNote(R.drawable.ic_schedule, context.getString(R.string.bus_position_age, (age + 59) / 60))
             } else null
         )

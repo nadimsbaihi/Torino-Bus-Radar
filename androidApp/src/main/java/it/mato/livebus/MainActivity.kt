@@ -1730,11 +1730,19 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             .setAction(android.R.string.ok) {}.show()
     }
 
-    // A late bus is already faded on the map; the label only counts them.
+    /** How far a bus is and how much its place can be trusted: a fix's age, or that it is estimated. */
+    private fun busDetails(vehicle: LiveVehicle) =
+        getString(R.string.distance_away, distanceTo(vehicle).roundToInt()) + " · " +
+            if (vehicle.estimated) getString(R.string.bus_position_estimated)
+            else getString(R.string.bus_position_age, (vehicle.ageSeconds + 59) / 60)
+
+    // A late bus is already faded on the map; the label only counts them, the estimated ones apart.
     private fun updateLiveStatus() {
         val ago = liveStatusFetchedAt?.let { freshnessSuffix((SystemClock.elapsedRealtime() - it) / 1000) }.orEmpty()
+        val estimated = liveVehicles.count { it.estimated }
         val status = if (liveVehicles.isEmpty()) getString(R.string.no_bus_positions)
-            else getString(R.string.live_bus_count, liveVehicles.size)
+            else getString(R.string.live_bus_count, liveVehicles.size - estimated) +
+                if (estimated > 0) " · " + getString(R.string.estimated_bus_count, estimated) else ""
         setLiveStatus(status + ago, if (liveVehicles.isEmpty()) R.color.warning else R.color.live_green)
     }
 
@@ -1810,9 +1818,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 position = GeoPoint(vehicle.latitude, vehicle.longitude)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 title = getString(R.string.vehicle_title, vehicleRoute)
-                snippet = getString(R.string.distance_away, distanceTo(vehicle).roundToInt()) +
-                    " · " + getString(R.string.bus_position_age, (vehicle.ageSeconds + 59) / 60)
-                alpha = if (vehicle.ageSeconds > 120) 0.65f else 1f
+                snippet = busDetails(vehicle)
+                // A late fix fades a little; a place only estimated fades more.
+                alpha = if (vehicle.estimated) 0.5f else if (vehicle.ageSeconds > 120) 0.65f else 1f
                 relatedObject = vehicle
                 setInfoWindow(markerBubble)
                 icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute)
@@ -1835,8 +1843,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                         val minutes = (it.departsInSeconds / 60f).roundToInt()
                         if (minutes < 1) getString(R.string.at_terminus_leaving)
                             else getString(R.string.at_terminus_leaves_in, minutes)
-                    } ?: (getString(R.string.distance_away, distanceTo(vehicle).roundToInt()) +
-                        " · " + getString(R.string.bus_position_age, (vehicle.ageSeconds + 59) / 60))
+                    } ?: busDetails(vehicle)
                     // Where it is going reads first, then how far and how fresh.
                     clickedMarker.subDescription = direction?.let(TextUtils::htmlEncode).orEmpty()
                     clickedMarker.snippet = TextUtils.htmlEncode(details)
