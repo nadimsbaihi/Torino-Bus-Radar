@@ -46,6 +46,10 @@ class NavigationBackTest {
         val application = RuntimeEnvironment.getApplication()
         application.getSharedPreferences("saved_places", 0).edit().clear().commit()
         application.getSharedPreferences("active_journey", 0).edit().clear().commit()
+        // Material keeps one snackbar queue for the whole run, timed on an earlier test's looper:
+        // a snackbar left "showing" there would hold this test's message in the queue for ever.
+        Class.forName("com.google.android.material.snackbar.SnackbarManager")
+            .getDeclaredField("snackbarManager").apply { isAccessible = true }.set(null, null)
     }
 
     private fun screen(): Pair<MainActivity, ActivityMainBinding> {
