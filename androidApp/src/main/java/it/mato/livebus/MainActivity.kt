@@ -54,7 +54,6 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
-import androidx.annotation.ColorRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
@@ -136,9 +135,9 @@ private class MessageAction(@StringRes val label: Int, val run: () -> Unit) {
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private val repository = GttRepository()
-    private val transitIndex by lazy { TransitIndex.load(this) }
-    private val trainIndex by lazy { TrainIndex.load(this) }
+    private val repository = GttRepository.shared
+    private val transitIndex by lazy { (application as MatoApplication).transitIndex }
+    private val trainIndex by lazy { (application as MatoApplication).trainIndex }
     private val journeyPlanner by lazy { JourneyPlanner(transitIndex, trainIndex) }
     private val offlineCity get() = (application as MatoApplication).offlineCity
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
@@ -239,7 +238,7 @@ class MainActivity : AppCompatActivity() {
         applySystemBarInsets()
         ViewCompat.setAccessibilityHeading(binding.journeyTitle, true)
 
-        setupMap()
+        setupMap(savedInstanceState)
         setupJourneySheet()
         setupBackNavigation()
         setupDestinationPicker()
@@ -267,7 +266,8 @@ class MainActivity : AppCompatActivity() {
         binding.closeJourneyButton.setOnClickListener { closeJourney() }
         binding.refreshJourneyButton.setOnClickListener { refreshJourney() }
         consumeSharedDirections(intent)
-        requestLocation()
+        // A screen rebuilt by a theme change stays where the rider was looking.
+        requestLocation(moveMap = savedInstanceState == null)
         startRefreshing()
         consumeReplan(intent)
         consumeGoToPlace(intent)
@@ -599,7 +599,7 @@ class MainActivity : AppCompatActivity() {
                 step.kind == StepKind.METRO -> R.drawable.ic_metro
                 else -> R.drawable.ic_bus
             })
-            ImageViewCompat.setImageTintList(row.stepIcon, ColorStateList.valueOf(getColor(stepColor(step.kind))))
+            ImageViewCompat.setImageTintList(row.stepIcon, ColorStateList.valueOf(stepColor(step.kind)))
             val railOut = if (index == guide.steps.lastIndex) null else railAfter(step)
             paintRail(row.stepRailAbove, railIn)
             paintRail(row.stepRailBelow, railOut)
@@ -616,19 +616,19 @@ class MainActivity : AppCompatActivity() {
         binding.sharedDirections.visibility = if (guide.notes.isEmpty()) View.GONE else View.VISIBLE
     }
 
-    private fun stepColor(kind: StepKind) = when (kind) {
+    @ColorInt private fun stepColor(kind: StepKind) = getColor(when (kind) {
         StepKind.TRAIN -> R.color.train_blue
         StepKind.METRO -> R.color.metro_red
         else -> R.color.deep_green
-    }
+    })
 
     /** How the thread between two steps is drawn: a ride in its line's colour, a walk thin and grey. */
-    private class Rail(@ColorRes val color: Int, val widthDp: Int)
+    private class Rail(@ColorInt val color: Int, val widthDp: Int)
 
     /** Boarding starts a ride, so the thread below it is the vehicle's; anything else leads on foot. */
     private fun railAfter(step: JourneyStep): Rail =
         if (!step.getOff && step.kind in setOf(StepKind.BUS, StepKind.METRO, StepKind.TRAIN)) Rail(stepColor(step.kind), 4)
-        else Rail(R.color.line, 2)
+        else Rail(getColor(R.color.line), 2)
 
     private fun paintRail(view: View, rail: Rail?) {
         if (rail == null) {
@@ -636,7 +636,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         view.visibility = View.VISIBLE
-        view.setBackgroundColor(getColor(rail.color))
+        view.setBackgroundColor(rail.color)
         view.layoutParams = view.layoutParams.apply { width = (rail.widthDp * resources.displayMetrics.density).roundToInt() }
     }
 
@@ -708,14 +708,20 @@ class MainActivity : AppCompatActivity() {
             .withEndAction { binding.zoomControls.visibility = View.GONE }
     }
 
-    private fun setupMap() = with(binding.map) {
+    private fun setupMap(saved: Bundle?) = with(binding.map) {
         setMultiTouchControls(true)
         setupZoomButtons()
         setUseDataConnection(false)
         setTilesScaledToDpi(false)
         tintLoadingTiles()
-        controller.setZoom(16.0)
-        controller.setCenter(currentLocation)
+        if (saved != null && saved.containsKey(MAP_ZOOM)) {
+            currentLocation = GeoPoint(saved.getDouble(YOU_LATITUDE), saved.getDouble(YOU_LONGITUDE))
+            controller.setZoom(saved.getDouble(MAP_ZOOM))
+            controller.setCenter(GeoPoint(saved.getDouble(MAP_LATITUDE), saved.getDouble(MAP_LONGITUDE)))
+        } else {
+            controller.setZoom(16.0)
+            controller.setCenter(currentLocation)
+        }
         overlays.add(0, MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(point: GeoPoint?): Boolean {
                 if (askedSpot != null) {
@@ -1555,7 +1561,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     val worthOptions = options.filter { worthTaking(it.totalSeconds, walkSeconds) }
                     val busChoice = worthOptions.firstOrNull { it.bus != null }?.bus
                     val mixedChoice = worthOptions.firstOrNull { it.mixed != null }?.mixed
-                    if (busChoice == null && trainChoice == null && mixedChoice == null &&
+                    // Walking only wins against buses the planner could see: with the feed down or empty,
+                    // a slow metro or train is no reason to say nothing beats the walk.
+                    val busesKnown = vehicleResult.isSuccess && liveVehicles.isNotEmpty() && hasMatchedVehicles
+                    if (busChoice == null && trainChoice == null && mixedChoice == null && busesKnown &&
                         (plannedTrain != null || options.isNotEmpty())) {
                         showWalkingOnly(destination, address)
                     } else if (busChoice == null && trainChoice == null && mixedChoice == null) {
@@ -1619,6 +1628,17 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         plannedDestination = destination to address
         displayJourney(destination, address, options.firstOrNull { it.bus != null }?.bus, trainChoice,
             options.firstOrNull { it.mixed != null }?.mixed, frame)
+        // The best option weighs walking too, so it can lose to the walk while a quicker one beats it:
+        // then the quickest ride is shown, not the walk.
+        if (walkingMode && walkingIsFaster) {
+            val quickest = options.filter { it.totalSeconds < directWalkingSeconds }.minByOrNull { it.totalSeconds }
+            val train = trainChoice?.takeIf { it.estimatedTotalSeconds < directWalkingSeconds }
+            if (train != null && (quickest == null || train.estimatedTotalSeconds < quickest.totalSeconds)) {
+                displayJourney(destination, address, null, train, null, frame, remember = false)
+            } else if (quickest != null) {
+                displayJourney(destination, address, quickest.bus, null, quickest.mixed, frame, remember = false)
+            }
+        }
         selectedOption = options.indexOfFirst { option ->
             if (mixedJourneyChoice != null) option.mixed == mixedJourneyChoice
             else trainJourneyChoice == null && option.bus != null && option.bus == journeyChoice
@@ -1805,6 +1825,14 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private suspend fun fetchVehicles(forceRefresh: Boolean) {
+        // A screen rebuilt by a theme change starts with the buses the app already has, not an empty
+        // map for the half minute GTT can take to answer.
+        if (liveVehicles.isEmpty()) repository.lastFetch()?.let { (vehicles, fetchedAt) ->
+            liveVehicles = inService(vehicles)
+            liveStatusFetchedAt = fetchedAt
+            updateLiveStatus()
+            renderVehicles()
+        }
         // The routine refresh keeps the label as it is: "Connecting…" every 15 s would read as trouble.
         // Only a first fetch, or one the rider asked for, says it is under way.
         if (forceRefresh || liveVehicles.isEmpty()) {
@@ -2190,6 +2218,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun drawBusJourneyLine(choice: JourneyChoice, origin: GeoPoint,
                                    destination: GeoPoint, showFinalDestination: Boolean) {
         val points = journeyPoints(choice)
+        // The journey keeps the app's own colour, apart from the buses the rider gave a colour to.
+        val journeyColour = getColor(R.color.deep_green)
         addWalkingConnector(
             origin,
             GeoPoint(choice.boardAt.latitude, choice.boardAt.longitude)
@@ -2209,7 +2239,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             })
             binding.map.overlays.add(mapLine().apply {
                 setPoints(points)
-                outlinePaint.color = getColor(R.color.route_orange)
+                outlinePaint.color = journeyColour
                 outlinePaint.strokeWidth = 3.5f * resources.displayMetrics.density
                 outlinePaint.strokeCap = android.graphics.Paint.Cap.ROUND
                 outlinePaint.strokeJoin = android.graphics.Paint.Join.ROUND
@@ -2218,13 +2248,13 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             addJourneyStopMarker(
                 choice.boardAt,
                 getString(R.string.board_here),
-                getColor(R.color.deep_green)
+                journeyColour
             )
             choice.transferAt?.let {
                 addJourneyStopMarker(
                     it,
                     getString(R.string.intermediate_destination),
-                    getColor(R.color.route_orange)
+                    journeyColour
                 )
             }
         }
@@ -2237,7 +2267,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                         GeoPoint(leg.boardAt.latitude, leg.boardAt.longitude))
                 }
             }
-            for ((colour, width) in listOf(getColor(R.color.map_casing) to 6f, getColor(R.color.deep_green) to 3.5f)) {
+            for ((colour, width) in listOf(getColor(R.color.map_casing) to 6f, journeyColour to 3.5f)) {
                 binding.map.overlays.add(mapLine().apply {
                     setPoints(secondPoints)
                     outlinePaint.color = colour
@@ -2251,7 +2281,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         addJourneyStopMarker(
             choice.destination,
             getString(R.string.destination_stop),
-            getColor(R.color.deep_green),
+            journeyColour,
             sizeDp = 18
         )
         if (showFinalDestination) addExactDestinationMarker(destination.latitude, destination.longitude)
@@ -2740,7 +2770,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val canvas = Canvas(bitmap)
         val center = bitmapSize / 2f
         // A late fix is paled towards the map's own colour, but stays solid.
-        val color = ColorUtils.blendARGB(if (closest) getColor(R.color.route_orange) else busColour,
+        val color = ColorUtils.blendARGB(busColour,
             getColor(R.color.map_loading), if (look == BusLook.LATE) LATE_PALENESS else 0f)
         val outlined = look == BusLook.ESTIMATED
 
@@ -2772,11 +2802,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = ring
         paint.strokeJoin = Paint.Join.ROUND
-        paint.color = if (outlined) color else getColor(if (closest) R.color.map_on_accent else R.color.bus_ring)
+        paint.color = if (outlined) color else getColor(R.color.bus_ring)
         canvas.drawPath(outline, paint)
 
         paint.style = Paint.Style.FILL
-        paint.color = if (outlined) color else getColor(if (closest) R.color.map_on_accent else R.color.bus_text)
+        paint.color = if (outlined) color else getColor(R.color.bus_text)
         lines.forEachIndexed { index, line ->
             val offset = (index - (lines.size - 1) / 2f) * paint.textSize
             canvas.drawText(line, center, center + offset - (paint.ascent() + paint.descent()) / 2, paint)
@@ -2806,7 +2836,20 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun requestLocation() {
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // The point setCenter puts there: the middle of the map moved by the offset for the panels.
+        val center = binding.map.run {
+            projection.fromPixels(width / 2 + mapCenterOffsetX, height / 2 + mapCenterOffsetY)
+        }
+        outState.putDouble(MAP_LATITUDE, center.latitude)
+        outState.putDouble(MAP_LONGITUDE, center.longitude)
+        outState.putDouble(MAP_ZOOM, binding.map.zoomLevelDouble)
+        outState.putDouble(YOU_LATITUDE, currentLocation.latitude)
+        outState.putDouble(YOU_LONGITUDE, currentLocation.longitude)
+    }
+
+    private fun requestLocation(moveMap: Boolean = true) {
         lifecycleScope.launch {
             binding.locationButton.isEnabled = false
             try {
@@ -2815,8 +2858,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     showLocationHint()
                 } else if (planningJob?.isActive != true) {
                     currentLocation = GeoPoint(location.latitude, location.longitude)
-                    binding.map.controller.setZoom(16.0)
-                    binding.map.controller.animateTo(currentLocation)
+                    if (moveMap) {
+                        binding.map.controller.setZoom(16.0)
+                        binding.map.controller.animateTo(currentLocation)
+                    }
                     renderVehicles()
                 }
             } finally {
@@ -3160,6 +3205,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         const val LATE_PALENESS = 0.3f
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"
+        const val MAP_LATITUDE = "map_latitude"
+        const val MAP_LONGITUDE = "map_longitude"
+        const val MAP_ZOOM = "map_zoom"
+        const val YOU_LATITUDE = "you_latitude"
+        const val YOU_LONGITUDE = "you_longitude"
         const val MAX_SUGGESTIONS = 12
         const val STALE_NOTICE_VERSION = "stale_notice_version"
         const val HINTS_SEEN = "hints_seen"

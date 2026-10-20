@@ -7,6 +7,10 @@ import org.osmdroid.mapsforge.MapsForgeTileSource
 class MatoApplication : Application() {
     val offlineCity by lazy { OfflineCity.open(this) }
 
+    // Read once per run, so the map rebuilt by a theme change places its buses without parsing them again.
+    val transitIndex by lazy { TransitIndex.load(this) }
+    val trainIndex by lazy { TrainIndex.load(this) }
+
     override fun onCreate() {
         super.onCreate()
         Appearance.apply(this)

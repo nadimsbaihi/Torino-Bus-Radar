@@ -37,7 +37,7 @@ import kotlin.math.roundToInt
 
 class BusAlertService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val repository = GttRepository()
+    private val repository = GttRepository.shared
     private lateinit var transitIndex: TransitIndex
     private val locationClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private var pollingJob: Job? = null

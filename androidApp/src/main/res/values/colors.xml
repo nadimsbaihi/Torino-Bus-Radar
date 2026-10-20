@@ -7,7 +7,6 @@
     <color name="lime">#E4B34A</color>
     <color name="deep_green">#176B62</color>
     <color name="live_green">#176B62</color>
-    <color name="route_orange">#176B62</color>
     <color name="train_blue">#2267A8</color>
     <!-- GTT's metro red. -->
     <color name="metro_red">#C8102E</color>
@@ -19,7 +18,6 @@
     <!-- Tiles still being drawn: the map theme's own background, so they blend in. -->
     <color name="map_loading">#F5F4F0</color>
     <color name="map_loading_line">#E5E5E0</color>
-    <color name="map_on_accent">#FFFFFF</color>
     <!-- osmdroid's map bubbles are white in both themes, so their text keeps day colours. -->
     <color name="bubble_ink">#172020</color>
     <color name="bubble_muted">#697472</color>

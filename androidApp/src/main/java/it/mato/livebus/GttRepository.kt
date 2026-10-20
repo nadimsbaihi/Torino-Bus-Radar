@@ -94,6 +94,10 @@ class GttRepository {
         freshVehicles(vehicles)
     }
 
+    /** The buses last fetched, still young enough to show, and when they came; null before any fetch. */
+    fun lastFetch(): Pair<List<LiveVehicle>, Long>? =
+        cachedVehicles?.let { freshVehicles(it) to fetchedAtMillis }?.takeIf { it.first.isNotEmpty() }
+
     private fun freshVehicles(vehicles: List<LiveVehicle>): List<LiveVehicle> {
         val now = System.currentTimeMillis() / 1000
         return vehicles.filter { now - it.timestampSeconds in -30..MAX_POSITION_AGE_SECONDS }
@@ -201,6 +205,12 @@ class GttRepository {
 
     companion object {
         private const val TAG = "GttRepository"
+
+        /**
+         * One for the whole app, so the map rebuilt by a theme change and the alert service reuse the
+         * buses already fetched instead of waiting on GTT's slow server again.
+         */
+        val shared by lazy { GttRepository() }
 
         /** Each vehicle's trips in the trip updates, by when they start ("20261015" "09:56:00"). */
         internal fun tripHints(feed: GtfsRealtime.FeedMessage): Map<String, List<String>> =
