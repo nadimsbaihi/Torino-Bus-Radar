@@ -208,4 +208,23 @@
     <string name="appearance_system">Follow phone setting</string>
     <string name="appearance_light">Light</string>
     <string name="appearance_dark">Dark</string>
+    <string name="map_colors">Colours</string>
+    <string name="menu_section_map">Map</string>
+    <string name="menu_section_app">App</string>
+    <string name="map_layer_streets_short">Offline</string>
+    <string name="map_layer_hybrid_short">Satellite + streets</string>
+    <string name="appearance_system_short">Automatic</string>
+    <string name="menu_version">v%1$s</string>
+    <string name="map_colors_buses">Buses</string>
+    <string name="map_colors_you">You</string>
+    <string name="map_colors_taken_by_you">Crossed out: already the colour of your position</string>
+    <string name="map_colors_taken_by_buses">Crossed out: already the colour of the buses</string>
+    <string name="map_colors_apply">Apply</string>
+    <string name="cancel_choice">Cancel</string>
+    <string name="marker_color_blue">Blue</string>
+    <string name="marker_color_maps_blue">Maps blue</string>
+    <string name="marker_color_orange">Orange</string>
+    <string name="marker_color_red">Red</string>
+    <string name="marker_color_purple">Purple</string>
+    <string name="marker_color_graphite">Graphite</string>
 </resources>

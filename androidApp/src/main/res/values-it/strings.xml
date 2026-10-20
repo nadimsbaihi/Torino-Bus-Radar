@@ -208,4 +208,23 @@
     <string name="appearance_system">Come le impostazioni del telefono</string>
     <string name="appearance_light">Chiaro</string>
     <string name="appearance_dark">Scuro</string>
+    <string name="map_colors">Colori</string>
+    <string name="menu_section_map">Mappa</string>
+    <string name="menu_section_app">App</string>
+    <string name="map_layer_streets_short">Offline</string>
+    <string name="map_layer_hybrid_short">Satellite + vie</string>
+    <string name="appearance_system_short">Automatico</string>
+    <string name="menu_version">v%1$s</string>
+    <string name="map_colors_buses">Bus</string>
+    <string name="map_colors_you">Tu</string>
+    <string name="map_colors_taken_by_you">Barrato: è già il colore della tua posizione</string>
+    <string name="map_colors_taken_by_buses">Barrato: è già il colore dei bus</string>
+    <string name="map_colors_apply">Applica</string>
+    <string name="cancel_choice">Annulla</string>
+    <string name="marker_color_blue">Blu</string>
+    <string name="marker_color_maps_blue">Blu Maps</string>
+    <string name="marker_color_orange">Arancione</string>
+    <string name="marker_color_red">Rosso</string>
+    <string name="marker_color_purple">Viola</string>
+    <string name="marker_color_graphite">Grafite</string>
 </resources>

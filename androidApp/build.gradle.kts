@@ -22,8 +22,12 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
-        // Every Robolectric screen test loads the offline city; Gradle's default 512 MB worker runs out.
-        unitTests.all { it.maxHeapSize = "2g" }
+        // Every Robolectric screen test loads the offline city; Gradle's default 512 MB worker runs out,
+        // and one worker for the whole suite fills even 2 GB as classes are added, so it is renewed.
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            it.setForkEvery(20)
+        }
     }
 
     buildTypes {

@@ -24,8 +24,9 @@ class BusMarkerTest {
 
     private fun marker(closest: Boolean, bearing: Float?, route: String = "67"): Bitmap {
         val drawable = MainActivity::class.java.getDeclaredMethod("createBusDirectionMarker",
-            Boolean::class.javaPrimitiveType, java.lang.Float::class.java, String::class.java, BusLook::class.java)
-            .apply { isAccessible = true }.invoke(activity, closest, bearing, route, BusLook.LIVE) as BitmapDrawable
+            Boolean::class.javaPrimitiveType, java.lang.Float::class.java, String::class.java, BusLook::class.java,
+            Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, closest, bearing, route, BusLook.LIVE, 0xFF1565C0.toInt()) as BitmapDrawable
         return drawable.bitmap
     }
 

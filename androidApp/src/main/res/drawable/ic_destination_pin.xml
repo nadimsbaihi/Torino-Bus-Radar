@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Where the journey ends: a pin whose tip is the exact spot, in the red of the "To" field. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="34dp"
+    android:height="42dp"
+    android:viewportWidth="24"
+    android:viewportHeight="30">
+    <path
+        android:fillColor="@color/destination_pin"
+        android:strokeColor="@color/map_casing"
+        android:strokeWidth="1.6"
+        android:strokeLineJoin="round"
+        android:pathData="M12,1.5C6.75,1.5 2.5,5.75 2.5,11c0,7.2 9.5,17.5 9.5,17.5s9.5,-10.3 9.5,-17.5C21.5,5.75 17.25,1.5 12,1.5z" />
+    <path
+        android:fillColor="@color/map_casing"
+        android:pathData="M12,11m-3.6,0a3.6,3.6 0,1 1,7.2 0a3.6,3.6 0,1 1,-7.2 0" />
+</vector>

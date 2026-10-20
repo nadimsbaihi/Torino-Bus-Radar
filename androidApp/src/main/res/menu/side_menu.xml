@@ -1,30 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- What is not about one journey: the rider's places, how the map looks, help, updates, and where the data comes from. -->
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <group android:id="@+id/sideMenuMain">
+<!--
+What is not about one journey, in the order riders reach for it: their places, then how the map
+looks (each setting shows its current value), then help and the app itself.
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <group android:id="@+id/sideMenuPlaces">
         <item
             android:id="@+id/menuSavedPlaces"
             android:icon="@drawable/ic_bookmark"
             android:title="@string/saved_places_title" />
-        <item
-            android:id="@+id/menuMapLayer"
-            android:icon="@drawable/ic_layers"
-            android:title="@string/map_layer" />
-        <item
-            android:id="@+id/menuAppearance"
-            android:icon="@drawable/ic_appearance"
-            android:title="@string/appearance" />
-        <item
-            android:id="@+id/menuHowTo"
-            android:icon="@drawable/ic_help"
-            android:title="@string/how_to_use" />
-        <item
-            android:id="@+id/menuUpdates"
-            android:icon="@drawable/ic_refresh"
-            android:title="@string/check_for_updates" />
-        <item
-            android:id="@+id/menuCredits"
-            android:icon="@drawable/ic_info"
-            android:title="@string/credits_title" />
     </group>
+    <item android:title="@string/menu_section_map">
+        <menu>
+            <item
+                android:id="@+id/menuMapLayer"
+                android:icon="@drawable/ic_layers"
+                android:title="@string/map_layer"
+                app:actionLayout="@layout/menu_value" />
+            <item
+                android:id="@+id/menuAppearance"
+                android:icon="@drawable/ic_appearance"
+                android:title="@string/appearance"
+                app:actionLayout="@layout/menu_value" />
+            <item
+                android:id="@+id/menuMapColors"
+                android:icon="@drawable/ic_palette"
+                android:title="@string/map_colors"
+                app:actionLayout="@layout/menu_value" />
+        </menu>
+    </item>
+    <item android:title="@string/menu_section_app">
+        <menu>
+            <item
+                android:id="@+id/menuHowTo"
+                android:icon="@drawable/ic_help"
+                android:title="@string/how_to_use" />
+            <item
+                android:id="@+id/menuUpdates"
+                android:icon="@drawable/ic_refresh"
+                android:title="@string/check_for_updates"
+                app:actionLayout="@layout/menu_value" />
+            <item
+                android:id="@+id/menuCredits"
+                android:icon="@drawable/ic_info"
+                android:title="@string/credits_title" />
+        </menu>
+    </item>
 </menu>

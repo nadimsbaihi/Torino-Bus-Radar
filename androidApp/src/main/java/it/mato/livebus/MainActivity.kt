@@ -15,6 +15,11 @@ import android.graphics.Point
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.view.Gravity
+import androidx.annotation.ColorInt
 import android.location.Location
 import android.location.LocationManager
 import android.provider.Settings
@@ -86,6 +91,10 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.mapsforge.MapsForgeTileSource
 import org.osmdroid.mapsforge.MapsForgeTileProvider
 import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
+import android.widget.TextView
+import android.widget.ImageView
+import it.mato.livebus.databinding.DialogMapColorsBinding
+import android.widget.LinearLayout
 import android.widget.ArrayAdapter
 import android.widget.Filter
 import android.widget.PopupMenu
@@ -800,6 +809,7 @@ class MainActivity : AppCompatActivity() {
                 if (chosen != current) {
                     MapLayer.save(this, chosen)
                     showMapLayer(chosen)
+                    showMenuValues()
                 }
                 dialog.dismiss()
             }
@@ -968,7 +978,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         stopWindow?.close()
         val pin = Marker(binding.map).apply {
             position = point
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            // The pin's tip, not its middle, marks the spot.
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             title = getString(R.string.map_pin_confirm_title)
             snippet = MapPin.format(point.latitude, point.longitude)
             icon = destinationPinIcon()
@@ -1180,12 +1191,43 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 R.id.menuHowTo -> showHints()
                 R.id.menuMapLayer -> chooseMapLayer()
                 R.id.menuAppearance -> chooseAppearance()
+                R.id.menuMapColors -> chooseMapColors()
                 R.id.menuUpdates -> checkForUpdate(asked = true)
                 R.id.menuCredits -> Credits.show(this)
             }
             // Each item opens something; none stays selected in the menu.
             false
         }
+        showMenuValues()
+    }
+
+    /** Each map setting shows what it is set to, so the menu answers "how is it now?" before a tap. */
+    private fun showMenuValues() {
+        val menu = binding.sideMenu.menu
+        fun value(id: Int, text: CharSequence) {
+            val item = menu.findItem(id)
+            (item.actionView as? TextView)?.text = text
+            // Read out with the item, since the value itself is hidden from TalkBack.
+            item.contentDescription = "${item.title}, $text"
+        }
+        value(R.id.menuMapLayer, getString(when (MapLayer.load(this)) {
+            MapLayer.STREETS -> R.string.map_layer_streets_short
+            MapLayer.SATELLITE -> R.string.map_layer_satellite
+            MapLayer.HYBRID -> R.string.map_layer_hybrid_short
+        }))
+        value(R.id.menuAppearance, getString(when (Appearance.load(this)) {
+            Appearance.SYSTEM -> R.string.appearance_system_short
+            Appearance.LIGHT -> R.string.appearance_light
+            Appearance.DARK -> R.string.appearance_dark
+        }))
+        val colors = MapColors.load(this)
+        val night = MapTheme.isNight(this)
+        value(R.id.menuMapColors, SpannableStringBuilder("● ◉").apply {
+            setSpan(ForegroundColorSpan(colors.buses.color(night)), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(ForegroundColorSpan(colors.position.color(night)), 2, 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(RelativeSizeSpan(1.5f), 0, 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        })
+        value(R.id.menuUpdates, getString(R.string.menu_version, BuildConfig.VERSION_NAME))
     }
 
     /**
@@ -1214,7 +1256,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val destination = binding.destinationInput.text.toString().substringBefore(" · ")
         binding.routeTo.text = destination
         binding.routeTo.contentDescription = getString(R.string.route_change_destination, destination)
-        binding.routeTo.setCompoundDrawablesRelative(sizedIcon(R.drawable.ic_place, iconSize, R.color.warning),
+        binding.routeTo.setCompoundDrawablesRelative(sizedIcon(R.drawable.ic_place, iconSize, R.color.destination_pin),
             null, null, null)
     }
 
@@ -2340,18 +2382,13 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         setOnClickListener { _, _, _ -> false }
     }
 
-    private fun destinationPinIcon() = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(getColor(R.color.lime))
-        setStroke((4 * resources.displayMetrics.density).roundToInt(), getColor(R.color.deep_green))
-        val size = (28 * resources.displayMetrics.density).roundToInt()
-        setSize(size, size)
-    }
+    private fun destinationPinIcon() = ContextCompat.getDrawable(this, R.drawable.ic_destination_pin)
 
     private fun addExactDestinationMarker(latitude: Double, longitude: Double) {
         binding.map.overlays.add(Marker(binding.map).apply {
             position = GeoPoint(latitude, longitude)
-            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            // The pin's tip, not its middle, marks the spot.
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             title = getString(R.string.final_destination)
             setInfoWindow(markerBubble)
             snippet = binding.destinationInput.text.toString()
@@ -2553,8 +2590,115 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             title = getString(R.string.you_are_here)
             setInfoWindow(markerBubble)
-            icon = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_my_location)
+            icon = youMarkerIcon()
         })
+    }
+
+    /** The rider's dot, in the colour they chose: a white ring and a soft halo of the same colour. */
+    private fun youMarkerIcon(
+        @ColorInt colour: Int = MapColors.load(this).position.color(MapTheme.isNight(this))
+    ): Drawable {
+        val density = resources.displayMetrics.density
+        fun dot(@ColorInt fill: Int, sizeDp: Int) = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(fill)
+            val size = (sizeDp * density).roundToInt()
+            setSize(size, size)
+        }
+        return LayerDrawable(arrayOf(
+            dot(ColorUtils.setAlphaComponent(colour, 0x40), 40),
+            dot(Color.WHITE, 22),
+            dot(colour, 16))).apply {
+            for (layer in 1..2) setLayerGravity(layer, Gravity.CENTER)
+        }
+    }
+
+    /**
+     * The buses' colour and the rider's, picked from a row each under a preview of how they look on
+     * the map. A colour too like the other row's choice is greyed out, so the two always differ.
+     */
+    private fun chooseMapColors() {
+        val night = MapTheme.isNight(this)
+        val density = resources.displayMetrics.density
+        var chosen = MapColors.load(this)
+        val view = DialogMapColorsBinding.inflate(layoutInflater)
+        lateinit var refresh: () -> Unit
+
+        // A colour the other row already wears is shown faded and struck through, like a sold-out size.
+        fun takenSwatch(@ColorInt colour: Int): BitmapDrawable {
+            val side = (32 * density).roundToInt()
+            val bitmap = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            val ring = 2 * density
+            paint.style = Paint.Style.FILL
+            paint.color = ColorUtils.setAlphaComponent(colour, 0x40)
+            canvas.drawCircle(side / 2f, side / 2f, side / 2f - ring / 2, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = ring
+            paint.color = colour
+            canvas.drawCircle(side / 2f, side / 2f, side / 2f - ring / 2, paint)
+            val inset = side * 0.15f
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeWidth = 2.5f * density
+            paint.color = getColor(R.color.ink)
+            canvas.drawLine(side - inset, inset, inset, side - inset, paint)
+            return BitmapDrawable(resources, bitmap)
+        }
+
+        fun swatches(row: LinearLayout, options: List<MarkerColor>, takenBy: Int, pick: (MarkerColor) -> MapColors?) {
+            row.removeAllViews()
+            options.forEach { option ->
+                val next = pick(option)
+                val selected = next == chosen
+                row.addView(ImageView(this).apply {
+                    val size = (44 * density).roundToInt()
+                    layoutParams = LinearLayout.LayoutParams(0, size, 1f)
+                    setImageDrawable(if (next == null) takenSwatch(option.color(night)) else GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(option.color(night))
+                        // The chosen colour wears a ring, like a selected chip.
+                        if (selected) setStroke((3 * density).roundToInt(), getColor(R.color.ink))
+                        val dot = ((if (selected) 40 else 32) * density).roundToInt()
+                        setSize(dot, dot)
+                    })
+                    scaleType = ImageView.ScaleType.CENTER
+                    contentDescription = if (next == null) "${getString(option.label)}, ${getString(takenBy)}"
+                        else getString(option.label)
+                    isSelected = selected
+                    isEnabled = next != null
+                    setOnClickListener {
+                        chosen = next ?: return@setOnClickListener
+                        refresh()
+                    }
+                })
+            }
+        }
+
+        refresh = {
+            view.busPreview.setImageDrawable(createBusDirectionMarker(false, 45f, "4", BusLook.LIVE,
+                chosen.buses.color(night)))
+            view.youPreview.setImageDrawable(youMarkerIcon(chosen.position.color(night)))
+            swatches(view.busSwatches, MapColors.BUS_OPTIONS, R.string.map_colors_taken_by_you) { colour ->
+                chosen.copy(buses = colour).takeUnless { MapColors.clash(colour, chosen.position) }
+            }
+            swatches(view.youSwatches, MapColors.POSITION_OPTIONS, R.string.map_colors_taken_by_buses) { colour ->
+                chosen.copy(position = colour).takeUnless { MapColors.clash(chosen.buses, colour) }
+            }
+        }
+        refresh()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.map_colors)
+            .setView(view.root)
+            .setPositiveButton(R.string.map_colors_apply) { _, _ ->
+                MapColors.save(this, chosen)
+                busIconCache.clear()
+                renderVehicles()
+                showMenuValues()
+            }
+            .setNegativeButton(R.string.cancel_choice, null)
+            .show()
     }
 
     private data class BusIconKey(val closest: Boolean, val bearingBucket: Int, val route: String, val look: BusLook)
@@ -2571,7 +2715,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
-    private fun createBusDirectionMarker(closest: Boolean, bearing: Float?, route: String, look: BusLook): BitmapDrawable {
+    private fun createBusDirectionMarker(
+        closest: Boolean, bearing: Float?, route: String, look: BusLook,
+        @ColorInt busColour: Int = MapColors.load(this).buses.color(MapTheme.isNight(this))
+    ): BitmapDrawable {
         val density = resources.displayMetrics.density
         val lines = busLabelLines(route)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -2593,7 +2740,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val canvas = Canvas(bitmap)
         val center = bitmapSize / 2f
         // A late fix is paled towards the map's own colour, but stays solid.
-        val color = ColorUtils.blendARGB(getColor(if (closest) R.color.route_orange else R.color.bus_fill),
+        val color = ColorUtils.blendARGB(if (closest) getColor(R.color.route_orange) else busColour,
             getColor(R.color.map_loading), if (look == BusLook.LATE) LATE_PALENESS else 0f)
         val outlined = look == BusLook.ESTIMATED
 

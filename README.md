@@ -84,8 +84,11 @@ each time; your recent destinations wait in the search box, and it remembers whe
   in the same menu switches between the offline map and Esri's satellite photos, with or
   without street names. The photos need a connection and download only while you look at
   them, so they add nothing to the app's size; ones already seen are kept, up to about 120 MB.
-- **Buses that stand out.** Buses are solid blue discs with white numbers, readable on
-  the light and dark maps and over the photos; the bus to catch is in the app's green.
+- **Buses and you, in colours you choose.** Buses are solid discs with white numbers and
+  your position a dot with a white ring: blue buses and a purple you, unless you pick other
+  colours (blue, orange, purple, red or graphite) under Colours in the side menu, one row for the buses and one for you, under a
+  preview. A colour too like the other row's is greyed out, so you never look like a bus;
+  you can be the blue map apps use for "you are here". The bus to catch is always the app's green.
 - **Saved places.** Tap the bookmark beside the search box to give any
   destination a name of your own, such as "Mum's" or "Work". Saved names come
   first in search, and an empty search box lists them, followed by the last few
