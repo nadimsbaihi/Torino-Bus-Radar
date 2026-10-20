@@ -78,10 +78,11 @@ class GttRepository {
     private val refreshLock = Mutex()
     private var cachedVehicles: List<LiveVehicle>? = null
     private var fetchedAtMillis = 0L
+    // GTT's server can think for half a minute before sending its first byte, so waiting less gives no buses at all.
     private val client = OkHttpClient.Builder()
         .connectTimeout(Duration.ofSeconds(5))
-        .readTimeout(Duration.ofSeconds(8))
-        .callTimeout(Duration.ofSeconds(8))
+        .readTimeout(Duration.ofSeconds(45))
+        .callTimeout(Duration.ofSeconds(50))
         .build()
 
     suspend fun vehicles(forceRefresh: Boolean = false): List<LiveVehicle> = refreshLock.withLock {
