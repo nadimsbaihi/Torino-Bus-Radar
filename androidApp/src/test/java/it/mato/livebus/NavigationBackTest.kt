@@ -450,7 +450,14 @@ class NavigationBackTest {
         assertEquals("Piazza Castello", binding.routeTo.text.toString())
         assertNotNull(binding.swapStartButton.contentDescription)
 
+        // Opened by the program (a message does that), the card stays out of sight;
+        // only the rider pulling the sheet up brings it.
         sheet(binding).state = BottomSheetBehavior.STATE_EXPANDED
+        settle()
+        assertEquals(View.INVISIBLE, binding.routeCard.visibility)
+        sheet(binding).state = BottomSheetBehavior.STATE_COLLAPSED
+        settle()
+        binding.journeyHandle.performClick()
         settle()
         assertEquals(View.VISIBLE, binding.routeCard.visibility)
         assertEquals(View.INVISIBLE, binding.searchCard.visibility)

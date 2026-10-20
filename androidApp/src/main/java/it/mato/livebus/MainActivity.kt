@@ -145,6 +145,7 @@ class MainActivity : AppCompatActivity() {
     private var mapLayerJob: Job? = null
     private var photoLabels: List<TilesOverlay> = emptyList()
     private var currentLocation = GeoPoint(45.0703, 7.6869)
+    private var sheetPulled = false
     private var originLocation: Location? = null
     private var locationRequest: Deferred<Location?>? = null
     private var permissionRequest: CompletableDeferred<Boolean>? = null
@@ -353,6 +354,12 @@ class MainActivity : AppCompatActivity() {
                 // Swiping the sheet away closes the journey, like the close button does.
                 if (newState == BottomSheetBehavior.STATE_HIDDEN &&
                     binding.journeyCard.visibility == View.VISIBLE) closeJourney()
+                // Only the rider's own pull brings up From/To: a message opens the sheet all the way,
+                // and the journey that replaces it must not flash the card on its way down to the peek.
+                if (newState == BottomSheetBehavior.STATE_DRAGGING) sheetPulled = true
+                if (newState == BottomSheetBehavior.STATE_COLLAPSED || newState == BottomSheetBehavior.STATE_HIDDEN) {
+                    sheetPulled = false
+                }
                 // A state set without a slide (before layout, say) still settles the map controls.
                 if (newState == BottomSheetBehavior.STATE_EXPANDED) followSheet(1f)
                 if (newState == BottomSheetBehavior.STATE_COLLAPSED) followSheet(0f)
@@ -363,6 +370,7 @@ class MainActivity : AppCompatActivity() {
             override fun onSlide(sheet: View, slideOffset: Float) = followSheet(slideOffset)
         })
         binding.journeyHandle.setOnClickListener {
+            sheetPulled = true
             journeySheet.state = if (journeySheet.state == BottomSheetBehavior.STATE_EXPANDED)
                 BottomSheetBehavior.STATE_COLLAPSED else BottomSheetBehavior.STATE_EXPANDED
         }
@@ -467,7 +475,7 @@ class MainActivity : AppCompatActivity() {
     /** Past halfway up, the search bar hands over to the From/To card; on the way down it takes over again. */
     private fun revealRouteCard(slideOffset: Float) {
         if (binding.routeCard.visibility == View.GONE) return
-        val shown = ((slideOffset - 0.5f) / 0.5f).coerceIn(0f, 1f)
+        val shown = if (sheetPulled) ((slideOffset - 0.5f) / 0.5f).coerceIn(0f, 1f) else 0f
         binding.routeCard.alpha = shown
         binding.routeCard.visibility = if (shown > 0f) View.VISIBLE else View.INVISIBLE
         binding.searchCard.alpha = 1f - shown
