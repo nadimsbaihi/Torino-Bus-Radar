@@ -220,6 +220,14 @@
     <string name="map_colors_taken_by_you">Crossed out: already the colour of your position</string>
     <string name="map_colors_taken_by_buses">Crossed out: already the colour of the buses</string>
     <string name="map_colors_apply">Apply</string>
+    <string name="bus_filter">Buses shown</string>
+    <string name="bus_filter_all">All lines</string>
+    <string name="bus_filter_count">%1$d of %2$d lines</string>
+    <string name="bus_filter_hint">Only the ticked lines are shown on the map.</string>
+    <string name="bus_filter_search">Search a line</string>
+    <string name="bus_filter_none_found">No line found</string>
+    <string name="bus_filter_select_all">Select all</string>
+    <string name="bus_filter_deselect_all">Deselect all</string>
     <string name="cancel_choice">Cancel</string>
     <string name="marker_color_blue">Blue</string>
     <string name="marker_color_maps_blue">Maps blue</string>

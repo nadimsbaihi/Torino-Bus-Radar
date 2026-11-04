@@ -220,6 +220,14 @@
     <string name="map_colors_taken_by_you">Barrato: è già il colore della tua posizione</string>
     <string name="map_colors_taken_by_buses">Barrato: è già il colore dei bus</string>
     <string name="map_colors_apply">Applica</string>
+    <string name="bus_filter">Bus mostrati</string>
+    <string name="bus_filter_all">Tutte le linee</string>
+    <string name="bus_filter_count">%1$d di %2$d linee</string>
+    <string name="bus_filter_hint">Sulla mappa si vedono solo le linee selezionate.</string>
+    <string name="bus_filter_search">Cerca una linea</string>
+    <string name="bus_filter_none_found">Nessuna linea trovata</string>
+    <string name="bus_filter_select_all">Seleziona tutte</string>
+    <string name="bus_filter_deselect_all">Deseleziona tutte</string>
     <string name="cancel_choice">Annulla</string>
     <string name="marker_color_blue">Blu</string>
     <string name="marker_color_maps_blue">Blu Maps</string>

@@ -92,9 +92,11 @@ import org.osmdroid.mapsforge.MapsForgeTileProvider
 import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
 import android.widget.TextView
 import android.widget.ImageView
+import it.mato.livebus.databinding.DialogBusFilterBinding
 import it.mato.livebus.databinding.DialogMapColorsBinding
 import android.widget.LinearLayout
 import android.widget.ArrayAdapter
+import android.widget.CheckedTextView
 import android.widget.Filter
 import android.widget.PopupMenu
 import android.view.HapticFeedbackConstants
@@ -1206,6 +1208,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 R.id.menuMapLayer -> chooseMapLayer()
                 R.id.menuAppearance -> chooseAppearance()
                 R.id.menuMapColors -> chooseMapColors()
+                R.id.menuBusFilter -> chooseBusLines()
                 R.id.menuUpdates -> checkForUpdate(asked = true)
                 R.id.menuCredits -> Credits.show(this)
             }
@@ -1241,6 +1244,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             setSpan(ForegroundColorSpan(colors.position.color(night)), 2, 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(RelativeSizeSpan(1.5f), 0, 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         })
+        val lines = allBusLines()
+        val hidden = BusFilter.hidden(this)
+        value(R.id.menuBusFilter, getString(
+            if (lines.none { it in hidden }) R.string.bus_filter_all else R.string.bus_filter_count,
+            BusFilter.shown(lines, hidden).size, lines.size))
         value(R.id.menuUpdates, getString(R.string.menu_version, BuildConfig.VERSION_NAME))
     }
 
@@ -2086,7 +2094,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             walkingMode || (trainJourneyChoice != null && mixedJourneyChoice == null) -> emptyList()
             journeyChoice != null -> liveVehicles.filter { it.id in selectedIds }
             selectedRoute != null -> liveVehicles.filter { normalizeRoute(it.routeId) == selectedRoute }
-            else -> liveVehicles
+            else -> BusFilter.hidden(this).let { hidden ->
+                if (hidden.isEmpty()) liveVehicles else liveVehicles.filter { normalizeRoute(it.routeId) !in hidden }
+            }
         }
     }
 
@@ -2733,6 +2743,54 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 MapColors.save(this, chosen)
                 busIconCache.clear()
                 renderVehicles()
+                showMenuValues()
+            }
+            .setNegativeButton(R.string.cancel_choice, null)
+            .show()
+    }
+
+    /** Every line in the timetable, in reading order. */
+    private fun allBusLines() = BusFilter.sorted(transitIndex.patterns.map { it.route })
+
+    /**
+     * The lines to show on the map, ticked in a list; the ones left unticked are hidden. The search box
+     * narrows the list, and Select all / Deselect all then act on the lines left in it.
+     */
+    private fun chooseBusLines() {
+        val lines = allBusLines()
+        val ticked = lines.filterTo(HashSet()) { it !in BusFilter.hidden(this) }
+        val view = DialogBusFilterBinding.inflate(layoutInflater)
+        var listed = lines
+        val adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_multiple_choice, mutableListOf<String>()) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+                (super.getView(position, convertView, parent) as CheckedTextView).also {
+                    it.isChecked = getItem(position) in ticked
+                }
+        }
+        fun show(query: String) {
+            listed = BusFilter.matching(lines, query)
+            adapter.clear()
+            adapter.addAll(listed)
+            view.noLines.visibility = if (listed.isEmpty()) View.VISIBLE else View.GONE
+        }
+        view.lineList.adapter = adapter
+        view.lineList.setOnItemClickListener { _, _, position, _ ->
+            val line = adapter.getItem(position) ?: return@setOnItemClickListener
+            if (!ticked.remove(line)) ticked.add(line)
+            adapter.notifyDataSetChanged()
+        }
+        view.selectAllLines.setOnClickListener { ticked.addAll(listed); adapter.notifyDataSetChanged() }
+        view.deselectAllLines.setOnClickListener { ticked.removeAll(listed.toSet()); adapter.notifyDataSetChanged() }
+        view.lineSearch.doAfterTextChanged { show(it?.toString().orEmpty()) }
+        show("")
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.bus_filter)
+            .setView(view.root)
+            .setPositiveButton(R.string.map_colors_apply) { _, _ ->
+                BusFilter.saveHidden(this, lines.filterNot { it in ticked }.toSet())
+                // Also redraws the map, without a bus that was just hidden and its course.
+                clearHighlightedCourse()
                 showMenuValues()
             }
             .setNegativeButton(R.string.cancel_choice, null)

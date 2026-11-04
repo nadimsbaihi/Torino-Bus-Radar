@@ -28,6 +28,11 @@ looks (each setting shows its current value), then help and the app itself.
                 android:icon="@drawable/ic_palette"
                 android:title="@string/map_colors"
                 app:actionLayout="@layout/menu_value" />
+            <item
+                android:id="@+id/menuBusFilter"
+                android:icon="@drawable/ic_bus"
+                android:title="@string/bus_filter"
+                app:actionLayout="@layout/menu_value" />
         </menu>
     </item>
     <item android:title="@string/menu_section_app">

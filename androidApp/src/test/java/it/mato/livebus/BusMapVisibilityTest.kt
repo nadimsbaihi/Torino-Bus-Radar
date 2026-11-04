@@ -76,6 +76,33 @@ class BusMapVisibilityTest {
         binding.map.onDetach()
     }
 
+    @Test fun linesTheRiderUntickedAreHiddenFromTheOverview() {
+        val activity = Robolectric.buildActivity(MainActivity::class.java).get()
+        activity.setTheme(R.style.Theme_MatoLiveBus)
+        val binding = ActivityMainBinding.inflate(LayoutInflater.from(activity))
+        set(activity, "binding", binding)
+        val stops = listOf(TransitStop("a", "A", 45.06, 7.66), TransitStop("b", "B", 45.07, 7.66))
+        fun line(id: String, name: String) = TransitPattern("$id:0", id, name, "End", "0", emptySet(), stops)
+        val index = TransitIndex::class.java.getDeclaredConstructor(List::class.java)
+            .apply { isAccessible = true }.newInstance(listOf(line("4U", "4"), line("10U", "10")))
+        set(activity, "transitIndex\$delegate", lazyOf(index))
+        val now = System.currentTimeMillis() / 1000
+        set(activity, "liveVehicles", listOf("4U", "10U").mapIndexed { i, route ->
+            LiveVehicle("bus-$i", route, null, 45.07, 7.65 + i * 0.001, null, now)
+        })
+        BusFilter.saveHidden(activity, setOf("4"))
+        val render = MainActivity::class.java.getDeclaredMethod("renderVehicles").apply { isAccessible = true }
+        fun titles() = binding.map.overlays.filterIsInstance<Marker>().map { it.title }
+        render.invoke(activity)
+        assertEquals(listOf(activity.getString(R.string.vehicle_title, "10")), titles())
+        // A line looked up on purpose is shown even if it was unticked.
+        set(activity, "selectedRoute", "4")
+        render.invoke(activity)
+        assertEquals(listOf(activity.getString(R.string.vehicle_title, "4")), titles())
+        BusFilter.saveHidden(activity, emptySet())
+        binding.map.onDetach()
+    }
+
     @Test fun linesThatDifferOnlyBySuffixStayApartOnTheMap() {
         val activity = Robolectric.buildActivity(MainActivity::class.java).get()
         activity.setTheme(R.style.Theme_MatoLiveBus)
