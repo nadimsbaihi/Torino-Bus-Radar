@@ -38,6 +38,11 @@ looks (each setting shows its current value), then help and the app itself.
     <item android:title="@string/menu_section_app">
         <menu>
             <item
+                android:id="@+id/menuDataSource"
+                android:icon="@drawable/ic_refresh"
+                android:title="@string/data_source"
+                app:actionLayout="@layout/menu_value" />
+            <item
                 android:id="@+id/menuHowTo"
                 android:icon="@drawable/ic_help"
                 android:title="@string/how_to_use" />

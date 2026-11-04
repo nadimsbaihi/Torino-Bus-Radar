@@ -14,6 +14,7 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -94,6 +95,15 @@ class GttRepository {
         freshVehicles(vehicles)
     }
 
+    /** Forgets what was fetched, so the next call asks the feeds afresh (after the rider changes source). */
+    fun reset() {
+        matoLive.close()
+        cachedVehicles = null
+        cachedMetroAlerts = null
+        fetchedAtMillis = 0L
+        alertsFetchedAtMillis = 0L
+    }
+
     /** The buses last fetched, still young enough to show, and when they came; null before any fetch. */
     fun lastFetch(): Pair<List<LiveVehicle>, Long>? =
         cachedVehicles?.let { freshVehicles(it) to fetchedAtMillis }?.takeIf { it.first.isNotEmpty() }
@@ -112,7 +122,7 @@ class GttRepository {
         cachedMetroAlerts?.takeIf { SystemClock.elapsedRealtime() - alertsFetchedAtMillis < 300_000 }
             ?.let { return@withLock it }
         val alerts = withContext(Dispatchers.IO) {
-            fetch(ALERTS_URL).use { response ->
+            fetch(DataSource.url(DataSource.Feed.ALERTS)).use { response ->
                 check(response.isSuccessful) { "GTT alerts returned ${response.code}" }
                 MetroAlerts.from(GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream()),
                     System.currentTimeMillis() / 1000)
@@ -128,14 +138,13 @@ class GttRepository {
         // still name the trips each vehicle is on or about to start, and follow buses the position
         // feed leaves out altogether (two thirds of them on a bad day).
         val updatesTask = async { fetchTripUpdates() }
-        Log.d(TAG, "Requesting GTT vehicle positions")
-        val response = fetch(VEHICLE_POSITIONS_URL)
-        val vehicles = response.use {
-            check(response.isSuccessful) { "GTT feed returned ${response.code}" }
-            val feed = GtfsRealtime.FeedMessage.parseFrom(
-                requireNotNull(response.body).byteStream()
-            )
-            decodeVehicles(feed)
+        val vehicles = (if (DataSource.matoLive()) matoLiveVehicles() else null) ?: run {
+            Log.d(TAG, "Requesting GTT vehicle positions")
+            val response = fetch(DataSource.url(DataSource.Feed.POSITIONS))
+            response.use {
+                check(response.isSuccessful) { "GTT feed returned ${response.code}" }
+                decodeVehicles(GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream()))
+            }
         }
         val updates = updatesTask.await() ?: return@coroutineScope vehicles
         val hints = tripHints(updates)
@@ -148,9 +157,22 @@ class GttRepository {
         positioned + unplaced
     }
 
+    private val matoLive by lazy { MatoLiveFeed(client) }
+
+    /** The buses the MATO website shows, or null when that feed gives none so GTT's stand in. */
+    private suspend fun matoLiveVehicles(): List<LiveVehicle>? {
+        // A feed just opened has the whole fleet within a few seconds, not at once.
+        if (matoLive.connect()) {
+            repeat(12) { if (matoLive.vehicles().isEmpty()) delay(500) }
+        }
+        return matoLive.vehicles().takeIf { it.isNotEmpty() }.also {
+            if (it == null) Log.w(TAG, "MATO live feed gave no buses; using GTT's")
+        }
+    }
+
     /** GTT's trip updates, or null if that feed fails: the positions stand on their own. */
     private suspend fun fetchTripUpdates(): GtfsRealtime.FeedMessage? = try {
-        fetch(TRIP_UPDATES_URL).use { response ->
+        fetch(DataSource.url(DataSource.Feed.TRIP_UPDATES)).use { response ->
             check(response.isSuccessful) { "GTT trip updates returned ${response.code}" }
             GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream())
         }
@@ -251,9 +273,5 @@ class GttRepository {
         /** Older than this, a bus position says more about where it was than where it is. */
         const val MAX_POSITION_AGE_SECONDS = 300L
 
-        private const val VEHICLE_POSITIONS_URL =
-            "https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx"
-        private const val TRIP_UPDATES_URL = "https://percorsieorari.gtt.to.it/das_gtfsrt/trip_update.aspx"
-        private const val ALERTS_URL = "https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx"
     }
 }

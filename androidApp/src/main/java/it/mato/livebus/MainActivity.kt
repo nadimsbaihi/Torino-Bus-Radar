@@ -833,6 +833,65 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Lets the rider point the three live feeds at their own GTFS-realtime URLs; blank means GTT's. */
+    private fun chooseDataSource() {
+        val labels = mapOf(
+            DataSource.Feed.POSITIONS to R.string.data_source_positions,
+            DataSource.Feed.TRIP_UPDATES to R.string.data_source_trip_updates,
+            DataSource.Feed.ALERTS to R.string.data_source_alerts)
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val column = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        column.addView(TextView(this).apply { setText(R.string.data_source_hint) })
+        val live = com.google.android.material.checkbox.MaterialCheckBox(this).apply {
+            setText(R.string.data_source_mato_live)
+            isChecked = DataSource.matoLive()
+        }
+        column.addView(live)
+        val fields = labels.mapValues { (feed, label) ->
+            val layout = com.google.android.material.textfield.TextInputLayout(this).apply {
+                hint = getString(label)
+                placeholderText = feed.default
+            }
+            val edit = com.google.android.material.textfield.TextInputEditText(layout.context).apply {
+                setText(DataSource.customUrl(feed))
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+                setSingleLine()
+            }
+            layout.addView(edit)
+            column.addView(layout)
+            edit
+        }
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.data_source)
+            .setView(android.widget.ScrollView(this).apply { addView(column) })
+            .setPositiveButton(R.string.save, null)
+            .setNeutralButton(R.string.data_source_reset) { _, _ -> applyDataSource(emptyMap(), false) }
+            .setNegativeButton(R.string.close, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val urls = fields.mapValues { it.value.text.toString().trim() }
+                val bad = fields.entries.firstOrNull { (feed, edit) ->
+                    urls.getValue(feed).isNotEmpty() && !DataSource.isValid(urls.getValue(feed)).also { ok ->
+                        if (!ok) edit.error = getString(R.string.data_source_invalid)
+                    }
+                }
+                if (bad == null) { applyDataSource(urls, live.isChecked); dialog.dismiss() }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun applyDataSource(urls: Map<DataSource.Feed, String>, matoLive: Boolean) {
+        DataSource.save(this, urls, matoLive)
+        repository.reset()
+        showMenuValues()
+        startRefreshing(forceRefresh = true)
+    }
+
     private fun chooseAppearance() {
         val current = Appearance.load(this)
         val names = Appearance.entries.map { getString(when (it) {
@@ -1209,6 +1268,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 R.id.menuAppearance -> chooseAppearance()
                 R.id.menuMapColors -> chooseMapColors()
                 R.id.menuBusFilter -> chooseBusLines()
+                R.id.menuDataSource -> chooseDataSource()
                 R.id.menuUpdates -> checkForUpdate(asked = true)
                 R.id.menuCredits -> Credits.show(this)
             }
@@ -1248,6 +1308,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val hidden = BusFilter.hidden(this).size
         value(R.id.menuBusFilter, if (hidden == 0) getString(R.string.bus_filter_all)
             else resources.getQuantityString(R.plurals.bus_filter_hidden, hidden, hidden))
+        value(R.id.menuDataSource, getString(
+            if (DataSource.isCustom()) R.string.data_source_custom else R.string.data_source_default))
         value(R.id.menuUpdates, getString(R.string.menu_version, BuildConfig.VERSION_NAME))
     }
 

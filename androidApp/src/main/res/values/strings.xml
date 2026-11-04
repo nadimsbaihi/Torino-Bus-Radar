@@ -220,6 +220,16 @@
     <string name="map_colors_taken_by_you">Crossed out: already the colour of your position</string>
     <string name="map_colors_taken_by_buses">Crossed out: already the colour of the buses</string>
     <string name="map_colors_apply">Apply</string>
+    <string name="data_source">Data source</string>
+    <string name="data_source_default">GTT</string>
+    <string name="data_source_custom">Custom</string>
+    <string name="data_source_hint">Use your own GTFS-realtime feeds. Leave a field empty to use GTT\'s.</string>
+    <string name="data_source_positions">Vehicle positions URL</string>
+    <string name="data_source_trip_updates">Trip updates URL</string>
+    <string name="data_source_alerts">Alerts URL</string>
+    <string name="data_source_invalid">Enter a full http:// or https:// address</string>
+    <string name="data_source_mato_live">Use the MATO website\'s live bus positions (more up to date, unofficial)</string>
+    <string name="data_source_reset">Use GTT</string>
     <string name="bus_filter">Buses shown</string>
     <string name="bus_filter_all">All lines</string>
     <plurals name="bus_filter_hidden">
