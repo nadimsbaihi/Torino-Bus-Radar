@@ -222,7 +222,10 @@
     <string name="map_colors_apply">Apply</string>
     <string name="bus_filter">Buses shown</string>
     <string name="bus_filter_all">All lines</string>
-    <string name="bus_filter_count">%1$d of %2$d lines</string>
+    <plurals name="bus_filter_hidden">
+        <item quantity="one">%d line hidden</item>
+        <item quantity="other">%d lines hidden</item>
+    </plurals>
     <string name="bus_filter_hint">Only the ticked lines are shown on the map.</string>
     <string name="bus_filter_search">Search a line</string>
     <string name="bus_filter_none_found">No line found</string>

@@ -1244,11 +1244,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             setSpan(ForegroundColorSpan(colors.position.color(night)), 2, 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(RelativeSizeSpan(1.5f), 0, 3, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         })
-        val lines = allBusLines()
-        val hidden = BusFilter.hidden(this)
-        value(R.id.menuBusFilter, getString(
-            if (lines.none { it in hidden }) R.string.bus_filter_all else R.string.bus_filter_count,
-            BusFilter.shown(lines, hidden).size, lines.size))
+        // Counted from what is hidden: the timetable of lines is several megabytes, not read on the main thread.
+        val hidden = BusFilter.hidden(this).size
+        value(R.id.menuBusFilter, if (hidden == 0) getString(R.string.bus_filter_all)
+            else resources.getQuantityString(R.plurals.bus_filter_hidden, hidden, hidden))
         value(R.id.menuUpdates, getString(R.string.menu_version, BuildConfig.VERSION_NAME))
     }
 
@@ -2757,7 +2756,14 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
      * narrows the list, and Select all / Deselect all then act on the lines left in it.
      */
     private fun chooseBusLines() {
-        val lines = allBusLines()
+        // The timetable of lines is several megabytes: read off the main thread if not yet read.
+        lifecycleScope.launch {
+            val lines = withContext(Dispatchers.Default) { allBusLines() }
+            if (!isFinishing && !isDestroyed) showBusLinesDialog(lines)
+        }
+    }
+
+    private fun showBusLinesDialog(lines: List<String>) {
         val ticked = lines.filterTo(HashSet()) { it !in BusFilter.hidden(this) }
         val view = DialogBusFilterBinding.inflate(layoutInflater)
         var listed = lines
