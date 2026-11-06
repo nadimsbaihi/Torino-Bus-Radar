@@ -239,7 +239,8 @@ other and keeps its saved places and settings:
   either feed alone still gives a map when the other fails. Data source in the side menu turns it off.
 
 Build them locally with `./gradlew :androidApp:assembleGttDebug` and `:androidApp:assembleMatoDebug`.
-Each one updates itself only from its own APK, so an installed variant stays that variant.
+The in-app updater installs the MATO APK, so the standard app becomes the MATO one at its next
+update; install the standard APK by hand to go back.
 
 ## Publish a release
 

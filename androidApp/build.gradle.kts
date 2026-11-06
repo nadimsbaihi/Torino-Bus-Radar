@@ -38,13 +38,11 @@ android {
             dimension = "feed"
             isDefault = true
             buildConfigField("boolean", "MATO_LIVE_DEFAULT", "false")
-            buildConfigField("String", "APK_SUFFIX", "\"\"")
         }
         create("mato") {
             dimension = "feed"
             versionNameSuffix = "-mato"
             buildConfigField("boolean", "MATO_LIVE_DEFAULT", "true")
-            buildConfigField("String", "APK_SUFFIX", "\"-mato\"")
         }
     }
 

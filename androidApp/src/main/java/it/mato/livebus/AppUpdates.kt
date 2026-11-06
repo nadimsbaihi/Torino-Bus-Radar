@@ -92,21 +92,19 @@ class AppUpdates(context: Context, private val client: OkHttpClient = defaultCli
             .readTimeout(Duration.ofSeconds(30))
             .build()
 
-        /** The release GitHub calls latest, if it is final and carries this variant's APK. */
-        fun parseLatest(json: String, apkSuffix: String = BuildConfig.APK_SUFFIX): AppRelease? {
+        /** The release GitHub calls latest, if it is final and carries an APK, the MATO variant's when it has one. */
+        fun parseLatest(json: String): AppRelease? {
             val release = JSONObject(json)
             if (release.optBoolean("draft") || release.optBoolean("prerelease")) return null
             val version = release.optString("tag_name").removePrefix("v").ifBlank { return null }
             val assets = release.optJSONArray("assets") ?: return null
-            val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
-                .firstOrNull { isOwnApk(it.optString("name"), apkSuffix) } ?: return null
+            val apks = (0 until assets.length()).map { assets.getJSONObject(it) }
+                .filter { it.optString("name").endsWith(".apk") }
+            // Both variants update to the MATO one; a release from before it existed has only the standard APK.
+            val apk = apks.firstOrNull { it.optString("name").endsWith("-mato.apk") } ?: apks.firstOrNull() ?: return null
             val sha256 = apk.optString("digest").takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
             return AppRelease(version, apk.getString("browser_download_url"), sha256)
         }
-
-        /** Whether a release asset is this variant's APK: "-mato.apk" for the MATO one, any other APK otherwise. */
-        internal fun isOwnApk(name: String, apkSuffix: String): Boolean =
-            name.endsWith("$apkSuffix.apk") && (apkSuffix.isNotEmpty() || !name.endsWith("-mato.apk"))
 
         /** Compares dotted versions number by number, so 0.10.0 is newer than 0.9.3. */
         fun isNewer(candidate: String, current: String): Boolean {

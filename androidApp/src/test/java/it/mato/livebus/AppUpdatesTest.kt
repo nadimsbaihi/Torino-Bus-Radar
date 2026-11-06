@@ -30,15 +30,11 @@ class AppUpdatesTest {
         assertNull(AppUpdates.parseLatest(release("v0.4.0", assets = "[]")))
     }
 
-    @Test fun eachVariantTakesOnlyItsOwnApk() {
+    @Test fun anUpdateIsTheMatoApkWhenTheReleaseHasOne() {
         val both = """
-            [{"name": "Torino-Bus-Radar-v0.5.0-mato.apk", "browser_download_url": "https://example.org/mato.apk"},
-             {"name": "Torino-Bus-Radar-v0.5.0.apk", "browser_download_url": "https://example.org/gtt.apk"}]"""
-        assertEquals("https://example.org/gtt.apk", AppUpdates.parseLatest(release("v0.5.0", assets = both), "")?.apkUrl)
-        assertEquals("https://example.org/mato.apk",
-            AppUpdates.parseLatest(release("v0.5.0", assets = both), "-mato")?.apkUrl)
-        // A release from before the MATO variant existed has nothing for it.
-        assertNull(AppUpdates.parseLatest(release("v0.4.8"), "-mato"))
+            [{"name": "Torino-Bus-Radar-v0.5.0.apk", "browser_download_url": "https://example.org/gtt.apk"},
+             {"name": "Torino-Bus-Radar-v0.5.0-mato.apk", "browser_download_url": "https://example.org/mato.apk"}]"""
+        assertEquals("https://example.org/mato.apk", AppUpdates.parseLatest(release("v0.5.0", assets = both))?.apkUrl)
     }
 
     @Test fun versionsCompareNumberByNumber() {
