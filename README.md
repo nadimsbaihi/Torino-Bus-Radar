@@ -229,16 +229,17 @@ directions in Google Maps. The app has no accounts, analytics or ads.
 
 ## Two APKs
 
-Each release carries two APKs that install side by side:
+Each release carries two APKs. They are the same app to Android, so installing one replaces the
+other and keeps its saved places and settings:
 
 - `Torino-Bus-Radar-vX.Y.Z.apk`, the standard app, on GTT's GTFS-realtime feeds.
-- `Torino-Bus-Radar-vX.Y.Z-mato.apk` ("Torino Bus Radar MATO", `it.torinobusradar.app.mato`), which
+- `Torino-Bus-Radar-vX.Y.Z-mato.apk` ("Torino Bus Radar MATO"), which
   also takes bus positions from the MATO website's live feed (unofficial, MQTT over WebSocket at
   `mapi.5t.torino.it/scre`). The website's buses come first, GTT's fill in the ones it lacks, and
   either feed alone still gives a map when the other fails. Data source in the side menu turns it off.
 
 Build them locally with `./gradlew :androidApp:assembleGttDebug` and `:androidApp:assembleMatoDebug`.
-Each one updates itself only from its own APK.
+Each one updates itself only from its own APK, so an installed variant stays that variant.
 
 ## Publish a release
 

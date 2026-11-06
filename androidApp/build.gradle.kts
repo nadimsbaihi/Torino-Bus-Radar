@@ -30,8 +30,8 @@ android {
         }
     }
 
-    // Two APKs from one source: "gtt" is the standard app on GTT's feeds; "mato" installs beside it and
-    // takes bus positions from the MATO website's live feed and GTT's together, so either covers for the other.
+    // Two APKs from one source, the same app to Android so each installs over the other: "gtt" is the
+    // standard app on GTT's feeds; "mato" takes bus positions from the MATO website's live feed and GTT's together, so either covers for the other.
     flavorDimensions += "feed"
     productFlavors {
         create("gtt") {
@@ -42,7 +42,6 @@ android {
         }
         create("mato") {
             dimension = "feed"
-            applicationIdSuffix = ".mato"
             versionNameSuffix = "-mato"
             buildConfigField("boolean", "MATO_LIVE_DEFAULT", "true")
             buildConfigField("String", "APK_SUFFIX", "\"-mato\"")
