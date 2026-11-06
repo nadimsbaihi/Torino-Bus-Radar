@@ -216,7 +216,8 @@ The app's code and tools are under the [MIT License](LICENSE). The data bundled 
 the Trenitalia timetable (CC BY 4.0), and the OpenStreetMap-derived map, search and walking data
 (ODbL 1.0). See [Data and credits](#data-and-credits) and the bundled
 [NOTICE](androidApp/src/main/assets/offline/NOTICE.txt). The libraries the app is built with keep
-their own licences too; their texts are in `androidApp/src/main/assets/licenses`.
+their own licences too; their texts are in `androidApp/src/main/assets/licenses`. The MATO live
+bus positions are © 5T S.r.l., all rights reserved; the app fetches them live and never bundles them.
 
 ## Privacy
 
@@ -263,6 +264,9 @@ for every data source and the licences of the libraries it is built with.
   the metro timetable. Data source: GTT S.p.A. – Gruppo Torinese Trasporti, https://www.gtt.to.it.
   [GTT's licence](https://www.gtt.to.it/gtt_gtfs_license.html) allows non-commercial use only: the app
   is free and has no ads, and charging for it or adding ads would need GTT's written permission first.
+- **MATO – Muoversi a Torino (5T S.r.l.):** live bus positions from the MATO website's feed, used only
+  when that source is on (the default in the MATO APK). © 5T S.r.l., all rights reserved: the feed has
+  no open licence, is not bundled or redistributed, and the app is not affiliated with 5T or MATO.
 - **OpenStreetMap contributors:** the offline map, places, addresses, and walking
   network, using a [BBBike Torino extract](https://download.bbbike.org/osm/bbbike/Turin/).
 - **Trenitalia:** train timetables from the national NeTEx feed (CCISS National Access Point),
