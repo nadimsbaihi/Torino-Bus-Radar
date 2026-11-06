@@ -27,6 +27,8 @@ android {
         unitTests.all {
             it.maxHeapSize = "2g"
             it.setForkEvery(20)
+            // The screen tests must not depend on whether, or when, GTT's live feed answers.
+            it.systemProperty("torinobusradar.offline", "true")
         }
     }
 

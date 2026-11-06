@@ -84,6 +84,10 @@ class GttRepository {
         .connectTimeout(Duration.ofSeconds(5))
         .readTimeout(Duration.ofSeconds(45))
         .callTimeout(Duration.ofSeconds(50))
+        .apply {
+            // Unit tests never reach GTT: a live answer arriving mid-test would change the screen under them.
+            if (System.getProperty(OFFLINE_PROPERTY) == "true") addInterceptor { throw IOException("Offline for tests") }
+        }
         .build()
 
     suspend fun vehicles(forceRefresh: Boolean = false): List<LiveVehicle> = refreshLock.withLock {
@@ -245,6 +249,7 @@ class GttRepository {
 
     companion object {
         private const val TAG = "GttRepository"
+        internal const val OFFLINE_PROPERTY = "torinobusradar.offline"
 
         /**
          * One for the whole app, so the map rebuilt by a theme change and the alert service reuse the
