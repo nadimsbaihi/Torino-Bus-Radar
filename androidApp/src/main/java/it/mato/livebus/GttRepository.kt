@@ -42,7 +42,11 @@ data class LiveVehicle(
      * trip is heading for. Its position is then only an estimate along the route (see
      * [TransitIndex.inService]), never a fix.
      */
-    val nextStopSequence: Int? = null
+    val nextStopSequence: Int? = null,
+    /** The way the bus goes, as the MATO live feed says: the timetable's direction ("0" or "1"). */
+    val directionId: String? = null,
+    /** The number on the sign of the stop the bus heads for, as the MATO live feed says. */
+    val nextStopCode: String? = null
 ) {
     val estimated: Boolean get() = nextStopSequence != null
 
@@ -267,10 +271,15 @@ class GttRepository {
             val merged = mato.map { live ->
                 val other = gttById[live.id] ?: return@map live
                 val newer = if (other.timestampSeconds > live.timestampSeconds) other else live
+                val tripId = newer.tripId ?: live.tripId ?: other.tripId
+                // The website's direction and next stop go with its trip; with another one they would mislead.
+                val websiteTrip = live.tripId == null || live.tripId == tripId
                 newer.copy(
-                    tripId = newer.tripId ?: live.tripId ?: other.tripId,
+                    tripId = tripId,
                     bearing = newer.bearing ?: live.bearing ?: other.bearing,
-                    label = other.label ?: live.label
+                    label = other.label ?: live.label,
+                    directionId = live.directionId.takeIf { websiteTrip },
+                    nextStopCode = live.nextStopCode.takeIf { websiteTrip }
                 )
             }
             val known = mato.mapTo(HashSet()) { it.id }

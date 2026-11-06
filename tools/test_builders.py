@@ -56,6 +56,20 @@ class TransitIndexTest(unittest.TestCase):
         self.assertEqual(['t3'], by_stops[tuple('ACD')]['tripIds'])
         self.assertEqual(2, len({p['id'] for p in patterns}))
 
+    def test_stops_carry_the_number_on_their_sign(self):
+        stops = "stop_id,stop_code,stop_name,stop_lat,stop_lon\nA,3204,Campo,45.0,7.0\nB,,Memoria,45.01,7.0\n"
+        trips = "route_id,trip_id,direction_id,trip_headsign,shape_id\nr,t1,0,North,s1\n"
+        stop_times = ("trip_id,stop_sequence,stop_id,arrival_time,departure_time\n"
+                      "t1,1,A,08:00:00,08:00:00\nt1,2,B,08:01:00,08:01:00\n")
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory, 'gtfs.zip'), Path(directory, 'out.json')
+            write_zip(source, {'stops.txt': stops, 'routes.txt': "route_id,route_short_name\nr,1\n",
+                               'trips.txt': trips, 'stop_times.txt': stop_times})
+            run('build_transit_index.py', source, output)
+            [pattern] = json.loads(output.read_text())['patterns']
+        self.assertEqual('3204', pattern['stops'][0]['code'])
+        self.assertNotIn('code', pattern['stops'][1], "a stop with no number has none, not an empty one")
+
     def test_patterns_know_the_days_they_run(self):
         # Like the 67: to the usual terminus on weekdays, further on to another on Sundays.
         stops = "stop_id,stop_name,stop_lat,stop_lon\n" + "".join(

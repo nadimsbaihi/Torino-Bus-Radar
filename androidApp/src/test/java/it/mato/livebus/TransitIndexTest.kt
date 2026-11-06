@@ -202,6 +202,28 @@ class TransitIndexTest {
         assertNull(index(first).matchDirection(bus.copy(bearing = 180f)))
     }
 
+    @Test fun theMatoFeedsDirectionAndNextStopSettleAnAmbiguousBus() {
+        val signed = first.copy(stops = first.stops.map { it.copy(code = "c-" + it.id) })
+        val reverse = signed.copy(id = "reverse", directionId = "1", tripIds = setOf("reverse"),
+            stops = signed.stops.reversed())
+        val bus = vehicle(signed, 45.005, 7.0).copy(tripId = null)
+        assertNull(index(signed, reverse).matchDirection(bus))
+        assertEquals("reverse", index(signed, reverse).matchDirection(bus.copy(directionId = "1"))!!.id)
+        assertEquals("first", index(signed, reverse).matchDirection(bus.copy(directionId = "0"))!!.id)
+        // Only the reverse run still has "start" ahead of it.
+        assertEquals("reverse", index(signed, reverse).matchDirection(bus.copy(nextStopCode = "c-start"))!!.id)
+        // A direction the timetable does not have says nothing, rather than hiding the bus.
+        assertNull(index(signed, reverse).matchDirection(bus.copy(directionId = "7")))
+    }
+
+    @Test fun theNextStopTheMatoFeedNamesPlacesABusAtAStop() {
+        val signed = first.copy(stops = first.stops.map { it.copy(code = "c-" + it.id) })
+        // Standing at "board", a bus could be finishing the first stretch or starting the second.
+        val atBoard = vehicle(signed, 45.01, 7.0)
+        assertEquals(1, index(signed).progressOf(atBoard.copy(nextStopCode = "c-transfer"), signed))
+        assertEquals(0, index(signed).progressOf(atBoard.copy(nextStopCode = "c-board"), signed))
+    }
+
     @Test fun movementResolvesDirectionWhenTheFeedGivesNoBearing() {
         val reverse = first.copy(id = "reverse", directionId = "1", tripIds = setOf("reverse"),
             stops = first.stops.reversed())

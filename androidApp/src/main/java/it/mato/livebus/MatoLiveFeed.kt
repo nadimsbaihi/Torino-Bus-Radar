@@ -16,7 +16,8 @@ import java.util.concurrent.TimeUnit
 
 /**
  * The live bus positions the MATO website itself shows: MQTT 3.1.1 over a WebSocket. Every bus
- * publishes to "/<line>/<vehicle>" a JSON list [lat, lon, heading, speed, trip, direction, next stop, full].
+ * publishes to "/<line>/<vehicle>" a JSON list [lat, lon, heading, speed, trip, direction, next stop, full]:
+ * the direction is the timetable's direction_id and the next stop the number on its sign (stop_code).
  * The connection is opened when buses are first asked for and closed again once nobody asks.
  */
 class MatoLiveFeed(private val client: OkHttpClient, private val url: String = URL) {
@@ -173,11 +174,15 @@ class MatoLiveFeed(private val client: OkHttpClient, private val url: String = U
                 longitude = lon,
                 bearing = if (v.isNull(2)) null else v.getDouble(2).toFloat(),
                 timestampSeconds = nowSeconds,
-                label = parts[2]
+                label = parts[2],
+                directionId = v.opt(5).feedText(),
+                nextStopCode = v.opt(6).feedText()
             )
         }
 
         private fun vehicleId(vehicle: String) = vehicle + "U"
+
+        private fun Any?.feedText(): String? = this?.takeIf { it != JSONObject_NULL }?.toString()?.takeIf(String::isNotBlank)
 
         const val URL = "https://mapi.5t.torino.it/scre"
         private const val TAG = "MatoLiveFeed"

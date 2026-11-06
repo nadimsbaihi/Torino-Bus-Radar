@@ -19,7 +19,9 @@ data class TransitStop(
     val id: String,
     val name: String,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    /** The number on the stop's sign ("3204"); empty when the index does not say. */
+    val code: String = ""
 )
 
 data class TransitPattern(
@@ -941,7 +943,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         // among theirs, and where the bus is and where it heads says which.
         val hinted = vehicle.tripHints.mapNotNull { patternsByTripId[it] }
             .filter { it.routeId == vehicle.routeId }.distinct()
-        val candidates = scored(hinted).ifEmpty { scored(runningPatterns(vehicle)) }
+        val candidates = scored(reported(vehicle, hinted)).ifEmpty { scored(reported(vehicle, runningPatterns(vehicle))) }
         val best = candidates.firstOrNull() ?: return null
         // Variants of one direction often share a trunk and tie; stay on the one already
         // matched so the answer does not flip between them as the bus moves.
@@ -957,6 +959,18 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         }
         if (rivals.isEmpty()) return remember(vehicle, (sticky ?: best).first)
         return sticky?.first?.let { remember(vehicle, it) }
+    }
+
+    /**
+     * Of [patterns], those going the way the MATO live feed says the bus goes and calling at the stop
+     * it says comes next. Each narrows only when something is left, so a feed that disagrees with
+     * the timetable is no worse than one that says nothing.
+     */
+    private fun reported(vehicle: LiveVehicle, patterns: List<TransitPattern>): List<TransitPattern> {
+        val direction = vehicle.directionId
+        val heading = if (direction == null) patterns else patterns.filter { it.directionId == direction }.ifEmpty { patterns }
+        val code = vehicle.nextStopCode ?: return heading
+        return heading.filter { pattern -> pattern.stops.drop(1).any { it.code == code } }.ifEmpty { heading }
     }
 
     /**
@@ -1259,6 +1273,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 progress = windowed
             }
         }
+        // The MATO live feed names the stop the bus heads for: it is on the stretch leading there.
+        if (progress == null) progress = nextStopProgress(vehicle, pattern)
         // First sighting, or the vehicle is nowhere near where it should be: start afresh.
         if (progress == null) {
             progress = nearestSegment(vehicle, pattern, 0, lastSegment, inferred, heading)
@@ -1266,6 +1282,19 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         }
         vehicleProgress[vehicle.id] = ObservedProgress(vehicle.tripId, pattern.id, progress)
         return progress
+    }
+
+    /**
+     * The segment ending at the stop the feed says the bus heads for (the nearest one, should the
+     * pattern call there twice), or null when it does not say, the pattern has no such stop, or
+     * the bus is too far from that segment for the feed to be about this pattern.
+     */
+    private fun nextStopProgress(vehicle: LiveVehicle, pattern: TransitPattern): Int? {
+        val code = vehicle.nextStopCode ?: return null
+        return (1 until pattern.stops.size).filter { pattern.stops[it].code == code }
+            .map { it - 1 to distanceToSegment(vehicle.latitude, vehicle.longitude, pattern.stops[it - 1], pattern.stops[it]) }
+            .filter { it.second <= PROGRESS_RESYNC_METRES }
+            .minByOrNull { it.second }?.first
     }
 
     private fun nearestSegment(
@@ -1361,7 +1390,8 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                             id = stop.getString("id"),
                             name = stop.getString("name"),
                             latitude = stop.getDouble("lat"),
-                            longitude = stop.getDouble("lon")
+                            longitude = stop.getDouble("lon"),
+                            code = stop.optString("code")
                         )
                     },
                     shape = item.optString("shape").takeIf { it.isNotEmpty() }?.let { id ->

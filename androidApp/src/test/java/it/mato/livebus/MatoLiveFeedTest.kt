@@ -18,6 +18,8 @@ class MatoLiveFeedTest {
         assertEquals("2U", bus.routeId)
         assertEquals("28513318U", bus.tripId)
         assertNull(bus.bearing)
+        assertEquals("1", bus.directionId)
+        assertEquals("159", bus.nextStopCode)
         assertEquals(45.01869, bus.latitude, 0.0)
     }
 
@@ -25,6 +27,17 @@ class MatoLiveFeedTest {
         val mato = MatoLiveFeed.parse("/2/9633", "[45.01869,7.66063,null,null,28513318,1,159]", 1_000)!!
         val gtt = LiveVehicle("9633U", "2U", "28513318U", 45.01884, 7.65984, null, 990, "9633")
         assertEquals(listOf(mato), GttRepository.mergePositions(listOf(mato), listOf(gtt)))
+    }
+
+    @Test fun theWebsitesDirectionAndNextStopStayOnlyWithItsOwnTrip() {
+        val mato = MatoLiveFeed.parse("/2/9633", "[45.01869,7.66063,null,null,28513318,1,159]", 1_000)!!
+        val sameTrip = LiveVehicle("9633U", "2U", "28513318U", 45.019, 7.660, null, 1_010, "9633")
+        assertEquals("159", GttRepository.mergePositions(listOf(mato), listOf(sameTrip)).single().nextStopCode)
+        val otherTrip = sameTrip.copy(tripId = "28513400U")
+        val merged = GttRepository.mergePositions(listOf(mato), listOf(otherTrip)).single()
+        assertEquals("28513400U", merged.tripId)
+        assertNull(merged.directionId)
+        assertNull(merged.nextStopCode)
     }
 
     @Test fun aBusWithNoFixIsLeftOut() {

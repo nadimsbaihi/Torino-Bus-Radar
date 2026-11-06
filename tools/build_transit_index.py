@@ -163,6 +163,8 @@ def main(source, output):
                 "name": row["stop_name"].strip(),
                 "lat": round(float(row["stop_lat"]), 6),
                 "lon": round(float(row["stop_lon"]), 6),
+                # The number on the stop's sign, which the MATO live feed names a bus's next stop by.
+                **({"code": row["stop_code"].strip()} if row.get("stop_code", "").strip() else {}),
             }
             for row in rows(archive, "stops.txt")
             if row["stop_lat"] and row["stop_lon"]
