@@ -30,6 +30,17 @@ class AppUpdatesTest {
         assertNull(AppUpdates.parseLatest(release("v0.4.0", assets = "[]")))
     }
 
+    @Test fun eachVariantTakesOnlyItsOwnApk() {
+        val both = """
+            [{"name": "Torino-Bus-Radar-v0.5.0-mato.apk", "browser_download_url": "https://example.org/mato.apk"},
+             {"name": "Torino-Bus-Radar-v0.5.0.apk", "browser_download_url": "https://example.org/gtt.apk"}]"""
+        assertEquals("https://example.org/gtt.apk", AppUpdates.parseLatest(release("v0.5.0", assets = both), "")?.apkUrl)
+        assertEquals("https://example.org/mato.apk",
+            AppUpdates.parseLatest(release("v0.5.0", assets = both), "-mato")?.apkUrl)
+        // A release from before the MATO variant existed has nothing for it.
+        assertNull(AppUpdates.parseLatest(release("v0.4.8"), "-mato"))
+    }
+
     @Test fun versionsCompareNumberByNumber() {
         assertTrue(AppUpdates.isNewer("0.4.0", "0.3.1"))
         assertTrue(AppUpdates.isNewer("0.10.0", "0.9.3"))

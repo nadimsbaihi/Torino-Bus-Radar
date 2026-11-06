@@ -26,7 +26,7 @@ object DataSource {
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
-        matoLive = prefs.getBoolean(MATO_LIVE, false)
+        matoLive = prefs.getBoolean(MATO_LIVE, BuildConfig.MATO_LIVE_DEFAULT)
         custom = Feed.entries.mapNotNull { feed ->
             prefs.getString(feed.key, null)?.trim()?.takeIf(::isValid)?.let { feed to it }
         }.toMap()
@@ -38,12 +38,16 @@ object DataSource {
     /** The rider's own URL for [feed], or empty when it uses GTT's. */
     fun customUrl(feed: Feed): String = custom[feed].orEmpty()
 
-    /** Whether bus positions come from the MATO website's live feed instead of GTT's position feed. */
-    @Volatile private var matoLive = false
+    /**
+     * Whether bus positions also come from the MATO website's live feed: its buses are taken first,
+     * GTT's position feed fills in the ones it lacks, and either stands alone when the other fails.
+     * On by default in the "mato" APK.
+     */
+    @Volatile private var matoLive = BuildConfig.MATO_LIVE_DEFAULT
 
     fun matoLive(): Boolean = matoLive
 
-    fun isCustom(): Boolean = custom.isNotEmpty() || matoLive
+    fun isCustom(): Boolean = custom.isNotEmpty() || matoLive != BuildConfig.MATO_LIVE_DEFAULT
 
     fun isValid(url: String): Boolean {
         val lower = url.trim().lowercase()

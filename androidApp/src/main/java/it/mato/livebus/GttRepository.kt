@@ -138,14 +138,23 @@ class GttRepository {
         // still name the trips each vehicle is on or about to start, and follow buses the position
         // feed leaves out altogether (two thirds of them on a bad day).
         val updatesTask = async { fetchTripUpdates() }
-        val vehicles = (if (DataSource.matoLive()) matoLiveVehicles() else null) ?: run {
-            Log.d(TAG, "Requesting GTT vehicle positions")
-            val response = fetch(DataSource.url(DataSource.Feed.POSITIONS))
-            response.use {
-                check(response.isSuccessful) { "GTT feed returned ${response.code}" }
-                decodeVehicles(GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream()))
+        val vehicles = if (DataSource.matoLive()) {
+            // Both feeds at once: the MATO website's buses first (they move every few seconds), then
+            // any GTT's position feed has that the website does not. Either one alone still gives a map.
+            val gttTask = async {
+                try { fetchPositions() } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
+                    Log.w(TAG, "GTT vehicle positions unavailable; MATO live only", error)
+                    null
+                }
             }
-        }
+            val mato = matoLiveVehicles()
+            val gtt = gttTask.await()
+            when {
+                mato == null -> gtt ?: fetchPositions()
+                gtt == null -> mato
+                else -> mergePositions(mato, gtt)
+            }
+        } else fetchPositions()
         val updates = updatesTask.await() ?: return@coroutineScope vehicles
         val hints = tripHints(updates)
         val positioned = vehicles.map { vehicle ->
@@ -155,6 +164,15 @@ class GttRepository {
         val unplaced = unplaced(updates, positioned.mapTo(HashSet()) { it.id }, System.currentTimeMillis() / 1000)
         Log.i(TAG, "${unplaced.size} more buses known only from trip updates")
         positioned + unplaced
+    }
+
+    private suspend fun fetchPositions(): List<LiveVehicle> {
+        Log.d(TAG, "Requesting GTT vehicle positions")
+        val response = fetch(DataSource.url(DataSource.Feed.POSITIONS))
+        return response.use {
+            check(response.isSuccessful) { "GTT feed returned ${response.code}" }
+            decodeVehicles(GtfsRealtime.FeedMessage.parseFrom(requireNotNull(response.body).byteStream()))
+        }
     }
 
     private val matoLive by lazy { MatoLiveFeed(client) }
@@ -233,6 +251,27 @@ class GttRepository {
          * buses already fetched instead of waiting on GTT's slow server again.
          */
         val shared by lazy { GttRepository() }
+
+        /**
+         * The MATO website's buses, with each trip GTT names that the website left out, plus GTT's
+         * buses the website does not have. A bus both know is placed where the website saw it last,
+         * unless GTT saw it more recently.
+         */
+        internal fun mergePositions(mato: List<LiveVehicle>, gtt: List<LiveVehicle>): List<LiveVehicle> {
+            val gttById = gtt.associateBy { it.id }
+            val merged = mato.map { live ->
+                val other = gttById[live.id] ?: return@map live
+                val newer = if (other.timestampSeconds > live.timestampSeconds) other else live
+                newer.copy(
+                    tripId = newer.tripId ?: live.tripId ?: other.tripId,
+                    bearing = newer.bearing ?: live.bearing ?: other.bearing,
+                    label = other.label ?: live.label
+                )
+            }
+            val known = mato.mapTo(HashSet()) { it.id }
+            Log.i(TAG, "${mato.size} buses from MATO live, ${gtt.count { it.id !in known }} more from GTT")
+            return merged + gtt.filter { it.id !in known }
+        }
 
         /** Each vehicle's trips in the trip updates, by when they start ("20261015" "09:56:00"). */
         internal fun tripHints(feed: GtfsRealtime.FeedMessage): Map<String, List<String>> =

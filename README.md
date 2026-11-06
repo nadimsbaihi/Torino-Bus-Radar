@@ -227,10 +227,23 @@ and the update check to GitHub, carry no location or identifier. Searching, save
 are stored only on the phone. Your location leaves the phone only when you choose to open walking
 directions in Google Maps. The app has no accounts, analytics or ads.
 
+## Two APKs
+
+Each release carries two APKs that install side by side:
+
+- `Torino-Bus-Radar-vX.Y.Z.apk`, the standard app, on GTT's GTFS-realtime feeds.
+- `Torino-Bus-Radar-vX.Y.Z-mato.apk` ("Torino Bus Radar MATO", `it.torinobusradar.app.mato`), which
+  also takes bus positions from the MATO website's live feed (unofficial, MQTT over WebSocket at
+  `mapi.5t.torino.it/scre`). The website's buses come first, GTT's fill in the ones it lacks, and
+  either feed alone still gives a map when the other fails. Data source in the side menu turns it off.
+
+Build them locally with `./gradlew :androidApp:assembleGttDebug` and `:androidApp:assembleMatoDebug`.
+Each one updates itself only from its own APK.
+
 ## Publish a release
 
 Push a version tag such as `v0.2.1`. [GitHub Actions](.github/workflows/release.yml)
-runs the tests and lint, builds and signs the APK, then attaches it to a GitHub
+runs the tests and lint, builds and signs both APKs, then attaches them to a GitHub
 Release. Failed validation prevents publishing. Installed copies find the new
 release within about 12 hours, or at once from Check for updates.
 

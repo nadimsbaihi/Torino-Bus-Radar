@@ -28,6 +28,20 @@ class GttRepositoryTest {
         results.forEach { assertEquals(listOf("fresh", "delayed", "header"), it.map { vehicle -> vehicle.id }) }
     }
 
+    @Test fun bothLiveFeedsMergeWithTheWebsiteFirst() {
+        fun bus(id: String, at: Long, lat: Double, trip: String? = null, label: String? = null) =
+            LiveVehicle(id, "15U", trip, lat, 7.6, null, at, label)
+        val merged = GttRepository.mergePositions(
+            mato = listOf(bus("1", 100, 45.01), bus("2", 100, 45.02)),
+            gtt = listOf(bus("1", 90, 45.11, trip = "T1U", label = "1"), bus("2", 120, 45.12), bus("3", 90, 45.13)))
+        assertEquals(listOf("1", "2", "3"), merged.map { it.id })
+        // The website's place, the trip only GTT knew.
+        assertEquals(45.01, merged[0].latitude, 0.0)
+        assertEquals("T1U", merged[0].tripId)
+        // GTT saw bus 2 later than the website did.
+        assertEquals(45.12, merged[1].latitude, 0.0)
+    }
+
     @Test fun aVehicleWithoutAGpsFixIsNotABus() = runBlocking {
         val ids = repository(AtomicInteger()).vehicles().map { it.id }
         assertFalse("nofix" in ids)
