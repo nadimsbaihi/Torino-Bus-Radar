@@ -126,30 +126,12 @@ class MatoLiveFeed(private val client: OkHttpClient, private val url: String = U
         val topicLength = ((data[start].toInt() and 0xFF) shl 8) or (data[start + 1].toInt() and 0xFF)
         val topic = String(data, start + 2, topicLength)
         val payloadAt = start + 2 + topicLength + if ((header shr 1) and 3 != 0) 2 else 0
-        val parts = topic.split('/')  // "", line, vehicle
-        if (parts.size < 3) return
-        val line = parts[1]
-        val id = parts[2]
         val payload = String(data, payloadAt, start + length - payloadAt)
+        val vehicle = topic.split('/').getOrNull(2)?.takeIf(String::isNotBlank) ?: return
         // An empty message says the bus has left service.
-        if (payload.isEmpty()) { positions.remove(id); return }
+        if (payload.isEmpty()) { positions.remove(vehicleId(vehicle)); return }
         try {
-            val v = JSONArray(payload)
-            if (v.isNull(0) || v.isNull(1)) return
-            val lat = v.getDouble(0)
-            val lon = v.getDouble(1)
-            if (lat == 0.0 && lon == 0.0) return
-            positions[id] = LiveVehicle(
-                id = id,
-                // GTT's own ids carry a trailing U; the website adds it back the same way.
-                routeId = line + "U",
-                tripId = v.opt(4)?.takeIf { it != JSONObject_NULL }?.toString()?.takeIf(String::isNotBlank)?.let { it + "U" },
-                latitude = lat,
-                longitude = lon,
-                bearing = if (v.isNull(2)) null else v.getDouble(2).toFloat(),
-                timestampSeconds = System.currentTimeMillis() / 1000,
-                label = id
-            )
+            parse(topic, payload, System.currentTimeMillis() / 1000)?.let { positions[it.id] = it }
         } catch (error: Exception) {
             Log.d(TAG, "Unreadable MATO live message on $topic")
         }
@@ -170,6 +152,33 @@ class MatoLiveFeed(private val client: OkHttpClient, private val url: String = U
     }
 
     companion object {
+        /**
+         * One bus from a message on "/<line>/<vehicle>", or null when it has no position. Lines, trips
+         * and vehicles all carry GTT's trailing U, as in GTT's own feeds: a bus is "9633U" in both,
+         * so the two feeds and the trip updates agree on which bus is which.
+         */
+        internal fun parse(topic: String, payload: String, nowSeconds: Long): LiveVehicle? {
+            val parts = topic.split('/')  // "", line, vehicle
+            if (parts.size < 3 || parts[1].isBlank() || parts[2].isBlank()) return null
+            val v = JSONArray(payload)
+            if (v.isNull(0) || v.isNull(1)) return null
+            val lat = v.getDouble(0)
+            val lon = v.getDouble(1)
+            if (lat == 0.0 && lon == 0.0) return null
+            return LiveVehicle(
+                id = vehicleId(parts[2]),
+                routeId = parts[1] + "U",
+                tripId = v.opt(4)?.takeIf { it != JSONObject_NULL }?.toString()?.takeIf(String::isNotBlank)?.let { it + "U" },
+                latitude = lat,
+                longitude = lon,
+                bearing = if (v.isNull(2)) null else v.getDouble(2).toFloat(),
+                timestampSeconds = nowSeconds,
+                label = parts[2]
+            )
+        }
+
+        private fun vehicleId(vehicle: String) = vehicle + "U"
+
         const val URL = "https://mapi.5t.torino.it/scre"
         private const val TAG = "MatoLiveFeed"
         private const val IDLE_CLOSE_MILLIS = 120_000L
