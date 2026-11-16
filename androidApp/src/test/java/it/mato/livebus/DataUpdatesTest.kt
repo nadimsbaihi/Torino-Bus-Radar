@@ -11,6 +11,8 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -53,7 +55,7 @@ class DataUpdatesTest {
 
     private fun publish(name: String, json: String, schema: Int, checksum: String = sha(json.toByteArray())) {
         served["$name.gz"] = gzip(json.toByteArray())
-        val manifest = JSONObject(served["manifest.json"]?.toString(Charsets.UTF_8) ?: """{"files":{}}""")
+        val manifest = JSONObject(served["manifest.json"]?.toString(Charsets.UTF_8) ?: """{"generated":"2026-11-16T11:03:12Z","files":{}}""")
         manifest.getJSONObject("files").put(name, JSONObject()
             .put("asset", "$name.gz").put("sha256", checksum).put("schema", schema))
         served["manifest.json"] = manifest.toString().toByteArray()
@@ -119,5 +121,28 @@ class DataUpdatesTest {
         assertTrue(File(folder, "transit_index.json").exists())
         DataUpdates.dropIfAppChanged(context, 2)
         assertFalse(File(folder, "transit_index.json").exists())
+    }
+
+    @Test fun theBuildDateOfDownloadedTimetablesIsRemembered() = runBlocking {
+        publish("transit_index.json", """{"version":6,"patterns":["new"]}""", 6)
+        assertNull(updates().generated())
+        updates().update()
+        assertEquals("2026-11-16T11:03:12Z", updates().generated())
+    }
+
+    @Test fun downloadsAreReportedInUseOnlyWhenThereAreSome() {
+        assertFalse(DataFiles.usingDownloads(context, listOf("unseen.json")))
+        File(DataFiles.folder(context).also { it.mkdirs() }, "unseen.json").writeText("{}")
+        assertTrue(DataFiles.usingDownloads(context, listOf("unseen.json")))
+    }
+
+    @Test fun reloadingTimetablesSwapsInFreshIndexes() {
+        val app = context as MatoApplication
+        val transit = app.transitIndex
+        val trains = app.trainIndex
+        app.reloadTimetables()
+        assertNotSame(transit, app.transitIndex)
+        assertNotSame(trains, app.trainIndex)
+        assertTrue(app.transitIndex.patterns.isNotEmpty())
     }
 }

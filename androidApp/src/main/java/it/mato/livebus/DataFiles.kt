@@ -14,12 +14,19 @@ object DataFiles {
 
     fun folder(context: Context) = File(context.filesDir, FOLDER)
 
+    /** Whether the copy of each file last read came from a download, by file name. */
+    private val readFromDownload = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    /** Whether any timetable in use, or about to be, is a downloaded one. */
+    fun usingDownloads(context: Context, names: List<String>) =
+        names.any { readFromDownload[it] ?: File(folder(context), it).isFile }
+
     /** Reads [name] with [parse]: the downloaded copy if it parses, else the copy bundled with the app. */
     fun <T> load(context: Context, name: String, parse: (String) -> T): T {
         val downloaded = File(folder(context), name)
         if (downloaded.isFile) {
             try {
-                return parse(downloaded.readText())
+                return parse(downloaded.readText()).also { readFromDownload[name] = true }
             } catch (error: Exception) {
                 // A damaged or unreadable download must never leave the app without a timetable.
                 Log.w(TAG, "Dropping downloaded $name", error)
@@ -27,5 +34,6 @@ object DataFiles {
             }
         }
         return parse(context.assets.open(name).bufferedReader().use { it.readText() })
+            .also { readFromDownload[name] = false }
     }
 }

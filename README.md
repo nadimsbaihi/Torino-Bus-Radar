@@ -311,9 +311,12 @@ the commands below, and when any changed publishes them gzipped, with a `manifes
 and layout versions (`tools/build_data_release.py`), to the `data` release of this repository (a
 prerelease, so the app's own update check never sees it). Twice a day the app reads the manifest,
 downloads the files that differ from the ones in use, verifies the checksum, parses them, and keeps
-them in its own storage. They are read from the next start, so a journey on screen never changes
-underneath. A file in a layout the installed app does not know is skipped, and one that fails to read
-is dropped for the bundled copy. A new APK drops the downloaded files, as it carries newer ones.
+them in its own storage. The app then says the timetables are updated, with a Reload button;
+tapping it reads them in without stopping the app and rebuilds the screen (a journey or highlighted
+bus on screen is dropped, which is why it waits to be tapped), and they are read at every later start.
+Timetables in the side menu shows whether the built-in or downloaded ones are in use, and checks
+right away. A file in a layout the installed app does not know is skipped, and one that fails to
+read is dropped for the bundled copy. A new APK drops the downloaded files, as it carries newer ones.
 Stops that GTT adds are drawn and planned with at once but are not found by name in search until the
 search database is rebuilt into a new APK. Run the workflow by hand from the Actions tab to publish
 right away.

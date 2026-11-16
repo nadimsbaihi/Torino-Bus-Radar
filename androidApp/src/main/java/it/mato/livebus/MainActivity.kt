@@ -308,11 +308,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Now and then, fetches newer bus, train and metro timetables published for the app. They are read from
-     * the next start, so the journey on screen never changes under the rider, who is told they are ready.
+     * Now and then, fetches newer bus, train and metro timetables published for the app; [asked] fetches
+     * right away and says when there is nothing new. Nothing on screen changes until the rider taps
+     * Reload, since that rebuilds the screen and drops a journey or highlighted bus.
      */
-    private fun checkForData() {
-        if (BuildConfig.DEBUG || !dataUpdates.dueForCheck()) return
+    private fun checkForData(asked: Boolean = false) {
+        if (!asked && (BuildConfig.DEBUG || !dataUpdates.dueForCheck())) return
         lifecycleScope.launch {
             val updated = try {
                 dataUpdates.update()
@@ -320,12 +321,45 @@ class MainActivity : AppCompatActivity() {
                 throw cancelled
             } catch (error: Exception) {
                 Log.w(TAG, "Timetable check failed", error)
+                if (asked) Snackbar.make(binding.coordinator, R.string.data_check_failed, Snackbar.LENGTH_LONG).show()
                 return@launch
             }
-            if (updated.isNotEmpty()) {
-                Snackbar.make(binding.coordinator, R.string.data_updated, Snackbar.LENGTH_LONG).show()
+            when {
+                updated.isNotEmpty() -> Snackbar.make(binding.coordinator, R.string.data_updated,
+                    Snackbar.LENGTH_INDEFINITE).setAction(R.string.data_reload) { reloadTimetables() }.show()
+                asked -> Snackbar.make(binding.coordinator, R.string.data_up_to_date, Snackbar.LENGTH_LONG).show()
             }
         }
+    }
+
+    /** Reads the downloaded timetables in without stopping the app, then rebuilds the screen on them. */
+    private fun reloadTimetables() {
+        lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.Default) { (application as MatoApplication).reloadTimetables() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Timetable reload failed", error)
+                Snackbar.make(binding.coordinator, R.string.data_reload_failed, Snackbar.LENGTH_LONG).show()
+                return@launch
+            }
+            recreate()
+        }
+    }
+
+    /** Which timetables are in use: the ones built into the app, or downloaded ones and when they were built. */
+    private fun timetablesSummary(): String {
+        val names = DataUpdates.FILES.map { it.name }
+        val built = dataUpdates.generated()
+        if (built == null || !DataFiles.usingDownloads(this, names)) return getString(R.string.timetables_built_in)
+        val date = try {
+            java.time.Instant.parse(built).atZone(java.time.ZoneId.of("Europe/Rome")).toLocalDate()
+                .format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM))
+        } catch (error: java.time.DateTimeException) {
+            return getString(R.string.timetables_built_in)
+        }
+        return getString(R.string.timetables_updated_on, date)
     }
 
     private fun downloadUpdate(release: AppRelease) {
@@ -1293,6 +1327,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 R.id.menuBusFilter -> chooseBusLines()
                 R.id.menuDataSource -> chooseDataSource()
                 R.id.menuUpdates -> checkForUpdate(asked = true)
+                R.id.menuTimetables -> checkForData(asked = true)
                 R.id.menuCredits -> Credits.show(this)
             }
             // Each item opens something; none stays selected in the menu.
@@ -1334,6 +1369,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         value(R.id.menuDataSource, getString(
             if (DataSource.isCustom()) R.string.data_source_custom else R.string.data_source_default))
         value(R.id.menuUpdates, getString(R.string.menu_version, BuildConfig.VERSION_NAME))
+        value(R.id.menuTimetables, timetablesSummary())
     }
 
     /**

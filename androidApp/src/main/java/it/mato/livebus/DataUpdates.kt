@@ -37,9 +37,10 @@ class DataUpdates(
 
     /** Downloads every file whose published copy differs from the one in use; returns the names updated. */
     suspend fun update(): List<String> = withContext(Dispatchers.IO) {
-        val manifest = JSONObject(fetchText(baseUrl + MANIFEST)).getJSONObject("files")
+        val root = JSONObject(fetchText(baseUrl + MANIFEST))
+        val manifest = root.getJSONObject("files")
         preferences.edit().putLong(LAST_CHECK, System.currentTimeMillis()).apply()
-        files.mapNotNull { file ->
+        val updated = files.mapNotNull { file ->
             val entry = manifest.optJSONObject(file.name) ?: return@mapNotNull null
             if (!isOffered(file, entry) || entry.getString("sha256").equals(checksumInUse(file.name), true)) {
                 return@mapNotNull null
@@ -53,7 +54,12 @@ class DataUpdates(
                 null
             }
         }
+        if (updated.isNotEmpty()) preferences.edit().putString(GENERATED, root.optString("generated")).apply()
+        updated
     }
+
+    /** When the downloaded timetables were built, as the feed gave it (ISO-8601, UTC), or null. */
+    fun generated(): String? = preferences.getString(GENERATED, null)?.takeIf { it.isNotBlank() }
 
     /** Only a file in a layout this version of the app reads is worth fetching. */
     private fun isOffered(file: DataFile, entry: JSONObject) =
@@ -115,6 +121,7 @@ class DataUpdates(
         private const val STORE = "data_updates"
         private const val LAST_CHECK = "last_check"
         private const val CHECKSUM = "sha256_"
+        private const val GENERATED = "generated"
         private const val MANIFEST = "manifest.json"
         private const val MAX_BYTES = 64 * 1024 * 1024
         private const val CHECK_INTERVAL_MILLIS = 12 * 60 * 60 * 1000L

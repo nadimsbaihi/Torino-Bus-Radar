@@ -52,6 +52,11 @@ looks (each setting shows its current value), then help and the app itself.
                 android:title="@string/check_for_updates"
                 app:actionLayout="@layout/menu_value" />
             <item
+                android:id="@+id/menuTimetables"
+                android:icon="@drawable/ic_schedule"
+                android:title="@string/timetables"
+                app:actionLayout="@layout/menu_value" />
+            <item
                 android:id="@+id/menuCredits"
                 android:icon="@drawable/ic_info"
                 android:title="@string/credits_title" />
