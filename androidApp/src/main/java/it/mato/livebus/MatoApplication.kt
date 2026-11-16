@@ -14,6 +14,7 @@ class MatoApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Appearance.apply(this)
+        DataUpdates.dropIfAppChanged(this, BuildConfig.VERSION_CODE)
         DataSource.init(this)
         MapsForgeTileSource.createInstance(this)
         Configuration.getInstance().apply {

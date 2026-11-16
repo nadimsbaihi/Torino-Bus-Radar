@@ -200,6 +200,7 @@ class MainActivity : AppCompatActivity() {
     // A start other than the rider's own position, set from the journey panel and gone with the journey.
     private var customStart: CustomStart? = null
     private val appUpdates by lazy { AppUpdates(this) }
+    private val dataUpdates by lazy { DataUpdates(this) }
     // One bubble serves every marker, as osmdroid's own does; only one is open at a time.
     private val markerBubble by lazy {
         MarkerInfoWindow(R.layout.bubble_marker, binding.map).also { MapBubble.style(it.view) }
@@ -277,6 +278,7 @@ class MainActivity : AppCompatActivity() {
         consumeGeoLink(intent)
         savedPlaces.publishShortcuts()
         checkForUpdate()
+        checkForData()
     }
 
     /**
@@ -301,6 +303,27 @@ class MainActivity : AppCompatActivity() {
                     .setAction(R.string.update_action) { downloadUpdate(release) }.show()
                 asked -> Snackbar.make(binding.coordinator,
                     getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME), Snackbar.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /**
+     * Now and then, fetches newer bus, train and metro timetables published for the app. They are read from
+     * the next start, so the journey on screen never changes under the rider, who is told they are ready.
+     */
+    private fun checkForData() {
+        if (BuildConfig.DEBUG || !dataUpdates.dueForCheck()) return
+        lifecycleScope.launch {
+            val updated = try {
+                dataUpdates.update()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Timetable check failed", error)
+                return@launch
+            }
+            if (updated.isNotEmpty()) {
+                Snackbar.make(binding.coordinator, R.string.data_updated, Snackbar.LENGTH_LONG).show()
             }
         }
     }

@@ -1362,10 +1362,18 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
 
     companion object {
         private const val ESTIMATED_PLACE_AGE_SECONDS = 60f
-        fun load(context: Context): TransitIndex {
-            val root = JSONObject(
-                context.assets.open("transit_index.json").bufferedReader().use { it.readText() }
-            )
+        const val ASSET = "transit_index.json"
+        /** The index layout this app reads; the data feed only offers an index in a layout it knows. */
+        const val SCHEMA = 6
+
+        /** The downloaded timetable when there is a sound one, else the one bundled with the app. */
+        fun load(context: Context): TransitIndex =
+            DataFiles.load(context, ASSET) { parse(context, it) }
+
+        /** Reads an index; throws when the text is not a usable index in this layout. */
+        fun parse(context: Context, json: String): TransitIndex {
+            val root = JSONObject(json)
+            require(root.optInt("version") == SCHEMA) { "Unsupported transit index version" }
             val array = root.getJSONArray("patterns")
             val encodedShapes = root.optJSONObject("shapes")
             // Patterns often share a shape; decode each one once.
@@ -1419,6 +1427,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 val dates = services.getJSONArray(service)
                 (0 until dates.length()).mapTo(HashSet()) { dates.getString(it) }
             }.orEmpty()
+            require(patterns.isNotEmpty()) { "Transit index has no patterns" }
             return TransitIndex(patterns).also {
                 it.speeds = BusSpeedStore.shared(context)
                 it.serviceDates = serviceDates

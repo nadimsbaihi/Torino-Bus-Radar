@@ -20,6 +20,7 @@
     <string name="updated_seconds_ago">aggiornato %1$d s fa</string>
     <string name="updated_minutes_ago">aggiornato %1$d min fa</string>
     <string name="no_bus_positions">Nessuna posizione aggiornata disponibile</string>
+    <string name="data_updated">Orari aggiornati. Saranno attivi alla prossima apertura dell\'app.</string>
     <string name="data_out_of_date">I dati dei bus potrebbero essere obsoleti: molti bus in servizio non corrispondono agli orari dell’app. Aggiorna l’app per percorsi accurati.</string>
     <string name="bus_position_age">Ultima posizione: %1$d min fa</string>
     <string name="missed_it_next_bus">Perso? %1$s tra ~%2$d min</string>

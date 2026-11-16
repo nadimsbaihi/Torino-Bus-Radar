@@ -118,7 +118,8 @@ be missing.
 Live bus positions require internet and come from GTT. Delayed positions are
 marked, and the app reports feed outages. If most live buses stop matching the
 bundled timetable, which happens when GTT publishes a new one, the app tells you
-once that its data may be out of date and should be updated. **Regional train and metro times are
+once that its data may be out of date and should be updated. The bus, train and metro
+timetables refresh on their own (see below), so this should be rare. **Regional train and metro times are
 scheduled, not live:** GTT and Trenitalia publish no live positions for them. Connections are
 estimates and can change as new bus positions arrive.
 
@@ -300,8 +301,22 @@ python3 tools/build_offline_city.py build/offline-source androidApp/src/main/ass
 ```
 
 The builder uses only Python's standard library. Rebuild the search index when
-either GTFS-derived index changes. Ship updated assets in a new APK; the app
-does not download map updates automatically.
+either GTFS-derived index changes. The offline map, places and walking graph ship
+in the APK only; the app does not download map updates.
+
+**Timetables update without a new APK.** The bus, train and metro indexes below are the copies
+bundled in the APK, and also what the app falls back to. The *Timetable data* workflow
+(`.github/workflows/data.yml`) rebuilds all three every night from GTT's and Trenitalia's feeds with
+the commands below, and when any changed publishes them gzipped, with a `manifest.json` of checksums
+and layout versions (`tools/build_data_release.py`), to the `data` release of this repository (a
+prerelease, so the app's own update check never sees it). Twice a day the app reads the manifest,
+downloads the files that differ from the ones in use, verifies the checksum, parses them, and keeps
+them in its own storage. They are read from the next start, so a journey on screen never changes
+underneath. A file in a layout the installed app does not know is skipped, and one that fails to read
+is dropped for the bundled copy. A new APK drops the downloaded files, as it carries newer ones.
+Stops that GTT adds are drawn and planned with at once but are not found by name in search until the
+search database is rebuilt into a new APK. Run the workflow by hand from the Actions tab to publish
+right away.
 
 The bus index, including the road shapes drawn when a bus is highlighted, comes from
 GTT's GTFS feed (`https://www.gtt.to.it/open_data/gtt_gtfs.zip`):

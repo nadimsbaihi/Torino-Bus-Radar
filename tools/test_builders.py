@@ -16,6 +16,7 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 import build_offline_city as city  # noqa: E402
+import build_data_release as release  # noqa: E402
 import build_transit_index as transit  # noqa: E402
 
 
@@ -365,6 +366,54 @@ class OfflineCityGeometryTest(unittest.TestCase):
             database.close()
         self.assertEqual([('Via Roma · Moncalieri',), ('Via Roma · Torino',)], streets)
         self.assertEqual([('Parco Rel',)], parks)
+
+
+class DataReleaseTest(unittest.TestCase):
+    def index(self, directory, name, key, count, version):
+        path = Path(directory, name)
+        path.write_text(json.dumps({"version": version, key: list(range(count))}))
+        return path
+
+    def test_manifest_lists_each_index_with_checksum_and_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bus = self.index(directory, 'transit_index.json', 'patterns', 150, 6)
+            metro = self.index(directory, 'gtt_metro_index.json', 'trips', 120, 2)
+            out = Path(directory, 'out')
+            release.main(out, [bus, metro])
+            manifest = json.loads((out / 'manifest.json').read_text())['files']
+            self.assertEqual(6, manifest['transit_index.json']['schema'])
+            self.assertEqual(2, manifest['gtt_metro_index.json']['schema'])
+            packed = gzip.decompress((out / 'transit_index.json.gz').read_bytes())
+            self.assertEqual(bus.read_bytes(), packed)
+            import hashlib
+            self.assertEqual(hashlib.sha256(packed).hexdigest(), manifest['transit_index.json']['sha256'])
+
+    def test_unchanged_indexes_publish_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bus = self.index(directory, 'transit_index.json', 'patterns', 150, 6)
+            first = Path(directory, 'first')
+            release.main(first, [bus])
+            second = Path(directory, 'second')
+            release.main(second, [bus], first / 'manifest.json')
+            self.assertFalse(second.exists())
+            bus = self.index(directory, 'transit_index.json', 'patterns', 151, 6)
+            release.main(second, [bus], first / 'manifest.json')
+            self.assertTrue((second / 'manifest.json').exists())
+
+    def test_a_broken_build_is_not_published(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tiny = self.index(directory, 'transit_index.json', 'patterns', 3, 6)
+            with self.assertRaises(SystemExit):
+                release.main(Path(directory, 'out'), [tiny])
+            self.assertFalse(Path(directory, 'out').exists())
+
+    def test_packing_is_deterministic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bus = self.index(directory, 'transit_index.json', 'patterns', 150, 6)
+            release.main(Path(directory, 'a'), [bus])
+            release.main(Path(directory, 'b'), [bus])
+            self.assertEqual(Path(directory, 'a/transit_index.json.gz').read_bytes(),
+                             Path(directory, 'b/transit_index.json.gz').read_bytes())
 
 
 if __name__ == '__main__':

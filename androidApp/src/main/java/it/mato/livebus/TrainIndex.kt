@@ -157,10 +157,21 @@ class TrainIndex private constructor(private val trips: List<TrainTrip>) {
 
         fun load(context: Context): TrainIndex =
             TrainIndex(ASSETS.flatMap { name ->
-                parse(JSONObject(context.assets.open(name).bufferedReader().use { it.readText() }))
+                DataFiles.load(context, name) { parse(it) }
             })
 
-        private val ASSETS = listOf("trenitalia_rail_index.json", "gtt_metro_index.json")
+        /** The timetable files, each updated on its own: the regional trains and the metro. */
+        val ASSETS = listOf("trenitalia_rail_index.json", "gtt_metro_index.json")
+
+        /** The layouts [parse] reads. */
+        val SCHEMAS = 1..2
+
+        /** Reads a timetable file; throws when it is not a usable one in a layout this app knows. */
+        internal fun parse(json: String): List<TrainTrip> {
+            val root = JSONObject(json)
+            require(root.optInt("version", 1) in SCHEMAS) { "Unsupported train index version" }
+            return parse(root).also { require(it.isNotEmpty()) { "Train index has no trips" } }
+        }
 
         /**
          * Version 1 lists every stop of a run in full; version 2 lists each station once and a run

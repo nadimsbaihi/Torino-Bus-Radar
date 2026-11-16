@@ -1,0 +1,59 @@
+name: Timetable data
+
+# Rebuilds the bus, train and metro indexes from GTT's and Trenitalia's feeds and publishes them as the
+# `data` release, which the app checks twice a day. Nothing is published when no index changed.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: timetable-data
+
+jobs:
+  data:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check the tools
+        run: python3 tools/test_builders.py
+
+      - name: Download the feeds
+        run: |
+          mkdir -p build/feeds
+          curl -fsSL --retry 3 -o build/feeds/gtt_gtfs.zip https://www.gtt.to.it/open_data/gtt_gtfs.zip
+          curl -fsSL --retry 3 -o build/feeds/gtfs-trenitalia.zip \
+            https://github.com/deryclem/trenitalia-gtfs/raw/main/gtfs-trenitalia.zip
+
+      - name: Build the indexes
+        run: |
+          mkdir -p build/indexes
+          python3 tools/build_transit_index.py build/feeds/gtt_gtfs.zip build/indexes/transit_index.json
+          python3 tools/build_train_index.py --metro build/feeds/gtt_gtfs.zip build/indexes/gtt_metro_index.json
+          python3 tools/build_train_index.py build/feeds/gtfs-trenitalia.zip \
+            build/indexes/trenitalia_rail_index.json 44.92,7.41,45.23,7.95
+
+      - name: Pack what changed
+        id: pack
+        run: |
+          # No data release yet, or no manifest in it: publish everything.
+          previous=()
+          if gh release download data --pattern manifest.json --dir build/previous 2>/dev/null; then
+            previous=(--previous build/previous/manifest.json)
+          fi
+          python3 tools/build_data_release.py build/release build/indexes/*.json "${previous[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        if: steps.pack.outputs.changed == 'true'
+        run: |
+          # A prerelease, so it is never the "latest release" the app's own update check reads.
+          gh release view data >/dev/null 2>&1 || gh release create data --prerelease \
+            --title "Timetable data" \
+            --notes "Rebuilt daily from GTT's and Trenitalia's GTFS feeds. Read by the app; not an app release."
+          gh release upload data build/release/* --clobber
