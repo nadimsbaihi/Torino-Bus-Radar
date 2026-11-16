@@ -8,7 +8,7 @@ import org.osmdroid.util.GeoPoint
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
-enum class StepKind { WALK, BUS, TRAIN, METRO, TRANSFER }
+enum class StepKind { WALK, BUS, TRAM, TRAIN, METRO, TRANSFER }
 
 /**
  * One line of a journey: what and where in [text], when in [detail]. A [target] marks a walk the
@@ -122,22 +122,26 @@ object JourneySteps {
         else context.getString(R.string.leave_in, minutes)
     }
 
+    private fun rideKind(pattern: TransitPattern) = if (pattern.isTram) StepKind.TRAM else StepKind.BUS
+
     private fun busLeg(context: Context, bus: JourneyChoice, withEta: Boolean): List<JourneyStep> = buildList {
-        add(JourneyStep(StepKind.BUS, context.getString(R.string.step_board_bus, bus.pattern.route),
+        add(JourneyStep(rideKind(bus.pattern), context.getString(
+            if (bus.pattern.isTram) R.string.step_board_tram else R.string.step_board_bus, bus.pattern.route),
             detail = if (withEta) context.getString(R.string.estimated_minutes,
                 ceilMinutes(bus.boardingEtaSeconds)) else null))
         val exit = bus.transferAt ?: bus.destination
-        add(JourneyStep(StepKind.BUS, stopName(exit.name), getOff = true))
+        add(JourneyStep(rideKind(bus.pattern), stopName(exit.name), getOff = true))
         bus.secondLeg?.let { leg ->
             walkTo(context, bus.transferWalkMetres, leg.boardAt, exit)?.let(::add)
-            add(JourneyStep(StepKind.TRANSFER, context.getString(R.string.step_change_bus,
+            add(JourneyStep(StepKind.TRANSFER, context.getString(
+                if (leg.pattern.isTram) R.string.step_change_tram else R.string.step_change_bus,
                 leg.pattern.route, stopName(leg.boardAt.name)),
                 detail = listOfNotNull(
                     if (withEta) context.getString(R.string.estimated_minutes,
                         ceilMinutes(leg.boardingEtaSeconds)) else null,
                     changeWait(context, leg, bus.transferChance)
                 ).joinToString(" · ")))
-            add(JourneyStep(StepKind.BUS, stopName(leg.exitAt.name), getOff = true))
+            add(JourneyStep(rideKind(leg.pattern), stopName(leg.exitAt.name), getOff = true))
         }
     }
 

@@ -39,7 +39,9 @@ data class TransitPattern(
     // Trips of this pattern that are the last of a bus's duty: the depot comes after them.
     val lastTripIds: Set<String> = emptySet(),
     // The timetable's services this pattern runs in; empty when the index does not say.
-    val serviceIds: Set<String> = emptySet()
+    val serviceIds: Set<String> = emptySet(),
+    // A tram line rather than a bus line; the timetable's route type says which.
+    val isTram: Boolean = false
 )
 
 /**
@@ -1387,6 +1389,7 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                     route = item.getString("route"),
                     headsign = item.getString("headsign"),
                     directionId = item.getString("directionId"),
+                    isTram = item.optString("mode") == "tram",
                     tripIds = item.optJSONArray("tripIds")?.let { tripIds ->
                         (0 until tripIds.length()).mapTo(mutableSetOf()) {
                             tripIds.getString(it)

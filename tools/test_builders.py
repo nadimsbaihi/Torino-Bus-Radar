@@ -57,6 +57,24 @@ class TransitIndexTest(unittest.TestCase):
         self.assertEqual(['t3'], by_stops[tuple('ACD')]['tripIds'])
         self.assertEqual(2, len({p['id'] for p in patterns}))
 
+    def test_trams_are_told_from_buses_by_route_type(self):
+        stops = "stop_id,stop_name,stop_lat,stop_lon\nA,A,45.00,7.0\nB,B,45.01,7.0\n"
+        routes = ("route_id,route_short_name,route_type\n"
+                  "bus,60,3\ntram,4,0\nextended,5,900\nplain,6,\n")
+        trips = "route_id,trip_id,direction_id,trip_headsign,shape_id\n" + "".join(
+            f"{r},{r}1,0,North,\n" for r in ("bus", "tram", "extended", "plain"))
+        stop_times = "trip_id,stop_sequence,stop_id,arrival_time,departure_time\n" + "".join(
+            f"{r}1,{i},{s},08:00:00,08:00:00\n"
+            for r in ("bus", "tram", "extended", "plain") for i, s in enumerate("AB", 1))
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory, 'gtfs.zip'), Path(directory, 'out.json')
+            write_zip(source, {'stops.txt': stops, 'routes.txt': routes,
+                               'trips.txt': trips, 'stop_times.txt': stop_times})
+            run('build_transit_index.py', source, output)
+            patterns = json.loads(output.read_text())['patterns']
+        modes = {p['routeId']: p.get('mode') for p in patterns}
+        self.assertEqual({'bus': None, 'tram': 'tram', 'extended': 'tram', 'plain': None}, modes)
+
     def test_stops_carry_the_number_on_their_sign(self):
         stops = "stop_id,stop_code,stop_name,stop_lat,stop_lon\nA,3204,Campo,45.0,7.0\nB,,Memoria,45.01,7.0\n"
         trips = "route_id,trip_id,direction_id,trip_headsign,shape_id\nr,t1,0,North,s1\n"

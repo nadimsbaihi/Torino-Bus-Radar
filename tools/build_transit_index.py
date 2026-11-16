@@ -154,6 +154,11 @@ def mark_duty_ends(patterns, trip_blocks, trip_span):
             pattern["last"].sort()
 
 
+def is_tram(route):
+    kind = (route.get("route_type") or "").strip()
+    return kind == "0" or (kind.isdigit() and 900 <= int(kind) < 1000)
+
+
 def main(source, output):
     with zipfile.ZipFile(source) as archive:
         routes = {row["route_id"]: row for row in rows(archive, "routes.txt")}
@@ -239,6 +244,8 @@ def main(source, output):
                     "directionId": direction_id,
                     "tripIds": list(ids),
                     "stops": [stops[stop_id] for stop_id in sequence],
+                    # GTFS route_type 0 is a tram (900-series codes are the extended tram types).
+                    **({"mode": "tram"} if is_tram(route) else {}),
                 }
         # Merged shapes describe the same journey; draw the one most trips actually drive.
         for identity, pattern in merged.items():

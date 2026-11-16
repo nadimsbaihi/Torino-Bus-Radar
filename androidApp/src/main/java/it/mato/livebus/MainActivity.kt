@@ -662,6 +662,7 @@ class MainActivity : AppCompatActivity() {
                 step.getOff -> R.drawable.ic_get_off
                 step.kind == StepKind.WALK -> R.drawable.ic_walk
                 step.kind == StepKind.TRANSFER -> R.drawable.ic_transfer
+                step.kind == StepKind.TRAM -> R.drawable.ic_tram
                 step.kind == StepKind.TRAIN -> R.drawable.ic_train
                 step.kind == StepKind.METRO -> R.drawable.ic_metro
                 else -> R.drawable.ic_bus
@@ -694,7 +695,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Boarding starts a ride, so the thread below it is the vehicle's; anything else leads on foot. */
     private fun railAfter(step: JourneyStep): Rail =
-        if (!step.getOff && step.kind in setOf(StepKind.BUS, StepKind.METRO, StepKind.TRAIN)) Rail(stepColor(step.kind), 4)
+        if (!step.getOff && step.kind in setOf(StepKind.BUS, StepKind.TRAM, StepKind.METRO, StepKind.TRAIN)) Rail(stepColor(step.kind), 4)
         else Rail(getColor(R.color.line), 2)
 
     private fun paintRail(view: View, rail: Rail?) {
