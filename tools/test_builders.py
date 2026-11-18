@@ -152,6 +152,7 @@ class TransitShapeTest(unittest.TestCase):
             run('build_transit_index.py', source, output)
             shapeless = json.loads(output.read_text())
         self.assertEqual(6, index['version'])
+        self.assertEqual([], index['trams'], "a route without a route_type is a bus")
         self.assertEqual(1, len(index['patterns']))
         self.assertEqual('common', index['patterns'][0]['shape'])
         self.assertEqual({'common'}, set(index['shapes']), "only shapes a pattern uses are shipped")
@@ -159,6 +160,23 @@ class TransitShapeTest(unittest.TestCase):
                          decode_polyline(index['shapes']['common']))
         self.assertNotIn('shape', shapeless['patterns'][0], "a feed without shapes still builds")
         self.assertEqual({}, shapeless['shapes'])
+
+
+class TransitTramTest(unittest.TestCase):
+    def test_routes_of_type_tram_are_listed_apart_from_buses(self):
+        stops = "stop_id,stop_name,stop_lat,stop_lon\nA,A,45.00,7.0\nB,B,45.01,7.0\n"
+        routes = "route_id,route_short_name,route_type\n4U,4,0\n67U,67,3\nM,M1,1\n"
+        trips = ("route_id,trip_id,direction_id,trip_headsign,shape_id\n"
+                 "4U,t1,0,North,\n67U,t2,0,North,\nM,t3,0,North,\n")
+        stop_times = ("trip_id,stop_sequence,stop_id,arrival_time,departure_time\n" + "".join(
+            f"{t},{i},{s},08:00:00,08:00:00\n" for t in ("t1", "t2", "t3") for i, s in enumerate("AB", 1)))
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory, 'gtfs.zip'), Path(directory, 'out.json')
+            write_zip(source, {'stops.txt': stops, 'routes.txt': routes,
+                               'trips.txt': trips, 'stop_times.txt': stop_times})
+            run('build_transit_index.py', source, output)
+            index = json.loads(output.read_text())
+        self.assertEqual(['4U'], index['trams'])
 
 
 class TransitTurnaroundTest(unittest.TestCase):

@@ -17,10 +17,19 @@ data class MixedJourney(
     val totalWalkingMetres: Float get() = bus.totalWalkingMetres + train.totalWalkingMetres
 }
 
-enum class WalkingPreference(val extraWalkingWeight: Float, val maxStationWalkMetres: Float) {
-    LESS(4f, 1_500f),
-    BALANCED(1f, 2_500f),
-    MORE(0f, 5_000f);
+/**
+ * How much the rider minds walking: a minute on foot counts as 1 + [extraWalkingWeight] minutes, and
+ * nobody is sent further than [maxStopWalkMetres] to or from a bus stop, or [maxStationWalkMetres] to or
+ * from a station (walking the whole way is offered separately).
+ */
+enum class WalkingPreference(
+    val extraWalkingWeight: Float,
+    val maxStopWalkMetres: Float,
+    val maxStationWalkMetres: Float
+) {
+    LESS(3f, 600f, 1_000f),
+    BALANCED(1.5f, 1_000f, 1_500f),
+    MORE(0f, 3_000f, 5_000f);
 
     fun score(totalSeconds: Float, walkingMetres: Float): Float =
         totalSeconds + walkingMetres / 1.2f * extraWalkingWeight
@@ -194,11 +203,13 @@ class JourneyPlanner(private val buses: TransitIndex, private val trains: TrainI
                 val lon = longitudes[index]
                 val fromOrigin = query.walkFromOrigin?.invoke(lat, lon)
                     ?: straight(query.latitude, query.longitude, lat, lon)
-                // Nobody is asked to walk past the preset to a station.
-                originWalk[index] = if (isStation[index] && fromOrigin > query.walkingPreference.maxStationWalkMetres)
-                    Float.POSITIVE_INFINITY else fromOrigin
-                destinationWalk[index] = query.walkFromDestination?.invoke(lat, lon)
+                val toDestination = query.walkFromDestination?.invoke(lat, lon)
                     ?: straight(query.destinationLatitude, query.destinationLongitude, lat, lon)
+                // Nobody is asked to walk past the preset to or from a stop or station.
+                val limit = if (isStation[index]) query.walkingPreference.maxStationWalkMetres
+                    else query.walkingPreference.maxStopWalkMetres
+                originWalk[index] = if (fromOrigin > limit) Float.POSITIVE_INFINITY else fromOrigin
+                destinationWalk[index] = if (toDestination > limit) Float.POSITIVE_INFINITY else toDestination
             }
             val initial = query.walkFromOrigin?.invoke(query.destinationLatitude, query.destinationLongitude)
                 ?: straight(query.latitude, query.longitude, query.destinationLatitude, query.destinationLongitude)

@@ -259,7 +259,11 @@ def main(source, output):
         services = {service: dates[service]
                     for service in sorted({service for pattern in patterns for service in pattern["services"]})}
 
-    payload = {"version": 6, "patterns": patterns, "shapes": shapes, "services": services}
+    # GTFS route_type 0 is a tram; the app draws those on the map apart from the buses.
+    used_routes = {pattern["routeId"] for pattern in patterns}
+    trams = sorted(route_id for route_id, row in routes.items()
+                   if row.get("route_type", "").strip() == "0" and route_id in used_routes)
+    payload = {"version": 6, "patterns": patterns, "shapes": shapes, "services": services, "trams": trams}
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),

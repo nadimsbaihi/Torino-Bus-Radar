@@ -125,6 +125,7 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.TilesOverlay
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.coroutines.resume
 
@@ -2113,7 +2114,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 }
                 relatedObject = vehicle
                 setInfoWindow(markerBubble)
-                icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute, look)
+                icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute, look,
+                    transitIndex.isTram(vehicle.routeId))
                 setOnMarkerClickListener { clickedMarker, mapView ->
                     clearAskedSpot()
                     // Tapping the bus whose course is showing leaves the course again.
@@ -2924,23 +2926,27 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             .show()
     }
 
-    private data class BusIconKey(val closest: Boolean, val bearingBucket: Int, val route: String, val look: BusLook)
+    private data class BusIconKey(
+        val closest: Boolean, val bearingBucket: Int, val route: String, val look: BusLook, val tram: Boolean)
 
-    private fun busDirectionMarker(closest: Boolean, bearing: Float?, route: String, look: BusLook): BitmapDrawable {
+    private fun busDirectionMarker(
+        closest: Boolean, bearing: Float?, route: String, look: BusLook, tram: Boolean
+    ): BitmapDrawable {
         val bearingBucket = bearing?.let {
             (((it + 11.25f) / 22.5f).toInt() % 16)
         } ?: -1
-        return busIconCache.getOrPut(BusIconKey(closest, bearingBucket, route, look)) {
+        return busIconCache.getOrPut(BusIconKey(closest, bearingBucket, route, look, tram)) {
             createBusDirectionMarker(
                 closest,
-                bearingBucket.takeIf { it >= 0 }?.times(22.5f), route, look
+                bearingBucket.takeIf { it >= 0 }?.times(22.5f), route, look, tram = tram
             )
         }
     }
 
     private fun createBusDirectionMarker(
         closest: Boolean, bearing: Float?, route: String, look: BusLook,
-        @ColorInt busColour: Int = MapColors.load(this).buses.color(MapTheme.isNight(this))
+        @ColorInt busColour: Int = MapColors.load(this).buses.color(MapTheme.isNight(this)),
+        tram: Boolean = false
     ): BitmapDrawable {
         val density = resources.displayMetrics.density
         val lines = busLabelLines(route)
@@ -2957,7 +2963,10 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         // The bus drawn as a teardrop: its circle runs out to a point the way it is going, like a
         // compass needle, and stays a plain circle when the way is unknown.
         val nose = max(busRadius * 0.55f, 6f * density)
-        val extent = busRadius + nose + ring
+        // A tram is a wide rounded rectangle instead of a circle, so the two read apart at a glance.
+        val halfWidth = if (tram) busRadius * TRAM_WIDTH else busRadius
+        val halfHeight = if (tram) busRadius * TRAM_HEIGHT else busRadius
+        val extent = halfWidth + nose + ring
         val bitmapSize = (extent * 2f).roundToInt()
         val bitmap = Bitmap.createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -2967,18 +2976,33 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             getColor(R.color.map_loading), if (look == BusLook.LATE) LATE_PALENESS else 0f)
         val outlined = look == BusLook.ESTIMATED
 
-        val outline = Path().apply { addCircle(center, center, busRadius - ring / 2f, Path.Direction.CW) }
+        val outline = Path().apply {
+            if (tram) {
+                val corner = halfHeight * 0.6f
+                addRoundRect(center - halfWidth + ring / 2f, center - halfHeight + ring / 2f,
+                    center + halfWidth - ring / 2f, center + halfHeight - ring / 2f,
+                    corner, corner, Path.Direction.CW)
+            } else addCircle(center, center, busRadius - ring / 2f, Path.Direction.CW)
+        }
         bearing?.let {
             val angle = Math.toRadians(it.toDouble() - 90.0)
-            // The sides leave the circle where they meet it smoothly (tangents from the tip).
-            val tipDistance = busRadius - ring / 2f + nose
-            val spread = kotlin.math.acos(((busRadius - ring / 2f) / tipDistance).toDouble())
+            // The sides leave the body where they meet it smoothly (tangents from the tip); a tram's
+            // tip stands off its rectangle's edge in that direction.
+            val bodyEdge = if (tram) {
+                val c = kotlin.math.abs(kotlin.math.cos(angle)).toFloat()
+                val s = kotlin.math.abs(kotlin.math.sin(angle)).toFloat()
+                min(if (c > 1e-3f) (halfWidth - ring / 2f) / c else Float.MAX_VALUE,
+                    if (s > 1e-3f) (halfHeight - ring / 2f) / s else Float.MAX_VALUE)
+            } else busRadius - ring / 2f
+            val baseRadius = if (tram) halfHeight - ring / 2f else busRadius - ring / 2f
+            val tipDistance = bodyEdge + nose
+            val spread = kotlin.math.acos((baseRadius / tipDistance).toDouble())
             fun at(radians: Double, distance: Float) = Pair(
                 center + kotlin.math.cos(radians).toFloat() * distance,
                 center + kotlin.math.sin(radians).toFloat() * distance)
             val (tipX, tipY) = at(angle, tipDistance)
-            val (leftX, leftY) = at(angle - spread, busRadius - ring / 2f)
-            val (rightX, rightY) = at(angle + spread, busRadius - ring / 2f)
+            val (leftX, leftY) = at(angle - spread, baseRadius)
+            val (rightX, rightY) = at(angle + spread, baseRadius)
             outline.op(Path().apply {
                 moveTo(tipX, tipY)
                 lineTo(leftX, leftY)
@@ -3395,6 +3419,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private companion object {
+        // A tram marker is this many times its bus circle's radius, wide and tall.
+        const val TRAM_WIDTH = 1.3f
+        const val TRAM_HEIGHT = 0.85f
         const val LATE_PALENESS = 0.3f
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"

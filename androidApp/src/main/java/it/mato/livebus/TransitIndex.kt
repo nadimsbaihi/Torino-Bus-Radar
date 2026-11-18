@@ -139,6 +139,8 @@ class TrackedVehicle internal constructor(
 data class BackupBus(val route: String, val vehicle: LiveVehicle, val etaSeconds: Float)
 
 class TransitIndex private constructor(val patterns: List<TransitPattern>) {
+    // The routes the timetable runs with trams (GTFS route_type 0); every other route is a bus.
+    private var tramRoutes: Set<String> = emptySet()
     private val patternsByTripId: Map<String, TransitPattern> by lazy {
         buildMap {
             patterns.forEach { pattern ->
@@ -313,6 +315,9 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
      * and "10N" are different lines. Null for a route the index does not know.
      */
     fun routeName(routeId: String): String? = routeNames[routeId.removePrefix("gtt:")]
+
+    /** True when [routeId] is a tram line, which the map draws apart from the buses. */
+    fun isTram(routeId: String): Boolean = routeId.removePrefix("gtt:") in tramRoutes
 
     /**
      * Matches every vehicle to a pattern and precomputes when it reaches each stop ahead.
@@ -554,13 +559,16 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         val walkingDistances = mutableMapOf<String, Float>()
         val destinationDistances = mutableMapOf<String, Float>()
         val transferWalkingDistances = mutableMapOf<Pair<String, String>, Float>()
+        // The same limit on walking to and from a stop as the round planner.
+        fun capped(metres: Float) =
+            if (metres > walkingPreference.maxStopWalkMetres) Float.POSITIVE_INFINITY else metres
         fun walkingDistance(stop: TransitStop) = walkingDistances.getOrPut(stop.id) {
-            walkFromOrigin?.invoke(stop.latitude, stop.longitude)
-                ?: distance(latitude, longitude, stop)
+            capped(walkFromOrigin?.invoke(stop.latitude, stop.longitude)
+                ?: distance(latitude, longitude, stop))
         }
         fun destinationDistance(stop: TransitStop) = destinationDistances.getOrPut(stop.id) {
-            walkFromDestination?.invoke(stop.latitude, stop.longitude)
-                ?: distance(destinationLatitude, destinationLongitude, stop)
+            capped(walkFromDestination?.invoke(stop.latitude, stop.longitude)
+                ?: distance(destinationLatitude, destinationLongitude, stop))
         }
         val fleet = tracked ?: trackVehicles(vehicles)
 
@@ -1428,7 +1436,11 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
                 (0 until dates.length()).mapTo(HashSet()) { dates.getString(it) }
             }.orEmpty()
             require(patterns.isNotEmpty()) { "Transit index has no patterns" }
+            val trams = root.optJSONArray("trams")?.let { array ->
+                (0 until array.length()).mapTo(HashSet()) { array.getString(it) }
+            }.orEmpty()
             return TransitIndex(patterns).also {
+                it.tramRoutes = trams
                 it.speeds = BusSpeedStore.shared(context)
                 it.serviceDates = serviceDates
             }
