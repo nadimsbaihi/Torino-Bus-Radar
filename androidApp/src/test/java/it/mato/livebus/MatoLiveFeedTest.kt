@@ -44,4 +44,41 @@ class MatoLiveFeedTest {
         assertNull(MatoLiveFeed.parse("/2/9720", "[0,0,null,null,28513258,1,159]", 1_000))
         assertNull(MatoLiveFeed.parse("/2/9720", "[null,null,null,null,28513258,1,159]", 1_000))
     }
+
+    /** An MQTT PUBLISH packet for [payload] on [topic], flagged as retained when the broker replays it on subscribing. */
+    private fun publish(topic: String, payload: String, retained: Boolean): ByteArray {
+        val topicBytes = topic.toByteArray()
+        val body = byteArrayOf((topicBytes.size shr 8).toByte(), topicBytes.size.toByte()) + topicBytes + payload.toByteArray()
+        require(body.size < 128)
+        return byteArrayOf((0x30 or if (retained) 1 else 0).toByte(), body.size.toByte()) + body
+    }
+
+    private fun feed() = MatoLiveFeed(okhttp3.OkHttpClient())
+
+    @Test fun aRetainedMessageIsNotAFreshPosition() {
+        val feed = feed()
+        // What the broker replays on subscribing: the last message of every topic, however long ago.
+        feed.receive(publish("/4/9473", "[45.07,7.68,90,10,28518779,1,620]", retained = true))
+        assertEquals(emptyList<LiveVehicle>(), feed.vehicles())
+        // The same bus then reports for real.
+        feed.receive(publish("/4/9473", "[45.08,7.69,90,10,28518779,1,621]", retained = false))
+        assertEquals(listOf("9473U"), feed.vehicles().map { it.id })
+        assertEquals(45.08, feed.vehicles().single().latitude, 0.0)
+    }
+
+    @Test fun aRetainedMessageDoesNotReplaceALiveOne() {
+        val feed = feed()
+        feed.receive(publish("/4/5038", "[45.08,7.69,90,10,28518779,1,621]", retained = false))
+        feed.receive(publish("/4/5038", "[45.00,7.00,90,10,28518779,1,100]", retained = true))
+        assertEquals(45.08, feed.vehicles().single().latitude, 0.0)
+    }
+
+    @Test fun aPacketCutInTwoIsStillRead() {
+        val feed = feed()
+        val packet = publish("/67/9468", "[45.07,7.68,null,null,28518000,0,55]", retained = false)
+        feed.receive(packet.copyOfRange(0, 9))
+        assertEquals(emptyList<LiveVehicle>(), feed.vehicles())
+        feed.receive(packet.copyOfRange(9, packet.size))
+        assertEquals(listOf("9468U"), feed.vehicles().map { it.id })
+    }
 }

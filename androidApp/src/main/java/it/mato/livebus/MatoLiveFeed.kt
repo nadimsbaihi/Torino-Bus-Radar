@@ -83,10 +83,7 @@ class MatoLiveFeed(private val client: OkHttpClient, private val url: String = U
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
             lastMessageMillis = System.currentTimeMillis()
-            synchronized(inbox) {
-                inbox.write(bytes.toByteArray())
-                drain()
-            }
+            receive(bytes.toByteArray())
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -99,6 +96,12 @@ class MatoLiveFeed(private val client: OkHttpClient, private val url: String = U
         private fun forget(webSocket: WebSocket) = synchronized(lock) {
             if (socket === webSocket) { socket = null; keepAlive?.cancel(false); keepAlive = null }
         }
+    }
+
+    /** Takes in bytes from the connection: whole MQTT packets are read at once, a cut-short one waits for the rest. */
+    internal fun receive(bytes: ByteArray) = synchronized(inbox) {
+        inbox.write(bytes)
+        drain()
     }
 
     /** Reads every whole MQTT packet waiting in the inbox; a packet cut short stays for the next message. */
@@ -131,6 +134,11 @@ class MatoLiveFeed(private val client: OkHttpClient, private val url: String = U
         val vehicle = topic.split('/').getOrNull(2)?.takeIf(String::isNotBlank) ?: return
         // An empty message says the bus has left service.
         if (payload.isEmpty()) { positions.remove(vehicleId(vehicle)); return }
+        // The broker opens every subscription with each topic's last message, flagged as retained. Its
+        // age is unknown (a message carries no time) and buses that left without saying so stay in it
+        // for good, so it would show them as fresh for minutes. A bus that is running says where it is
+        // within seconds (half of them in four), so only the live messages count.
+        if (header and 1 != 0) return
         try {
             parse(topic, payload, System.currentTimeMillis() / 1000)?.let { positions[it.id] = it }
         } catch (error: Exception) {
