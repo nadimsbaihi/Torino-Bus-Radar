@@ -2115,7 +2115,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 relatedObject = vehicle
                 setInfoWindow(markerBubble)
                 icon = busDirectionMarker(vehicle.id in selectedIds, transitIndex.displayHeading(vehicle), vehicleRoute, look,
-                    transitIndex.isTram(vehicle.routeId))
+                    transitIndex.isTram(vehicle))
                 setOnMarkerClickListener { clickedMarker, mapView ->
                     clearAskedSpot()
                     // Tapping the bus whose course is showing leaves the course again.
@@ -2963,10 +2963,13 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         // The bus drawn as a teardrop: its circle runs out to a point the way it is going, like a
         // compass needle, and stays a plain circle when the way is unknown.
         val nose = max(busRadius * 0.55f, 6f * density)
-        // A tram is a wide rounded rectangle instead of a circle, so the two read apart at a glance.
+        // A tram is drawn from the side, as a car on wheels under a pantograph, so it cannot be
+        // taken for a bus: the body is a wide rounded rectangle and the line number sits in it.
         val halfWidth = if (tram) busRadius * TRAM_WIDTH else busRadius
         val halfHeight = if (tram) busRadius * TRAM_HEIGHT else busRadius
-        val extent = halfWidth + nose + ring
+        val pantographHeight = busRadius * 0.5f
+        val wheelRadius = busRadius * 0.22f
+        val extent = max(halfWidth, if (tram) halfHeight + pantographHeight else 0f) + nose + ring
         val bitmapSize = (extent * 2f).roundToInt()
         val bitmap = Bitmap.createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -2986,20 +2989,44 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
         bearing?.let {
             val angle = Math.toRadians(it.toDouble() - 90.0)
-            // The sides leave the body where they meet it smoothly (tangents from the tip); a tram's
-            // tip stands off its rectangle's edge in that direction.
+            // A bus's sides leave its circle where they meet it smoothly (tangents from the tip); a
+            // tram's tip stands off its rectangle's edge in that direction.
             val bodyEdge = if (tram) {
-                val c = kotlin.math.abs(kotlin.math.cos(angle)).toFloat()
-                val s = kotlin.math.abs(kotlin.math.sin(angle)).toFloat()
-                min(if (c > 1e-3f) (halfWidth - ring / 2f) / c else Float.MAX_VALUE,
-                    if (s > 1e-3f) (halfHeight - ring / 2f) / s else Float.MAX_VALUE)
+                // How far from the centre the rounded body reaches along this bearing.
+                val boxX = halfWidth - ring / 2f
+                val boxY = halfHeight - ring / 2f
+                val corner = halfHeight * 0.6f
+                fun inside(distance: Float): Boolean {
+                    val qx = kotlin.math.abs(kotlin.math.cos(angle).toFloat() * distance) - boxX + corner
+                    val qy = kotlin.math.abs(kotlin.math.sin(angle).toFloat() * distance) - boxY + corner
+                    return kotlin.math.hypot(max(qx, 0f), max(qy, 0f)) + min(max(qx, qy), 0f) - corner <= 0f
+                }
+                var edge = 0f
+                while (inside(edge + 0.25f)) edge += 0.25f
+                edge
             } else busRadius - ring / 2f
-            val baseRadius = if (tram) halfHeight - ring / 2f else busRadius - ring / 2f
-            val tipDistance = bodyEdge + nose
-            val spread = kotlin.math.acos((baseRadius / tipDistance).toDouble())
             fun at(radians: Double, distance: Float) = Pair(
                 center + kotlin.math.cos(radians).toFloat() * distance,
                 center + kotlin.math.sin(radians).toFloat() * distance)
+            if (tram) {
+                // A tram points with a small arrowhead on its edge; the long taper a bus has would
+                // read as a speech bubble on a car body.
+                val (tipX, tipY) = at(angle, bodyEdge + nose * 0.9f)
+                val (baseX, baseY) = at(angle, bodyEdge - ring)
+                val side = busRadius * 0.42f
+                val sideX = -kotlin.math.sin(angle).toFloat() * side
+                val sideY = kotlin.math.cos(angle).toFloat() * side
+                outline.op(Path().apply {
+                    moveTo(tipX, tipY)
+                    lineTo(baseX + sideX, baseY + sideY)
+                    lineTo(baseX - sideX, baseY - sideY)
+                    close()
+                }, Path.Op.UNION)
+                return@let
+            }
+            val baseRadius = busRadius - ring / 2f
+            val tipDistance = bodyEdge + nose
+            val spread = kotlin.math.acos((baseRadius / tipDistance).toDouble())
             val (tipX, tipY) = at(angle, tipDistance)
             val (leftX, leftY) = at(angle - spread, baseRadius)
             val (rightX, rightY) = at(angle + spread, baseRadius)
@@ -3010,6 +3037,45 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 lineTo(rightX, rightY)
                 close()
             }, Path.Op.UNION)
+        }
+
+        if (tram) {
+            val face = getColor(if (outlined) R.color.map_face else R.color.bus_ring)
+            // The pantograph is on the rear half of the roof, away from where the point goes.
+            val rearward = bearing?.let { if (kotlin.math.sin(Math.toRadians(it.toDouble())) >= 0) -1f else 1f } ?: 0f
+            val pantographX = center + rearward * halfWidth * 0.5f
+            val roof = center - halfHeight + ring / 2f
+            val reach = busRadius * 0.38f
+            val pantograph = Path().apply {
+                moveTo(pantographX - reach, roof)
+                lineTo(pantographX, roof - pantographHeight + ring)
+                lineTo(pantographX + reach, roof)
+                moveTo(pantographX - reach * 0.8f, roof - pantographHeight + ring)
+                lineTo(pantographX + reach * 0.8f, roof - pantographHeight + ring)
+            }
+            paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeJoin = Paint.Join.ROUND
+            // A light halo under the dark line keeps it clear of busy streets, like the body's ring.
+            paint.strokeWidth = ring * 2.2f
+            paint.color = face
+            canvas.drawPath(pantograph, paint)
+            paint.strokeWidth = ring * 0.9f
+            paint.color = color
+            canvas.drawPath(pantograph, paint)
+            // Wheels peep out under the floor; the body is drawn over their top half.
+            val wheelY = center + halfHeight - ring / 2f + wheelRadius * 0.35f
+            for (side in listOf(-1f, 1f)) {
+                val wheelX = center + side * halfWidth * 0.55f
+                paint.style = Paint.Style.FILL
+                paint.color = if (outlined) face else color
+                canvas.drawCircle(wheelX, wheelY, wheelRadius, paint)
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = ring * 0.8f
+                paint.color = if (outlined) color else face
+                canvas.drawCircle(wheelX, wheelY, wheelRadius, paint)
+            }
+            paint.strokeCap = Paint.Cap.BUTT
         }
 
         // Filled, not outlined: a white face with a thin ring was lost among the streets and parks.

@@ -320,6 +320,12 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
     fun isTram(routeId: String): Boolean = routeId.removePrefix("gtt:") in tramRoutes
 
     /**
+     * True when [vehicle] is a tram: by its fleet number when that says (see [TramFleet]), so a
+     * replacement bus on a tram line is a bus; otherwise by its line.
+     */
+    fun isTram(vehicle: LiveVehicle): Boolean = TramFleet.isTram(vehicle.id) ?: isTram(vehicle.routeId)
+
+    /**
      * Matches every vehicle to a pattern and precomputes when it reaches each stop ahead.
      * Planning several journeys on one feed snapshot can share the result.
      */

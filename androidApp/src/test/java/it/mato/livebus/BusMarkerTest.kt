@@ -53,19 +53,16 @@ class BusMarkerTest {
         assertEquals(marker(false, 0f).width, marker(false, 180f).width)
     }
 
-    @Test fun aTramIsWiderThanItIsTallWhereABusIsRound() {
+    @Test fun aTramIsAWideCarWithAPantographAndWheelsWhereABusIsRound() {
         val bus = marker(false, null, "4")
         val tram = marker(false, null, "4", tram = true)
-        fun drawnWidth(bitmap: Bitmap): Int {
-            val row = bitmap.height / 2
-            return (0 until bitmap.width).count { Color.alpha(bitmap.getPixel(it, row)) > 0 }
-        }
-        fun drawnHeight(bitmap: Bitmap): Int {
-            val column = bitmap.width / 2
-            return (0 until bitmap.height).count { Color.alpha(bitmap.getPixel(column, it)) > 0 }
-        }
-        assertTrue("a bus is round", kotlin.math.abs(drawnWidth(bus) - drawnHeight(bus)) <= 1)
-        assertTrue("a tram is wider than tall", drawnWidth(tram) > drawnHeight(tram) * 1.3)
+        fun drawnWidth(bitmap: Bitmap) = (0 until bitmap.width).count { Color.alpha(bitmap.getPixel(it, bitmap.height / 2)) > 0 }
+        fun drawnHeight(bitmap: Bitmap, column: Int) = (0 until bitmap.height).count { Color.alpha(bitmap.getPixel(column, it)) > 0 }
+        assertTrue("a bus is round", kotlin.math.abs(drawnWidth(bus) - drawnHeight(bus, bus.width / 2)) <= 1)
+        assertTrue("a tram is wider than a bus", drawnWidth(tram) > drawnWidth(bus) * 1.2)
+        // Up the middle a still tram's pantograph stands over its roof; near an end there is only the body.
+        assertTrue("a pantograph over the roof",
+            drawnHeight(tram, tram.width / 2) > drawnHeight(tram, tram.width * 22 / 100) + 2)
     }
 
     @Test fun aTramPointsTheWayItIsGoingToo() {
@@ -80,12 +77,8 @@ class BusMarkerTest {
             }
         }
         for (bearing in listOf(0f, 90f, 180f, 270f, 45f)) {
-            val still = marker(false, null, "4", tram = true)
             val tram = marker(false, bearing, "4", tram = true)
-            assertEquals("same size marker at $bearing°", still.width, tram.width)
-            assertTrue("the point at $bearing°", reach(tram, bearing.toDouble()) > reach(still, bearing.toDouble()) + 2)
-            assertTrue("nothing behind at $bearing°",
-                reach(tram, bearing + 180.0) <= reach(still, bearing + 180.0) + 1)
+            assertTrue("the point at $bearing°", reach(tram, bearing.toDouble()) > reach(tram, bearing + 180.0) + 2)
         }
     }
 

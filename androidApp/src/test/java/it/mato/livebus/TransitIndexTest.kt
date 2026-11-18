@@ -167,6 +167,21 @@ class TransitIndexTest {
         for (bus in listOf("67U", "gtt:56U", "METROU", "unknown")) assertFalse(bus, index.isTram(bus))
     }
 
+    @Test fun aVehicleIsATramByItsNumberAndOtherwiseByItsLine() {
+        val index = TransitIndex.load(RuntimeEnvironment.getApplication())
+        fun on(line: String, id: String) = LiveVehicle(id, line, null, 45.07, 7.68, null, 0L)
+        // A tram number on a tram line, and on a bus line (a tram sent out on one).
+        assertTrue(index.isTram(on("4U", "5038U")))
+        assertTrue(index.isTram(on("67U", "5038U")))
+        // A bus number on a tram line is a replacement bus, however the line is flagged.
+        assertFalse(index.isTram(on("4U", "9473U")))
+        assertFalse(index.isTram(on("9U", "811U")))
+        // A number seen on neither, or none at all, leaves the line to say.
+        assertTrue(index.isTram(on("15U", "4500U")))
+        assertFalse(index.isTram(on("67U", "4500U")))
+        assertTrue(index.isTram(on("gtt:10U", "unknown")))
+    }
+
     @Test fun bundledNetworkPlansWithHundredsOfVehicles() = runBlocking {
         val index = TransitIndex.load(RuntimeEnvironment.getApplication())
         val vehicles = index.patterns.take(500).mapNotNull { pattern ->
