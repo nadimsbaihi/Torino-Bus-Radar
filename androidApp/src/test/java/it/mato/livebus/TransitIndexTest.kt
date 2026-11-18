@@ -160,6 +160,13 @@ class TransitIndexTest {
         } catch (_: CancellationException) { }
     }
 
+    @Test fun bundledNetworkKnowsWhichLinesAreTrams() {
+        val index = TransitIndex.load(RuntimeEnvironment.getApplication())
+        // Both live feeds name a route the same way: with or without the "gtt:" prefix.
+        for (tram in listOf("4U", "gtt:4U", "10U", "16CDU", "16CSU", "13U")) assertTrue(tram, index.isTram(tram))
+        for (bus in listOf("67U", "gtt:56U", "METROU", "unknown")) assertFalse(bus, index.isTram(bus))
+    }
+
     @Test fun bundledNetworkPlansWithHundredsOfVehicles() = runBlocking {
         val index = TransitIndex.load(RuntimeEnvironment.getApplication())
         val vehicles = index.patterns.take(500).mapNotNull { pattern ->

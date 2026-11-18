@@ -22,11 +22,12 @@ class BusMarkerTest {
         Robolectric.buildActivity(MainActivity::class.java).get().apply { setTheme(R.style.Theme_MatoLiveBus) }
     }
 
-    private fun marker(closest: Boolean, bearing: Float?, route: String = "67"): Bitmap {
+    private fun marker(closest: Boolean, bearing: Float?, route: String = "67", tram: Boolean = false): Bitmap {
         val drawable = MainActivity::class.java.getDeclaredMethod("createBusDirectionMarker",
             Boolean::class.javaPrimitiveType, java.lang.Float::class.java, String::class.java, BusLook::class.java,
-            Int::class.javaPrimitiveType)
-            .apply { isAccessible = true }.invoke(activity, closest, bearing, route, BusLook.LIVE, 0xFF1565C0.toInt()) as BitmapDrawable
+            Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+            .apply { isAccessible = true }
+            .invoke(activity, closest, bearing, route, BusLook.LIVE, 0xFF1565C0.toInt(), tram) as BitmapDrawable
         return drawable.bitmap
     }
 
@@ -52,16 +53,53 @@ class BusMarkerTest {
         assertEquals(marker(false, 0f).width, marker(false, 180f).width)
     }
 
+    @Test fun aTramIsWiderThanItIsTallWhereABusIsRound() {
+        val bus = marker(false, null, "4")
+        val tram = marker(false, null, "4", tram = true)
+        fun drawnWidth(bitmap: Bitmap): Int {
+            val row = bitmap.height / 2
+            return (0 until bitmap.width).count { Color.alpha(bitmap.getPixel(it, row)) > 0 }
+        }
+        fun drawnHeight(bitmap: Bitmap): Int {
+            val column = bitmap.width / 2
+            return (0 until bitmap.height).count { Color.alpha(bitmap.getPixel(column, it)) > 0 }
+        }
+        assertTrue("a bus is round", kotlin.math.abs(drawnWidth(bus) - drawnHeight(bus)) <= 1)
+        assertTrue("a tram is wider than tall", drawnWidth(tram) > drawnHeight(tram) * 1.3)
+    }
+
+    @Test fun aTramPointsTheWayItIsGoingToo() {
+        // How far from the centre something is drawn along a bearing, in pixels.
+        fun reach(bitmap: Bitmap, bearing: Double): Int {
+            val angle = Math.toRadians(bearing - 90.0)
+            val half = bitmap.width / 2.0
+            return (0 until bitmap.width).last {
+                val x = (half + kotlin.math.cos(angle) * it).toInt()
+                val y = (half + kotlin.math.sin(angle) * it).toInt()
+                x in 0 until bitmap.width && y in 0 until bitmap.height && Color.alpha(bitmap.getPixel(x, y)) > 0
+            }
+        }
+        for (bearing in listOf(0f, 90f, 180f, 270f, 45f)) {
+            val still = marker(false, null, "4", tram = true)
+            val tram = marker(false, bearing, "4", tram = true)
+            assertEquals("same size marker at $bearing°", still.width, tram.width)
+            assertTrue("the point at $bearing°", reach(tram, bearing.toDouble()) > reach(still, bearing.toDouble()) + 2)
+            assertTrue("nothing behind at $bearing°",
+                reach(tram, bearing + 180.0) <= reach(still, bearing + 180.0) + 1)
+        }
+    }
+
     @Test fun writesAPreview() {
         val bearings = listOf(null, 0f, 60f, 135f, 225f, 300f)
-        val cells = bearings.flatMap { b -> listOf(marker(false, b), marker(true, b), marker(false, b, "3165")) }
+        val cells = bearings.flatMap { b -> listOf(marker(false, b), marker(true, b), marker(false, b, "3165"), marker(false, b, "4", tram = true),
+            marker(true, b, "16 CD", tram = true)) }
         val size = cells.maxOf { it.width } + 8
-        val sheet = Bitmap.createBitmap(size * 3, size * bearings.size, Bitmap.Config.ARGB_8888)
+        val sheet = Bitmap.createBitmap(size * 5, size * bearings.size, Bitmap.Config.ARGB_8888)
         Canvas(sheet).apply {
             drawColor(Color.rgb(236, 234, 228))
             cells.forEachIndexed { index, cell ->
-                drawBitmap(cell, (index % 3) * size + (size - cell.width) / 2f,
-                    (index / 3) * size + (size - cell.height) / 2f, null)
+                drawBitmap(cell, (index % 5) * size + (size - cell.width) / 2f,
+                    (index / 5) * size + (size - cell.height) / 2f, null)
             }
         }
         val output = File("build/reports/bus-marker-preview.png").apply { parentFile?.mkdirs() }
