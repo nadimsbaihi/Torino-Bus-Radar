@@ -53,16 +53,15 @@ class BusMarkerTest {
         assertEquals(marker(false, 0f).width, marker(false, 180f).width)
     }
 
-    @Test fun aTramIsAWideCarWithAPantographAndWheelsWhereABusIsRound() {
+    @Test fun aTramIsASquareCarUnderAPantographWhereABusIsRound() {
         val bus = marker(false, null, "4")
         val tram = marker(false, null, "4", tram = true)
         fun drawnWidth(bitmap: Bitmap) = (0 until bitmap.width).count { Color.alpha(bitmap.getPixel(it, bitmap.height / 2)) > 0 }
         fun drawnHeight(bitmap: Bitmap, column: Int) = (0 until bitmap.height).count { Color.alpha(bitmap.getPixel(column, it)) > 0 }
         assertTrue("a bus is round", kotlin.math.abs(drawnWidth(bus) - drawnHeight(bus, bus.width / 2)) <= 1)
-        assertTrue("a tram is wider than a bus", drawnWidth(tram) > drawnWidth(bus) * 1.2)
-        // Up the middle a still tram's pantograph stands over its roof; near an end there is only the body.
-        assertTrue("a pantograph over the roof",
-            drawnHeight(tram, tram.width / 2) > drawnHeight(tram, tram.width * 22 / 100) + 2)
+        assertTrue("a tram is no wider than a bus", drawnWidth(tram) <= drawnWidth(bus) + 1)
+        // Up the middle a still tram's pantograph stands over its roof, so it is taller than wide.
+        assertTrue("a pantograph over the roof", drawnHeight(tram, tram.width / 2) > drawnWidth(tram) + 2)
     }
 
     @Test fun aTramPointsTheWayItIsGoingToo() {
