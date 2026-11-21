@@ -2963,13 +2963,11 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         // The bus drawn as a teardrop: its circle runs out to a point the way it is going, like a
         // compass needle, and stays a plain circle when the way is unknown.
         val nose = max(busRadius * 0.55f, 6f * density)
-        // A tram is a bus-sized rounded square under a pantograph, like the tram seen from the
-        // front in map pictograms (Maki's rail-light), so it cannot be taken for a round bus.
+        // A tram is a long rounded rectangle, so it cannot be taken for a round bus.
         val halfWidth = if (tram) busRadius * TRAM_WIDTH else busRadius
         val halfHeight = if (tram) busRadius * TRAM_HEIGHT else busRadius
-        val pantographHeight = busRadius * 0.42f
-        val corner = busRadius * 0.42f
-        val extent = max(halfWidth, if (tram) halfHeight + pantographHeight else 0f) + nose + ring
+        val corner = busRadius * 0.3f
+        val extent = max(halfWidth, halfHeight) + nose + ring
         val bitmapSize = (extent * 2f).roundToInt()
         val bitmap = Bitmap.createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -3035,32 +3033,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 lineTo(rightX, rightY)
                 close()
             }, Path.Op.UNION)
-        }
-
-        if (tram) {
-            // A stem up from the middle of the roof to a collector bar whose ends turn down.
-            val roof = center - halfHeight + ring / 2f
-            val head = roof - pantographHeight
-            val reach = busRadius * 0.45f
-            val pantograph = Path().apply {
-                moveTo(center, roof)
-                lineTo(center, head)
-                moveTo(center - reach, head + busRadius * 0.12f)
-                lineTo(center - reach, head)
-                lineTo(center + reach, head)
-                lineTo(center + reach, head + busRadius * 0.12f)
-            }
-            paint.style = Paint.Style.STROKE
-            paint.strokeCap = Paint.Cap.ROUND
-            paint.strokeJoin = Paint.Join.ROUND
-            // A light halo under the dark line keeps it clear of busy streets, like the body's ring.
-            paint.strokeWidth = ring * 2.4f
-            paint.color = getColor(if (outlined) R.color.map_face else R.color.bus_ring)
-            canvas.drawPath(pantograph, paint)
-            paint.strokeWidth = ring * 1.1f
-            paint.color = color
-            canvas.drawPath(pantograph, paint)
-            paint.strokeCap = Paint.Cap.BUTT
         }
 
         // Filled, not outlined: a white face with a thin ring was lost among the streets and parks.
@@ -3470,9 +3442,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     }
 
     private companion object {
-        // A tram marker's body is this many times its bus circle's radius, wide and tall.
-        const val TRAM_WIDTH = 0.95f
-        const val TRAM_HEIGHT = 0.9f
+        // A tram marker is this many times its bus circle's radius, wide and tall.
+        const val TRAM_WIDTH = 1.45f
+        const val TRAM_HEIGHT = 0.8f
         const val LATE_PALENESS = 0.3f
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"
