@@ -38,7 +38,9 @@ jobs:
       # reads only the numbers, so it does not offer that release as an "update" over this build.
       - name: Name the build after the latest release
         run: |
-          latest=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0)
+          # The newest release overall, not only one this branch has: a branch from before it still runs beside it.
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          latest=${latest:-v0.0.0}
           echo "MATO_VERSION_NAME=${latest#v}-test.$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       # The APK comes first, so a failing test still leaves something to try; the run is red either way.
