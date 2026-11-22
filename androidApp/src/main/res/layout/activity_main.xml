@@ -444,15 +444,33 @@
                             android:layout_marginTop="8dp"
                             android:visibility="gone" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/alertButton"
+                        <!-- A reminder to set off, offered only when there is time to wait for it. -->
+                        <LinearLayout
+                            android:id="@+id/alertRow"
                             android:layout_width="match_parent"
-                            android:layout_height="48dp"
+                            android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
-                            android:visibility="gone"
-                            android:text="@string/alert_me"
-                            app:icon="@drawable/ic_bus_notification"
-                            app:iconGravity="textStart" />
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:visibility="gone">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/alertButton"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:text="@string/remind_me"
+                                app:icon="@drawable/ic_bus_notification"
+                                app:iconGravity="textStart" />
+
+                            <!-- How early to be at the stop; a standing choice, so it stays small. -->
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/spareButton"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="8dp" />
+                        </LinearLayout>
 
 
                         <!-- Which kinds of journey to look for: a setting, so it comes last. -->

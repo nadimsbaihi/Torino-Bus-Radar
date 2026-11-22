@@ -51,7 +51,7 @@ each time; your recent destinations wait in the search box, and it remembers whe
 - **Journey steps, out of the way of the map.** Your journey opens in a panel at
   the bottom that says how long it takes, when you arrive and when to leave, with
   the first step (walk, board, get off, walk) in view, so the map stays in view
-  too. Pull the panel up for every step and Notify me, or swipe it down to
+  too. Pull the panel up for every step and the leave reminder, or swipe it down to
   close it. Pulled up, the search bar turns into From and To, as in map apps,
   with the other ways to go in one row beneath. When walking there is quicker
   than any ride, the journey walks, with a button to take transit anyway (and
@@ -59,9 +59,15 @@ each time; your recent destinations wait in the search box, and it remembers whe
   panel, a highlighted bus, then the journey, before it leaves the app.
   The refresh button beside the close button fetches fresh bus positions and
   plans the journey again.
-- **Approach alerts.** Tap Notify me to get a notification when your bus is
-  300, 500, 700, or 1000 metres from your boarding stop. The app remembers your
-  choice.
+- **Leave reminder.** Tap "Remind me when to leave" to be told when to set off
+  for your bus. The app works out when the bus reaches your stop and how long you
+  need to walk there, and notifies you once it is time to go. Choose to be at the
+  stop 1, 5 or 10 minutes before the bus; the app remembers your choice. The button
+  is offered only when there is still a while to wait; otherwise the journey just
+  says "leave now". If the bus you planned can no longer be caught with that spare
+  time, the reminder moves to the next one. If a bus leaves without you, you are
+  told when the next one comes and the reminder starts again; once you are on
+  board it ends by itself.
 - **Leave-by time.** The walk to your boarding stop says when to set off, such
   as "leave in ~3 min", or "leave now" when the bus is about as far away as
   your walk.
@@ -70,7 +76,7 @@ each time; your recent destinations wait in the search box, and it remembers whe
   To to change the destination, or use the arrows to swap start and destination
   and plan the way back. The
   journey, the walking estimates and the directions all start from there, and
-  the approach alert is off, since you are not at that start. Closing the
+  the leave reminder is off, since you are not at that start. Closing the
   journey goes back to your location.
 - **Other ways to go.** The app picks the journey that best weighs time against
   walking. When another journey has fewer changes, arrives sooner, or walks less,
@@ -223,8 +229,8 @@ bus positions are © 5T S.r.l., all rights reserved; the app fetches them live a
 ## Privacy
 
 The app reads your location from the phone's location service (Google Play services) to plan
-journeys, measure the distance to buses and, while an approach alert is on, to tell when you reach
-the stop where you change buses. The app itself never sends your location anywhere. Requests to GTT,
+journeys, measure the distance to buses and, while a leave reminder is on, to work out your walk to
+the stop and to tell whether you got on the bus. The app itself never sends your location anywhere. Requests to GTT,
 and the update check to GitHub, carry no location or identifier. Searching, saved places and recent destinations work offline and
 are stored only on the phone. Your location leaves the phone only when you choose to open walking
 directions in Google Maps. The app has no accounts, analytics or ads.

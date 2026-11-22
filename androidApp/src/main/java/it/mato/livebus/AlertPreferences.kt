@@ -2,24 +2,21 @@ package it.mato.livebus
 
 import android.content.Context
 
+/** A reminder to leave for one bus line's stop, as the background service runs it. */
 data class BusAlert(
     val route: String,
     val routeId: String,
     val patternId: String,
     val headsign: String,
+    // The bus the journey planned with; another one of the line is chosen when it cannot be caught.
     val vehicleId: String? = null,
-    val stopId: String? = null,
+    val stopId: String,
     val stopName: String,
     val latitude: Double,
     val longitude: Double,
-    val thresholdMetres: Int = AlertPreferences.DEFAULT_DISTANCE,
-    val finalAddress: String? = null,
-    val finalLatitude: Double? = null,
-    val finalLongitude: Double? = null,
-    val transferName: String? = null,
-    val transferLatitude: Double? = null,
-    val transferLongitude: Double? = null,
-    // Replans keep this, so the whole journey, not each leg, is what ages out.
+    // How early the rider wants to be at the stop before the bus.
+    val spareMinutes: Int = AlertPreferences.DEFAULT_SPARE,
+    // Replans keep this, so the whole reminder, not each bus, is what ages out.
     val startedAt: Long = System.currentTimeMillis()
 )
 
@@ -27,25 +24,26 @@ object AlertPreferences {
     private const val STORE = "bus_alert"
     // Apart from STORE, which is wiped whenever an alert ends; this is the rider's standing choice.
     private const val SETTINGS = "bus_alert_settings"
-    const val DEFAULT_DISTANCE = 700
-    val DISTANCES = listOf(300, 500, DEFAULT_DISTANCE, 1000)
+    const val DEFAULT_SPARE = 1
+    val SPARE_MINUTES = listOf(DEFAULT_SPARE, 5, 10)
     // No bus journey in Turin takes this long; an alert still around is one that was never ended.
     const val MAX_AGE_MILLIS = 2 * 60 * 60_000L
 
-    /** How close, in metres along the route, a bus must be before the rider is notified. */
-    fun distance(context: Context): Int {
+    /** Minutes the rider wants to be at the stop before the bus; the last choice is kept. */
+    fun spareMinutes(context: Context): Int {
         val stored = context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE)
-            .getInt("distance", DEFAULT_DISTANCE)
-        return stored.takeIf { it in DISTANCES } ?: DEFAULT_DISTANCE
+            .getInt("spareMinutes", DEFAULT_SPARE)
+        return stored.takeIf { it in SPARE_MINUTES } ?: DEFAULT_SPARE
     }
 
-    fun setDistance(context: Context, metres: Int) {
-        if (metres !in DISTANCES) return
-        context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit().putInt("distance", metres).apply()
+    fun setSpareMinutes(context: Context, minutes: Int) {
+        if (minutes !in SPARE_MINUTES) return
+        context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit().putInt("spareMinutes", minutes).apply()
     }
 
     fun save(context: Context, alert: BusAlert) {
         context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit()
+            .clear()
             .putBoolean("enabled", true)
             .putString("route", alert.route)
             .putString("routeId", alert.routeId)
@@ -56,13 +54,7 @@ object AlertPreferences {
             .putString("stopName", alert.stopName)
             .putLong("latitude", alert.latitude.toBits())
             .putLong("longitude", alert.longitude.toBits())
-            .putInt("threshold", alert.thresholdMetres)
-            .putString("finalAddress", alert.finalAddress)
-            .putLong("finalLatitude", alert.finalLatitude?.toBits() ?: 0)
-            .putLong("finalLongitude", alert.finalLongitude?.toBits() ?: 0)
-            .putString("transferName", alert.transferName)
-            .putLong("transferLatitude", alert.transferLatitude?.toBits() ?: 0)
-            .putLong("transferLongitude", alert.transferLongitude?.toBits() ?: 0)
+            .putInt("spareMinutes", alert.spareMinutes)
             .putLong("startedAt", alert.startedAt)
             .apply()
     }
@@ -83,21 +75,12 @@ object AlertPreferences {
             patternId = prefs.getString("patternId", null) ?: return null,
             headsign = prefs.getString("headsign", null) ?: return null,
             vehicleId = prefs.getString("vehicleId", null),
-            stopId = prefs.getString("stopId", null),
+            stopId = prefs.getString("stopId", null) ?: return null,
             stopName = prefs.getString("stopName", null) ?: return null,
             latitude = Double.fromBits(prefs.getLong("latitude", 0)),
             longitude = Double.fromBits(prefs.getLong("longitude", 0)),
-            thresholdMetres = prefs.getInt("threshold", DEFAULT_DISTANCE),
-            finalAddress = prefs.getString("finalAddress", null),
-            finalLatitude = prefs.getLong("finalLatitude", 0)
-                .takeIf { it != 0L }?.let(Double::fromBits),
-            finalLongitude = prefs.getLong("finalLongitude", 0)
-                .takeIf { it != 0L }?.let(Double::fromBits),
-            transferName = prefs.getString("transferName", null),
-            transferLatitude = prefs.getLong("transferLatitude", 0)
-                .takeIf { it != 0L }?.let(Double::fromBits),
-            transferLongitude = prefs.getLong("transferLongitude", 0)
-                .takeIf { it != 0L }?.let(Double::fromBits),
+            spareMinutes = prefs.getInt("spareMinutes", DEFAULT_SPARE).takeIf { it in SPARE_MINUTES }
+                ?: DEFAULT_SPARE,
             startedAt = startedAt
         )
     }

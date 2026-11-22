@@ -258,6 +258,7 @@ class MainActivity : AppCompatActivity() {
         binding.locationSettingsButton.setOnClickListener { messageAction?.invoke() }
         binding.liveStatus.setOnClickListener { startRefreshing(forceRefresh = true) }
         binding.alertButton.setOnClickListener { if (isAlertActive()) stopAlert() else requestAlert() }
+        binding.spareButton.setOnClickListener { chooseSpareTime() }
         binding.modeSwitchButton.setOnClickListener {
             planningJob?.cancel()
             if (walkingMode) {
@@ -274,7 +275,6 @@ class MainActivity : AppCompatActivity() {
         // A screen rebuilt by a theme change stays where the rider was looking.
         requestLocation(moveMap = savedInstanceState == null)
         startRefreshing()
-        consumeReplan(intent)
         consumeGoToPlace(intent)
         consumeGeoLink(intent)
         savedPlaces.publishShortcuts()
@@ -403,7 +403,6 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         consumeSharedDirections(intent)
-        consumeReplan(intent)
         consumeGoToPlace(intent)
         consumeGeoLink(intent)
     }
@@ -1893,7 +1892,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         showSummary(transitSeconds)
         renderJourneyGuide(transitGuide!!)
         updateModeSwitch()
-        binding.alertButton.visibility =
+        binding.alertRow.visibility =
             if (choice != null && trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
         updateAlertButton()
         // A journey already pulled open stays open through live updates; a new one starts at the peek.
@@ -2636,22 +2635,20 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 if (train.isMetro) R.string.metro_alert_unavailable else R.string.train_alert_unavailable))
             return
         }
-        if (selectedPattern == null) {
+        if (journeyChoice == null) {
             binding.sharedDirections.text = getString(R.string.alert_requires_direction)
             binding.sharedDirections.visibility = View.VISIBLE
             return
         }
-        chooseAlertDistance {
-            if (Build.VERSION.SDK_INT >= 33 &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } else if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
-                showNotificationsBlocked()
-            } else {
-                enableAlert()
-            }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+            showNotificationsBlocked()
+        } else {
+            enableAlert()
         }
     }
 
@@ -2672,23 +2669,40 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         updateAlertButton()
     }
 
-    // The alert can end on its own, or from its notification, while the app is away.
+    /**
+     * The reminder is offered only when it makes sense: with the spare time chosen there is still a
+     * while to wait before setting off. Otherwise the rider just has to go, and the steps say so.
+     * The alert can also end on its own, or from its notification, while the app is away.
+     */
     private fun updateAlertButton() {
-        binding.alertButton.setText(if (isAlertActive()) R.string.stop_alert else R.string.alert_me)
+        val spare = AlertPreferences.spareMinutes(this)
+        binding.spareButton.text = getString(R.string.spare_option_short, spare)
+        if (isAlertActive()) {
+            binding.alertButton.setText(R.string.stop_reminder)
+            binding.alertButton.isEnabled = true
+            binding.spareButton.visibility = View.GONE
+            return
+        }
+        binding.spareButton.visibility = View.VISIBLE
+        val choice = journeyChoice
+        val worthIt = choice != null &&
+            DepartureTiming.worthReminding(choice.boardingEtaSeconds, choice.walkingMetres, spare)
+        binding.alertButton.setText(if (worthIt) R.string.remind_me else R.string.reminder_too_soon)
+        binding.alertButton.isEnabled = worthIt
     }
 
-    /** Asks how far away the bus should be when it notifies; the last choice is preselected. */
-    private fun chooseAlertDistance(onChosen: () -> Unit) {
-        val options = AlertPreferences.DISTANCES
-        var selected = options.indexOf(AlertPreferences.distance(this))
+    /** How early to be at the stop; the choice is kept for next time. */
+    private fun chooseSpareTime() {
+        val options = AlertPreferences.SPARE_MINUTES
+        val selected = options.indexOf(AlertPreferences.spareMinutes(this))
         MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.alert_distance_title)
+            .setTitle(R.string.spare_title)
             .setSingleChoiceItems(
-                options.map { getString(R.string.alert_distance_option, it) }.toTypedArray(), selected
-            ) { _, which -> selected = which }
-            .setPositiveButton(R.string.alert_me) { _, _ ->
-                AlertPreferences.setDistance(this, options[selected])
-                onChosen()
+                options.map { getString(R.string.spare_option, it) }.toTypedArray(), selected
+            ) { dialog, which ->
+                AlertPreferences.setSpareMinutes(this, options[which])
+                updateAlertButton()
+                dialog.dismiss()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -2700,15 +2714,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             return
         }
         planningJob?.cancel()
-        val pattern = selectedPattern ?: return
-        val stop = journeyChoice?.boardAt ?: pattern.stops.minByOrNull {
-            val result = FloatArray(1)
-            Location.distanceBetween(
-                currentLocation.latitude, currentLocation.longitude,
-                it.latitude, it.longitude, result
-            )
-            result[0]
-        } ?: return
+        val choice = journeyChoice ?: return
+        val pattern = choice.pattern
+        val stop = choice.boardAt
         AlertPreferences.save(
             this,
             BusAlert(
@@ -2716,21 +2724,12 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 routeId = pattern.routeId,
                 patternId = pattern.id,
                 headsign = pattern.headsign,
-                vehicleId = journeyChoice?.vehicle?.id,
+                vehicleId = choice.vehicle.id,
                 stopId = stop.id,
                 stopName = TransitIndex.cleanStopName(stop.name),
                 latitude = stop.latitude,
                 longitude = stop.longitude,
-                thresholdMetres = AlertPreferences.distance(this),
-                finalAddress = binding.destinationInput.text.toString().trim()
-                    .takeIf { it.isNotEmpty() },
-                finalLatitude = journeyChoice?.finalLatitude,
-                finalLongitude = journeyChoice?.finalLongitude,
-                transferName = journeyChoice?.transferAt?.let {
-                    TransitIndex.cleanStopName(it.name)
-                },
-                transferLatitude = journeyChoice?.transferAt?.latitude,
-                transferLongitude = journeyChoice?.transferAt?.longitude
+                spareMinutes = AlertPreferences.spareMinutes(this)
             )
         )
         ContextCompat.startForegroundService(this, Intent(this, BusAlertService::class.java))
@@ -3266,26 +3265,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         }
     }
 
-    private fun consumeReplan(intent: Intent?) {
-        if (intent?.action != BusAlertService.ACTION_REPLAN) return
-        val finalAddress = intent.getStringExtra(BusAlertService.EXTRA_FINAL_ADDRESS)
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: return
-        intent.action = null
-        AlertPreferences.clear(this)
-        stopService(Intent(this, BusAlertService::class.java))
-        customStart = null
-        binding.destinationInput.setText(finalAddress)
-        journeyChoice = null
-        trainJourneyChoice = null
-        mixedJourneyChoice = null
-        hideTravelModeChoices()
-        binding.sharedDirections.text = getString(R.string.replanning_from_here)
-        binding.sharedDirections.visibility = View.VISIBLE
-        findDestinationRoute()
-    }
-
     // Lines that differ only by a suffix ("13" and "13+", "10" and "10N") must stay apart, so take
     // the name from the feed; stripping letters is only the guess for an unknown route.
     private fun normalizeRoute(route: String) = transitIndex.routeName(route)
@@ -3301,7 +3280,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         showSummary(directWalkingSeconds)
         updateModeSwitch()
         renderJourneyGuide(JourneySteps.forWalking(this, directWalkingMetres.roundToInt(), destination))
-        binding.alertButton.visibility = View.GONE
+        binding.alertRow.visibility = View.GONE
         renderVehicles()
         if (frame) frameCurrentJourney()
     }
@@ -3352,8 +3331,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         showSummary(transitSeconds)
         updateModeSwitch()
         transitGuide?.let(::renderJourneyGuide)
-        binding.alertButton.visibility =
-            if (trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
+        binding.alertRow.visibility =
+            if (journeyChoice != null && trainJourneyChoice == null && customStart == null) View.VISIBLE else View.GONE
         updateAlertButton()
         renderVehicles()
         frameCurrentJourney()
@@ -3393,7 +3372,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         showOptionsRow(false)
         walkingIsFaster = false
         binding.modeSwitchButton.visibility = View.GONE
-        binding.alertButton.visibility = View.GONE
+        binding.alertRow.visibility = View.GONE
     }
 
     private fun directWalkingDistance(latitude: Double, longitude: Double): Float {
