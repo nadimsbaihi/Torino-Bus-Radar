@@ -2963,9 +2963,12 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         // The bus drawn as a teardrop: its circle runs out to a point the way it is going, like a
         // compass needle, and stays a plain circle when the way is unknown.
         val nose = max(busRadius * 0.55f, 6f * density)
-        // A tram is a long rounded rectangle, so it cannot be taken for a round bus.
-        val halfWidth = if (tram) busRadius * TRAM_WIDTH else busRadius
-        val halfHeight = if (tram) busRadius * TRAM_HEIGHT else busRadius
+        // A tram is an upright rounded rectangle, so it cannot be taken for a round bus. It is
+        // widened for a long name, and then stretched to stay taller than it is wide.
+        val halfWidth = if (tram) {
+            max(busRadius * TRAM_WIDTH, lines.maxOf(paint::measureText) / 2f + ring + 1.5f * density)
+        } else busRadius
+        val halfHeight = if (tram) max(busRadius * TRAM_HEIGHT, halfWidth * 1.4f) else busRadius
         val corner = busRadius * 0.3f
         val extent = max(halfWidth, halfHeight) + nose + ring
         val bitmapSize = (extent * 2f).roundToInt()
@@ -3443,8 +3446,8 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
 
     private companion object {
         // A tram marker is this many times its bus circle's radius, wide and tall.
-        const val TRAM_WIDTH = 1.45f
-        const val TRAM_HEIGHT = 0.8f
+        const val TRAM_WIDTH = 0.8f
+        const val TRAM_HEIGHT = 1.3f
         const val LATE_PALENESS = 0.3f
         const val TAG = "MatoLiveBus"
         const val JOURNEY_STORE = "active_journey"

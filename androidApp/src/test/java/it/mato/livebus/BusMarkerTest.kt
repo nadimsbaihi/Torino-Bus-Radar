@@ -53,14 +53,17 @@ class BusMarkerTest {
         assertEquals(marker(false, 0f).width, marker(false, 180f).width)
     }
 
-    @Test fun aTramIsALongRectangleWhereABusIsRound() {
+    @Test fun aTramIsAnUprightRectangleWhereABusIsRound() {
         val bus = marker(false, null, "4")
         val tram = marker(false, null, "4", tram = true)
         fun drawnWidth(bitmap: Bitmap) = (0 until bitmap.width).count { Color.alpha(bitmap.getPixel(it, bitmap.height / 2)) > 0 }
         fun drawnHeight(bitmap: Bitmap, column: Int) = (0 until bitmap.height).count { Color.alpha(bitmap.getPixel(column, it)) > 0 }
         assertTrue("a bus is round", kotlin.math.abs(drawnWidth(bus) - drawnHeight(bus, bus.width / 2)) <= 1)
-        assertTrue("a tram is wider than a bus", drawnWidth(tram) > drawnWidth(bus) * 1.3)
-        assertTrue("a tram is longer than it is tall", drawnWidth(tram) > drawnHeight(tram, tram.width / 2) * 1.5)
+        assertTrue("a tram is narrower than a bus", drawnWidth(tram) < drawnWidth(bus))
+        assertTrue("a tram is taller than it is wide", drawnHeight(tram, tram.width / 2) > drawnWidth(tram) * 1.4)
+        // A long fleet number still fits across an upright tram.
+        val long = marker(false, null, "3165", tram = true)
+        assertTrue("a long name stays upright", drawnHeight(long, long.width / 2) > drawnWidth(long))
     }
 
     @Test fun aTramPointsTheWayItIsGoingToo() {
