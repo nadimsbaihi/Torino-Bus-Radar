@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The tags, to name the build after the latest release.
+          fetch-depth: 0
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
@@ -30,6 +33,13 @@ jobs:
 
       - name: Install Android SDK 35
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      # The latest release's number plus a test label (0.4.20-test.abc1234). The app's update check
+      # reads only the numbers, so it does not offer that release as an "update" over this build.
+      - name: Name the build after the latest release
+        run: |
+          latest=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo v0.0.0)
+          echo "MATO_VERSION_NAME=${latest#v}-test.$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       # The APK comes first, so a failing test still leaves something to try; the run is red either way.
       - name: Build the debug APK
