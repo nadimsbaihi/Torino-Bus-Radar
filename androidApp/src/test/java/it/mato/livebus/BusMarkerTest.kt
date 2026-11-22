@@ -61,8 +61,8 @@ class BusMarkerTest {
         assertTrue("a bus is round", kotlin.math.abs(drawnWidth(bus) - drawnHeight(bus, bus.width / 2)) <= 1)
         assertTrue("a tram is narrower than a bus", drawnWidth(tram) < drawnWidth(bus))
         assertTrue("a tram is taller than it is wide", drawnHeight(tram, tram.width / 2) > drawnWidth(tram) * 1.4)
-        // A long fleet number still fits across an upright tram.
-        val long = marker(false, null, "3165", tram = true)
+        // A tram line's longest name still leaves an upright tram.
+        val long = marker(true, null, "16 CD", tram = true)
         assertTrue("a long name stays upright", drawnHeight(long, long.width / 2) > drawnWidth(long))
     }
 
