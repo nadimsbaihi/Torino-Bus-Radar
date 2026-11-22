@@ -465,14 +465,14 @@ class NavigationBackTest {
         settle()
         assertEquals(BottomSheetBehavior.STATE_COLLAPSED, sheet(binding).state)
         assertEquals(View.VISIBLE, binding.searchCard.visibility)
-        assertEquals(View.VISIBLE, binding.alertButton.visibility)
+        assertEquals(View.VISIBLE, binding.alertRow.visibility)
 
         val start = Class.forName("it.mato.livebus.CustomStart").declaredConstructors.first()
             .apply { isAccessible = true }.newInstance("Casa", GeoPoint(45.0, 7.0))
         MainActivity::class.java.getDeclaredField("customStart").apply { isAccessible = true }.set(activity, start)
         show(activity)
-        // Nobody is walking to the stop from there, so the approach alert is not offered.
-        assertEquals(View.GONE, binding.alertButton.visibility)
+        // Nobody is walking to the stop from there, so the leave reminder is not offered.
+        assertEquals(View.GONE, binding.alertRow.visibility)
 
         call(activity, "closeJourney")
         settle()

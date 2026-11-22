@@ -31,8 +31,9 @@ jobs:
       - name: Install Android SDK 35
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Test and build the debug APK
-        run: ./gradlew :androidApp:testGttDebugUnitTest :androidApp:assembleGttDebug --no-daemon
+      # The APK comes first, so a failing test still leaves something to try; the run is red either way.
+      - name: Build the debug APK
+        run: ./gradlew :androidApp:assembleGttDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
@@ -40,3 +41,6 @@ jobs:
           path: androidApp/build/outputs/apk/gtt/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Unit tests
+        run: ./gradlew :androidApp:testGttDebugUnitTest --no-daemon

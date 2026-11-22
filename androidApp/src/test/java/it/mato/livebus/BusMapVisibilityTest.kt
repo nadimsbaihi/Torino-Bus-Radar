@@ -378,13 +378,13 @@ class BusMapVisibilityTest {
         assertEquals("com.google.android.apps.maps", mapsIntent.`package`)
         assertEquals("google.navigation:q=${board.latitude},${board.longitude}&mode=w",
             mapsIntent.data.toString())
-        assertEquals(android.view.View.VISIBLE, binding.alertButton.visibility)
+        assertEquals(android.view.View.VISIBLE, binding.alertRow.visibility)
         MainActivity::class.java.getDeclaredMethod("showJourneyMessage", String::class.java).apply {
             isAccessible = true
             invoke(activity, activity.getString(R.string.journey_failed))
         }
         assertEquals(android.view.View.GONE, binding.modeSwitchButton.visibility)
-        assertEquals(android.view.View.GONE, binding.alertButton.visibility)
+        assertEquals(android.view.View.GONE, binding.alertRow.visibility)
         assertEquals(activity.getString(R.string.your_journey), binding.journeyTitle.text.toString())
         binding.map.onDetach()
     }
@@ -409,7 +409,7 @@ class BusMapVisibilityTest {
         }
         assertTrue(binding.journeyTitle.text.startsWith("Walk"))
         assertEquals(android.view.View.GONE, binding.modeSwitchButton.visibility)
-        assertEquals(android.view.View.GONE, binding.alertButton.visibility)
+        assertEquals(android.view.View.GONE, binding.alertRow.visibility)
         // The one walk carries its own directions button.
         assertEquals(android.view.View.VISIBLE,
             binding.journeySteps.getChildAt(0).findViewById<android.view.View>(R.id.stepDirections).visibility)
@@ -449,7 +449,7 @@ class BusMapVisibilityTest {
         val steps = stepTexts(binding)
         assertTrue(steps.toString(), "Bus 60" in steps)
         assertTrue(steps.toString(), steps.any { it.startsWith("R 2121 →") })
-        assertEquals(android.view.View.GONE, binding.alertButton.visibility)
+        assertEquals(android.view.View.GONE, binding.alertRow.visibility)
         assertEquals(1, binding.map.overlays.filterIsInstance<Marker>()
             .count { it.title == activity.getString(R.string.vehicle_title, "60") })
         assertFalse(binding.map.overlays.filterIsInstance<Marker>()
