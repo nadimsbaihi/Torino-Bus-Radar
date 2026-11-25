@@ -296,14 +296,15 @@ class MainActivity : AppCompatActivity() {
                 throw cancelled
             } catch (error: Exception) {
                 Log.w(TAG, "Update check failed", error)
-                if (asked) Snackbar.make(binding.coordinator, R.string.update_check_failed, Snackbar.LENGTH_LONG).show()
+                if (asked) snackbar(R.string.update_check_failed, Snackbar.LENGTH_LONG).show()
                 return@launch
             }
             when {
-                release != null -> Snackbar.make(binding.coordinator,
-                    getString(R.string.update_available, release.version), Snackbar.LENGTH_INDEFINITE)
-                    .setAction(R.string.update_action) { downloadUpdate(release) }.show()
-                asked -> Snackbar.make(binding.coordinator,
+                release != null -> showLingering {
+                    snackbar(getString(R.string.update_available, release.version), Snackbar.LENGTH_INDEFINITE)
+                        .setAction(R.string.update_action) { downloadUpdate(release) }
+                }
+                asked -> snackbar(
                     getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME), Snackbar.LENGTH_LONG).show()
             }
         }
@@ -323,13 +324,13 @@ class MainActivity : AppCompatActivity() {
                 throw cancelled
             } catch (error: Exception) {
                 Log.w(TAG, "Timetable check failed", error)
-                if (asked) Snackbar.make(binding.coordinator, R.string.data_check_failed, Snackbar.LENGTH_LONG).show()
+                if (asked) snackbar(R.string.data_check_failed, Snackbar.LENGTH_LONG).show()
                 return@launch
             }
             when {
-                updated.isNotEmpty() -> Snackbar.make(binding.coordinator, R.string.data_updated,
+                updated.isNotEmpty() -> snackbar(R.string.data_updated,
                     Snackbar.LENGTH_INDEFINITE).setAction(R.string.data_reload) { reloadTimetables() }.show()
-                asked -> Snackbar.make(binding.coordinator, R.string.data_up_to_date, Snackbar.LENGTH_LONG).show()
+                asked -> snackbar(R.string.data_up_to_date, Snackbar.LENGTH_LONG).show()
             }
         }
     }
@@ -343,7 +344,7 @@ class MainActivity : AppCompatActivity() {
                 throw cancelled
             } catch (error: Exception) {
                 Log.w(TAG, "Timetable reload failed", error)
-                Snackbar.make(binding.coordinator, R.string.data_reload_failed, Snackbar.LENGTH_LONG).show()
+                snackbar(R.string.data_reload_failed, Snackbar.LENGTH_LONG).show()
                 return@launch
             }
             recreate()
@@ -365,7 +366,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadUpdate(release: AppRelease) {
-        val progress = Snackbar.make(binding.coordinator, getString(R.string.update_downloading, 0),
+        val progress = snackbar(getString(R.string.update_downloading, 0),
             Snackbar.LENGTH_INDEFINITE).also { it.show() }
         lifecycleScope.launch {
             try {
@@ -379,7 +380,7 @@ class MainActivity : AppCompatActivity() {
             } catch (error: Exception) {
                 Log.w(TAG, "Update download failed", error)
                 progress.dismiss()
-                Snackbar.make(binding.coordinator, R.string.update_failed, Snackbar.LENGTH_LONG)
+                snackbar(R.string.update_failed, Snackbar.LENGTH_LONG)
                     .setAction(R.string.retry) { downloadUpdate(release) }.show()
             }
         }
@@ -389,7 +390,7 @@ class MainActivity : AppCompatActivity() {
     private fun installUpdate(apk: File) {
         if (!packageManager.canRequestPackageInstalls()) {
             pendingUpdate = apk
-            Snackbar.make(binding.coordinator, R.string.update_allow_install, Snackbar.LENGTH_LONG).show()
+            snackbar(R.string.update_allow_install, Snackbar.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
             return
         }
@@ -564,6 +565,7 @@ class MainActivity : AppCompatActivity() {
         binding.liveStatus.visibility = View.GONE
         updateRouteCard()
         updateMapInsets()
+        reanchorLingering()
     }
 
     private fun hideJourneySheet() {
@@ -574,6 +576,7 @@ class MainActivity : AppCompatActivity() {
         fadeMapControls(0f)
         updateRouteCard()
         updateMapInsets()
+        reanchorLingering()
     }
 
     /** The first visit opens on tips for what the map answers to, until the rider says they have them. */
@@ -589,10 +592,50 @@ class MainActivity : AppCompatActivity() {
     private fun showHints() {
         if (binding.journeyCard.visibility == View.VISIBLE) closeJourney()
         binding.hintsCard.visibility = View.VISIBLE
+        reanchorLingering()
     }
 
     private fun hideHints() {
         binding.hintsCard.visibility = View.GONE
+        reanchorLingering()
+    }
+
+    /** The card open at the bottom of the screen, which a message must sit above to be seen. */
+    private fun bottomCard(): View? =
+        listOf(binding.journeyCard, binding.hintsCard).firstOrNull { it.visibility == View.VISIBLE }
+
+    /** A message just above whatever card is open at the bottom, so the card does not hide it. */
+    private fun snackbar(text: CharSequence, duration: Int): Snackbar =
+        Snackbar.make(binding.coordinator, text, duration).apply { bottomCard()?.let { anchorView = it } }
+
+    private fun snackbar(@StringRes text: Int, duration: Int): Snackbar = snackbar(getText(text), duration)
+
+    // A message that waits for the rider (an update to install), how to make it again, and the card
+    // it sits above: when a card opens or closes beneath it later, it is shown again in the right place.
+    private var lingering: Snackbar? = null
+    private var lingeringFactory: (() -> Snackbar)? = null
+    private var lingeringAbove: View? = null
+
+    private fun showLingering(make: () -> Snackbar) {
+        lingeringFactory = make
+        lingeringAbove = bottomCard()
+        lingering = make().addCallback(object : Snackbar.Callback() {
+            override fun onDismissed(bar: Snackbar, event: Int) {
+                // Moved by reanchorLingering is not done with; answered, swiped or replaced is.
+                if (event != DISMISS_EVENT_MANUAL && lingering === bar) {
+                    lingering = null
+                    lingeringFactory = null
+                }
+            }
+        }).also { it.show() }
+    }
+
+    private fun reanchorLingering() {
+        val make = lingeringFactory ?: return
+        val bar = lingering ?: return
+        if (!bar.isShownOrQueued || bottomCard() === lingeringAbove) return
+        bar.dismiss()
+        showLingering(make)
     }
 
     /** Tells the rider once, as the first course appears, that its stops answer to a tap too. */
@@ -600,7 +643,7 @@ class MainActivity : AppCompatActivity() {
         val preferences = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
         if (preferences.getBoolean(COURSE_HINT_SEEN, false)) return
         preferences.edit().putBoolean(COURSE_HINT_SEEN, true).apply()
-        Snackbar.make(binding.coordinator, R.string.course_hint, Snackbar.LENGTH_LONG).show()
+        snackbar(R.string.course_hint, Snackbar.LENGTH_LONG).show()
     }
 
     /** Keeps the map centred on the part of it that the search box and journey sheet leave visible. */
@@ -1076,7 +1119,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun showAllSavedPlaces() {
         val places = savedPlaces.all()
         if (places.isEmpty()) {
-            Snackbar.make(binding.coordinator, R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
+            snackbar(R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
             return
         }
         binding.destinationInput.dismissDropDown()
@@ -1202,7 +1245,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val typed = binding.destinationInput.text.toString().trim()
         if (typed.isEmpty()) {
             if (savedPlaces.isEmpty()) {
-                Snackbar.make(binding.coordinator, R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
+                snackbar(R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
             } else {
                 binding.destinationInput.requestFocus()
                 showSavedSuggestions()
@@ -1279,7 +1322,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         lastResolvedPlace = place.asOfflinePlace(exactMatch = true)
         binding.destinationInput.setText(place.name, false)
         refreshSavedPlaceButton()
-        Snackbar.make(binding.coordinator, getString(R.string.place_saved, place.name),
+        snackbar(getString(R.string.place_saved, place.name),
             Snackbar.LENGTH_SHORT).show()
     }
 
@@ -1295,7 +1338,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             binding.destinationInput.setText(pin, false)
         }
         refreshSavedPlaceButton()
-        Snackbar.make(binding.coordinator, getString(R.string.place_removed, place.name),
+        snackbar(getString(R.string.place_removed, place.name),
             Snackbar.LENGTH_LONG).setAction(R.string.undo) {
             if (savedPlaces.save(place) != null) return@setAction
             if (binding.destinationInput.text.toString().trim() == pin) onPlaceSaved(place)
@@ -1453,7 +1496,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
     private fun pickSavedStart() {
         val places = savedPlaces.all()
         if (places.isEmpty()) {
-            Snackbar.make(binding.coordinator, R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
+            snackbar(R.string.no_saved_places, Snackbar.LENGTH_LONG).show()
             return
         }
         MaterialAlertDialogBuilder(this)
@@ -2009,8 +2052,9 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         val preferences = getSharedPreferences(JOURNEY_STORE, MODE_PRIVATE)
         if (preferences.getInt(STALE_NOTICE_VERSION, 0) == BuildConfig.VERSION_CODE) return
         preferences.edit().putInt(STALE_NOTICE_VERSION, BuildConfig.VERSION_CODE).apply()
-        Snackbar.make(binding.coordinator, R.string.data_out_of_date, Snackbar.LENGTH_INDEFINITE)
-            .setAction(android.R.string.ok) {}.show()
+        showLingering {
+            snackbar(R.string.data_out_of_date, Snackbar.LENGTH_INDEFINITE).setAction(android.R.string.ok) {}
+        }
     }
 
     /** How far a bus is and how much its place can be trusted: a fix's age, or that it is estimated. */
@@ -3153,7 +3197,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                     R.string.location_permission_required to MessageAction(R.string.allow_location) { askForLocationAgain() }
                 else -> R.string.location_unavailable to MessageAction(R.string.retry) { requestLocation() }
             }
-            Snackbar.make(binding.coordinator, message, Snackbar.LENGTH_LONG)
+            snackbar(message, Snackbar.LENGTH_LONG)
                 .setAction(action.label) { action() }
                 .show()
             return
@@ -3371,7 +3415,7 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             try {
                 startActivity(Intent(Intent.ACTION_VIEW, webDirections))
             } catch (_: ActivityNotFoundException) {
-                Snackbar.make(binding.coordinator, R.string.directions_unavailable, Snackbar.LENGTH_LONG).show()
+                snackbar(R.string.directions_unavailable, Snackbar.LENGTH_LONG).show()
             }
         }
     }
