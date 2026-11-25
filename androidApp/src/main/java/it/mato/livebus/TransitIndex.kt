@@ -1087,9 +1087,11 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         val exact = exactTripPattern(vehicle) != null
         val moving = freshMovement(vehicle)
         val pattern = matchDirection(vehicle) ?: return if (exact) heading else moving
-        val route = routeDirection(vehicle, pattern) ?: return if (exact) heading else moving
+        val (route, alongRoad) = routeDirection(vehicle, pattern) ?: return if (exact) heading else moving
         if (exact) {
-            return if (heading == null ||
+            // The road's own line where the bus is beats any compass, so the marker lies along it;
+            // without a shape the line between two stops cuts the bends, and a fair bearing wins.
+            return if (alongRoad || heading == null ||
                 angleDifference(heading.toDouble(), route.toDouble()) > MAX_FORWARD_BEARING_DIFFERENCE) route
             else heading
         }
@@ -1098,14 +1100,18 @@ class TransitIndex private constructor(val patterns: List<TransitPattern>) {
         return if (seenGoingThatWay) route else null
     }
 
-    /** Which way [pattern] runs where [vehicle] is, or null when the bus is not on it. */
-    private fun routeDirection(vehicle: LiveVehicle, pattern: TransitPattern): Float? {
+    /**
+     * Which way [pattern] runs where [vehicle] is, and whether that is the road's own line (from
+     * the shape) rather than the straight line between two stops; null when the bus is not on it.
+     */
+    private fun routeDirection(vehicle: LiveVehicle, pattern: TransitPattern): Pair<Float, Boolean>? {
         val segment = progressOf(vehicle, pattern) ?: return null
         val from = pattern.stops[segment]
         val to = pattern.stops[segment + 1]
         if (distanceToSegment(vehicle.latitude, vehicle.longitude, from, to) > MAX_SNAP_METRES) return null
         // The road's own direction where the bus is, so the marker turns with a bend between stops.
-        return roadBearing(vehicle, pattern, segment) ?: bearing(from, to).toFloat()
+        roadBearing(vehicle, pattern, segment)?.let { return it to true }
+        return bearing(from, to).toFloat() to false
     }
 
     /** The way the bus has been seen moving lately, from its own fixes; null until it has moved. */

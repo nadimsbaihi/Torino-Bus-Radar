@@ -66,6 +66,17 @@ class BusMarkerTest {
         assertTrue("a long name stays upright", drawnHeight(long, long.width / 2) > drawnWidth(long))
     }
 
+    @Test fun aTramLiesAlongTheWayItIsGoing() {
+        fun drawnAcross(bitmap: Bitmap) = (0 until bitmap.width).count { Color.alpha(bitmap.getPixel(it, bitmap.height / 2)) > 0 }
+        fun drawnDown(bitmap: Bitmap) = (0 until bitmap.height).count { Color.alpha(bitmap.getPixel(bitmap.width / 2, it)) > 0 }
+        val north = marker(false, 0f, "4", tram = true)
+        val east = marker(false, 90f, "4", tram = true)
+        assertTrue("heading north it stands up", drawnDown(north) > drawnAcross(north) * 1.3)
+        assertTrue("heading east it lies down", drawnAcross(east) > drawnDown(east) * 1.3)
+        // Turned or not, the bitmap is the same size and centred on the tram.
+        assertEquals(north.width, east.width)
+    }
+
     @Test fun aTramPointsTheWayItIsGoingToo() {
         // How far from the centre something is drawn along a bearing, in pixels.
         fun reach(bitmap: Bitmap, bearing: Double): Int {

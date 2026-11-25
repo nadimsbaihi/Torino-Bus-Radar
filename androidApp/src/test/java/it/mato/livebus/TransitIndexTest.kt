@@ -327,6 +327,16 @@ class TransitIndexTest {
         assertNull(index.displayHeading(offRoute.copy(bearing = null)))
     }
 
+    @Test fun onARoadWithAShapeTheMarkerLiesAlongTheRoadNotTheCompass() {
+        val road = RouteShape(doubleArrayOf(45.0, 45.01, 45.02), doubleArrayOf(7.0, 7.0, 7.0))
+        val shaped = TransitPattern("shaped", "M", "M1", "Bengasi", "0", setOf("shaped"), first.stops, shape = road)
+        val index = index(shaped)
+        val tram = vehicle(shaped, 45.005, 7.0)
+        // A fair bearing a little off the road gives way to the road itself.
+        assertEquals(0f, index.displayHeading(tram.copy(bearing = 10f))!!, 1f)
+        assertEquals(0f, index.displayHeading(tram.copy(bearing = null))!!, 1f)
+    }
+
     @Test fun aGuessedBusPointsOnlyOnceItIsSeenMovingThatWay() {
         val index = index(first)
         val now = System.currentTimeMillis() / 1000

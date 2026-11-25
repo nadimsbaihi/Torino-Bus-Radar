@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.os.Build
 import android.graphics.Color
 import android.graphics.DashPathEffect
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Point
@@ -2962,15 +2963,16 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
         // The bus drawn as a teardrop: its circle runs out to a point the way it is going, like a
         // compass needle, and stays a plain circle when the way is unknown.
         val nose = max(busRadius * 0.55f, 6f * density)
-        // A tram is an upright rounded rectangle, so it cannot be taken for a round bus. It is
-        // widened for a long name, and then stretched to stay taller than it is wide.
-        val halfWidth = if (tram) {
-            max(busRadius * TRAM_WIDTH, lines.maxOf(paint::measureText) / 2f + ring + 1.5f * density)
-        } else busRadius
+        // A tram is a rounded rectangle, so it cannot be taken for a round bus. It lies along the
+        // road the way it is going, and stands upright when the way is unknown. The name stays
+        // upright whichever way the body lies, so the body is made wide enough for it at any turn,
+        // and then stretched to stay longer than it is wide.
+        val halfWidth = if (tram) max(busRadius * TRAM_WIDTH, labelDiameter / 2f) else busRadius
         val halfHeight = if (tram) max(busRadius * TRAM_HEIGHT, halfWidth * 1.4f) else busRadius
         val corner = busRadius * 0.3f
-        // A tram's point can grow out of a corner, as far out as the body's diagonal.
-        val extent = (if (tram) kotlin.math.hypot(halfWidth, halfHeight) else busRadius) + nose + ring
+        // Turned, a tram reaches as far as its diagonal, or as far as its nose ahead of it.
+        val extent = (if (tram) max(kotlin.math.hypot(halfWidth, halfHeight), halfHeight + nose)
+            else busRadius + nose) + ring
         val bitmapSize = (extent * 2f).roundToInt()
         val bitmap = Bitmap.createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -2993,37 +2995,17 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
                 center + kotlin.math.cos(radians).toFloat() * distance,
                 center + kotlin.math.sin(radians).toFloat() * distance)
             if (tram) {
-                // A tram's point grows out of its body where the body reaches furthest that way: a
-                // corner drawn out into a point when heading aslant, or the middle of an edge when
-                // heading straight along one. Its sides meet the body's rim like a bus's do.
-                val dx = kotlin.math.cos(angle).toFloat()
-                val dy = kotlin.math.sin(angle).toFloat()
-                val boxX = halfWidth - ring / 2f
+                // Drawn heading north, then turned: the nose runs out from the middle of the front.
                 val boxY = halfHeight - ring / 2f
-                val rim = tramRim(center, boxX, boxY, corner)
-                fun reach(p: Pair<Float, Float>) = (p.first - center) * dx + (p.second - center) * dy
-                val furthest = rim.maxOf(::reach)
-                val ends = rim.filter { reach(it) > furthest - 0.5f * density }
-                val baseX = ends.map { it.first }.average().toFloat()
-                val baseY = ends.map { it.second }.average().toFloat()
-                val tipX = baseX + dx * nose
-                val tipY = baseY + dy * nose
-                // The sides run from the tip to the rim near the base, touching it on either side.
-                fun side(p: Pair<Float, Float>): Double {
-                    val px = p.first - tipX
-                    val py = p.second - tipY
-                    return kotlin.math.atan2((py * dx - px * dy).toDouble(), -(px * dx + py * dy).toDouble())
-                }
-                val near = rim.filter { kotlin.math.hypot(it.first - baseX, it.second - baseY) <= busRadius * 0.6f }
-                val left = near.minBy(::side)
-                val right = near.maxBy(::side)
+                val shoulder = halfWidth * 0.55f
+                val front = center - boxY + corner * 0.5f
                 outline.op(Path().apply {
-                    moveTo(tipX, tipY)
-                    lineTo(left.first, left.second)
-                    lineTo(center, center)
-                    lineTo(right.first, right.second)
+                    moveTo(center, center - boxY - nose)
+                    lineTo(center - shoulder, front)
+                    lineTo(center + shoulder, front)
                     close()
                 }, Path.Op.UNION)
+                outline.transform(Matrix().apply { setRotate(it, center, center) })
                 return@let
             }
             // A bus's sides leave its circle where they meet it smoothly (tangents from the tip).
@@ -3060,27 +3042,6 @@ private fun placeSuggestions(): ArrayAdapter<OfflinePlace> = object : ArrayAdapt
             canvas.drawText(line, center, center + offset - (paint.ascent() + paint.descent()) / 2, paint)
         }
         return BitmapDrawable(resources, bitmap)
-    }
-
-    /** Points around a rounded rectangle centred on [center], [boxX] by [boxY] from it to its edges. */
-    private fun tramRim(center: Float, boxX: Float, boxY: Float, corner: Float): List<Pair<Float, Float>> {
-        val rim = mutableListOf<Pair<Float, Float>>()
-        for ((sx, sy) in listOf(1f to 1f, -1f to 1f, -1f to -1f, 1f to -1f)) {
-            val cornerX = center + sx * (boxX - corner)
-            val cornerY = center + sy * (boxY - corner)
-            for (step in 0..12) {
-                val turn = step / 12.0 * Math.PI / 2
-                rim += Pair(cornerX + sx * kotlin.math.cos(turn).toFloat() * corner,
-                    cornerY + sy * kotlin.math.sin(turn).toFloat() * corner)
-            }
-        }
-        for (step in 0..40) {
-            val along = -1f + 2f * step / 40
-            val x = center + along * (boxX - corner)
-            val y = center + along * (boxY - corner)
-            rim += listOf(Pair(x, center - boxY), Pair(x, center + boxY), Pair(center - boxX, y), Pair(center + boxX, y))
-        }
-        return rim
     }
 
     private fun distanceTo(vehicle: LiveVehicle): Float {
