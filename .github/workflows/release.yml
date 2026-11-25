@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  # The same release from the Actions tab, for when the tag cannot be pushed. The tag is made
+  # only as the release is published, so a run that fails leaves neither behind.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, such as v0.4.20 (tagged on the commit of this run)'
+        required: true
 
 permissions:
   contents: write
@@ -24,7 +31,21 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Set APK version from tag
-        run: echo "MATO_VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        env:
+          REQUESTED: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            tag="$REQUESTED"
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version must look like v1.2.3"; exit 1; }
+            [ "$GITHUB_REF_NAME" = main ] || { echo "::error::Releases are made from main"; exit 1; }
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::$tag already exists"; exit 1
+            fi
+          fi
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "MATO_VERSION_NAME=${tag#v}" >> "$GITHUB_ENV"
 
       - name: Validate and build release APK
         env:
@@ -46,7 +67,7 @@ jobs:
           # The standard app, then the MATO live variant beside it.
           for flavor in gtt mato; do
             suffix=""; [ "$flavor" = mato ] && suffix="-mato"
-            apk="Torino-Bus-Radar-${GITHUB_REF_NAME}${suffix}.apk"
+            apk="Torino-Bus-Radar-${RELEASE_TAG}${suffix}.apk"
             "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f 4 \
               "androidApp/build/outputs/apk/$flavor/release/androidApp-$flavor-release-unsigned.apk" \
               "$RUNNER_TEMP/mato-aligned.apk"
@@ -63,6 +84,8 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME" "Torino-Bus-Radar-${GITHUB_REF_NAME}.apk"
-          "Torino-Bus-Radar-${GITHUB_REF_NAME}-mato.apk" --verify-tag --generate-notes
+        run: |
+          # A pushed tag must already be there; a run from the Actions tab tags this commit now.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then where=(--target "$GITHUB_SHA"); else where=(--verify-tag); fi
+          gh release create "$RELEASE_TAG" "Torino-Bus-Radar-${RELEASE_TAG}.apk" \
+            "Torino-Bus-Radar-${RELEASE_TAG}-mato.apk" "${where[@]}" --generate-notes
